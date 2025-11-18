@@ -58,7 +58,7 @@
     "rimraf": "^6.x",
     "tsup": "^8.x",
     "typescript": "^5.x",
-    "vitest": "^3.x"
+    "vitest": "^4.x"
   },
   "devDependencies": {
     "@types/node": "^22.19.1",
