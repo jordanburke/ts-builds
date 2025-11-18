@@ -37,6 +37,7 @@
     "tsconfig.base.json",
     "tsup.config.base.ts",
     "package-scripts.json",
+    "scripts",
     "README.md",
     "LICENSE"
   ],
