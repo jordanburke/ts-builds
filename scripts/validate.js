@@ -91,7 +91,6 @@ function main() {
   // Validate JSON config files
   console.log("\n3️⃣  Validating JSON config files...")
   const jsonFiles = [
-    ".prettierrc",
     "tsconfig.base.json",
     "package-scripts.json",
   ]
@@ -123,7 +122,7 @@ function main() {
   // Check for required config files
   console.log("\n6️⃣  Checking required config files...")
   const requiredFiles = [
-    ".prettierrc",
+    "prettier-config.js",
     ".prettierignore",
     "eslint.config.base.mjs",
     "dist/vitest.config.base.js",

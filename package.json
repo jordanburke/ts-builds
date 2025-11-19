@@ -1,6 +1,6 @@
 {
   "name": "typescript-template-configs",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "Shared TypeScript configuration files for library templates. Provides standardized ESLint, Prettier, Vitest, TypeScript, and build configs.",
   "keywords": [
     "typescript",
@@ -19,8 +19,10 @@
     "type": "git",
     "url": "https://github.com/jordanburke/typescript-template-configs"
   },
+  "main": "./prettier-config.js",
   "exports": {
-    "./prettier": "./.prettierrc",
+    ".": "./prettier-config.js",
+    "./prettier": "./prettier-config.js",
     "./prettier-ignore": "./.prettierignore",
     "./eslint": "./eslint.config.base.mjs",
     "./vitest": "./dist/vitest.config.base.js",
@@ -30,7 +32,7 @@
     "./package.json": "./package.json"
   },
   "files": [
-    ".prettierrc",
+    "prettier-config.js",
     ".prettierignore",
     "eslint.config.base.mjs",
     "dist",
@@ -40,30 +42,37 @@
     "README.md",
     "LICENSE"
   ],
-  "peerDependencies": {
-    "@eslint/eslintrc": "^3.x",
-    "@eslint/js": "^9.x",
-    "@typescript-eslint/eslint-plugin": "^8.x",
-    "@typescript-eslint/parser": "^8.x",
-    "@vitest/coverage-v8": "^4.x",
-    "cross-env": "^10.x",
-    "eslint": "^9.x",
-    "eslint-config-prettier": "^10.x",
-    "eslint-plugin-import": "^2.x",
-    "eslint-plugin-prettier": "^5.x",
-    "eslint-plugin-simple-import-sort": "^12.x",
-    "globals": "^16.x",
-    "prettier": "^3.x",
-    "rimraf": "^6.x",
-    "tsup": "^8.x",
-    "typescript": "^5.x",
-    "vitest": "^4.x"
+  "dependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@eslint/js": "^9.39.1",
+    "@types/node": "^22.19.1",
+    "@typescript-eslint/eslint-plugin": "^8.46.4",
+    "@typescript-eslint/parser": "^8.46.4",
+    "@vitest/coverage-v8": "^4.0.10",
+    "@vitest/ui": "^4.0.10",
+    "cross-env": "^10.1.0",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-prettier": "^5.5.4",
+    "eslint-plugin-simple-import-sort": "^12.1.1",
+    "globals": "^16.5.0",
+    "prettier": "^3.6.2",
+    "rimraf": "^6.1.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.10"
   },
   "devDependencies": {
-    "@types/node": "^22.19.1",
-    "rimraf": "^6.1.0",
-    "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
+    "tsup": "^8.5.1"
+  },
+  "peerDependencies": {
+    "tsup": "^8.x"
+  },
+  "peerDependenciesMeta": {
+    "tsup": {
+      "optional": true
+    }
   },
   "scripts": {
     "build": "rimraf dist && tsup",
