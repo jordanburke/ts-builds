@@ -8,19 +8,19 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const templateDir = join(__dirname, "..", "templates")
 const targetDir = process.cwd()
 
-const files = [".npmrc"]
+const files = [{ src: "npmrc", dest: ".npmrc" }]
 
 console.log("Initializing typescript-template-configs...")
 
-for (const file of files) {
-  const src = join(templateDir, file)
-  const dest = join(targetDir, file)
+for (const { src: srcFile, dest: destFile } of files) {
+  const src = join(templateDir, srcFile)
+  const dest = join(targetDir, destFile)
 
   if (existsSync(dest)) {
-    console.log(`  ⚠ ${file} already exists, skipping`)
+    console.log(`  ⚠ ${destFile} already exists, skipping`)
   } else {
     copyFileSync(src, dest)
-    console.log(`  ✓ Created ${file}`)
+    console.log(`  ✓ Created ${destFile}`)
   }
 }
 
