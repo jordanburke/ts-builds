@@ -88,9 +88,42 @@ This is a TypeScript library template designed to be cloned/forked for creating 
 - **Target**: ESNext for modern JavaScript features
 - **Output**: TypeScript only emits declaration files; tsup handles transpilation
 
+## CLI Usage
+
+This package includes a CLI for initializing projects with required config files.
+
+### Running the CLI
+
+```bash
+# After installing the package
+npx typescript-template-configs
+```
+
+This copies template files to the current directory:
+- `templates/npmrc` → `.npmrc` (configures pnpm to hoist CLI binaries)
+
+### Local Development
+
+```bash
+# Test the CLI locally
+node bin/init.js
+
+# Or link globally
+pnpm link --global
+typescript-template-configs
+```
+
+### CLI Architecture
+
+- **Entry point**: `bin/init.js` - Node.js script that copies templates
+- **Templates directory**: `templates/` - Source files to copy
+- **Published files**: Both `bin/` and `templates/` are included in npm package
+
 ## Key Files
 
 - `src/index.ts` - Main library entry point
+- `bin/init.js` - CLI script for project initialization
+- `templates/npmrc` - Template for .npmrc (hoists CLI binaries)
 - `test/*.spec.ts` - Test files using Vitest
 - `tsup.config.ts` - Build configuration with environment-based settings (line 3 checks NODE_ENV)
 - `vitest.config.ts` - Test configuration with coverage settings

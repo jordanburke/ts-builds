@@ -36,6 +36,27 @@ pnpm add -D \
   @vitest/coverage-v8 cross-env rimraf
 ```
 
+## 🛠️ Quick Setup (CLI)
+
+After installation, run the CLI to generate required config files:
+
+```bash
+npx typescript-template-configs
+```
+
+This creates:
+- `.npmrc` - Configures pnpm to hoist CLI binaries from peer dependencies
+
+**For local development** (testing before publishing):
+```bash
+# From within this project
+node bin/init.js
+
+# Or link globally first
+pnpm link --global
+typescript-template-configs
+```
+
 ## 📖 Usage
 
 ### Prettier (Locked - Use Exact Copy)
