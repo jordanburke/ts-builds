@@ -1,6 +1,6 @@
 {
   "name": "typescript-template-configs",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Shared TypeScript configuration files for library templates. Provides standardized ESLint, Prettier, Vitest, TypeScript, and build configs.",
   "keywords": [
     "typescript",
