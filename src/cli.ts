@@ -11,7 +11,6 @@ const targetDir = process.cwd()
 const bundledPackages = [
   "@eslint/eslintrc",
   "@eslint/js",
-  "@types/node",
   "@typescript-eslint/eslint-plugin",
   "@typescript-eslint/parser",
   "@vitest/coverage-v8",
