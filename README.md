@@ -36,25 +36,65 @@ pnpm add -D \
   @vitest/coverage-v8 cross-env rimraf
 ```
 
-## 🛠️ Quick Setup (CLI)
+## 🛠️ CLI Commands
 
-After installation, run the CLI to generate required config files:
+### Initialize Project
 
 ```bash
 npx typescript-template-configs
+# or
+npx typescript-template-configs init
 ```
 
-This creates:
-- `.npmrc` - Configures pnpm to hoist CLI binaries from peer dependencies
+Creates `.npmrc` to configure pnpm to hoist CLI binaries from peer dependencies.
+
+### Show Help
+
+```bash
+npx typescript-template-configs help
+```
+
+### List Bundled Packages
+
+```bash
+npx typescript-template-configs info
+```
+
+Shows all 19 packages bundled with this config (eslint, prettier, typescript, vitest, etc.) that you **don't need to install separately**.
+
+### Remove Redundant Dependencies
+
+```bash
+npx typescript-template-configs cleanup
+# or auto-confirm with
+npx typescript-template-configs cleanup --yes
+```
+
+Scans your `package.json` and removes any devDependencies that are already bundled with `typescript-template-configs`.
+
+### Minimal Installation
+
+Since this package bundles all tooling, you only need:
+
+```json
+{
+  "devDependencies": {
+    "typescript-template-configs": "^3.0.0",
+    "tsup": "^8.0.0"
+  }
+}
+```
 
 **For local development** (testing before publishing):
-```bash
-# From within this project
-node bin/init.js
 
-# Or link globally first
+```bash
+# Build first, then test
+pnpm build
+node dist/cli.js help
+
+# Or link globally
 pnpm link --global
-typescript-template-configs
+typescript-template-configs help
 ```
 
 ## 📖 Usage

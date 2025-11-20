@@ -90,39 +90,56 @@ This is a TypeScript library template designed to be cloned/forked for creating 
 
 ## CLI Usage
 
-This package includes a CLI for initializing projects with required config files.
+This package includes a CLI for initializing projects and managing dependencies.
 
-### Running the CLI
+### Commands
 
 ```bash
-# After installing the package
-npx typescript-template-configs
+npx typescript-template-configs          # init (default) - create .npmrc
+npx typescript-template-configs help     # show help and usage
+npx typescript-template-configs info     # list bundled packages
+npx typescript-template-configs cleanup  # remove redundant deps from package.json
+npx typescript-template-configs cleanup --yes  # auto-confirm removal
 ```
 
-This copies template files to the current directory:
-- `templates/npmrc` → `.npmrc` (configures pnpm to hoist CLI binaries)
+### Bundled Packages
+
+The CLI's `info` command shows all 19 packages bundled with this config that users don't need to install:
+
+- eslint, prettier, typescript, vitest
+- @typescript-eslint/eslint-plugin, @typescript-eslint/parser
+- eslint-config-prettier, eslint-plugin-prettier, eslint-plugin-import, eslint-plugin-simple-import-sort
+- @eslint/js, @eslint/eslintrc, globals
+- @vitest/coverage-v8, @vitest/ui
+- cross-env, rimraf, ts-node, @types/node
+
+Only peer dependency needed: `tsup`
 
 ### Local Development
 
 ```bash
-# Test the CLI locally
-node bin/init.js
+# Build first, then test
+pnpm build
+node dist/cli.js help
+node dist/cli.js info
 
 # Or link globally
 pnpm link --global
-typescript-template-configs
+typescript-template-configs help
 ```
 
 ### CLI Architecture
 
-- **Entry point**: `bin/init.js` - Node.js script that copies templates
+- **Source**: `src/cli.ts` - TypeScript CLI source
+- **Output**: `dist/cli.js` - Compiled CLI with shebang
 - **Templates directory**: `templates/` - Source files to copy
-- **Published files**: Both `bin/` and `templates/` are included in npm package
+- **Published files**: `dist/` and `templates/` included in npm package
+- **Commands**: help, info, cleanup, init (default)
 
 ## Key Files
 
 - `src/index.ts` - Main library entry point
-- `bin/init.js` - CLI script for project initialization
+- `src/cli.ts` - CLI script for project initialization (TypeScript)
 - `templates/npmrc` - Template for .npmrc (hoists CLI binaries)
 - `test/*.spec.ts` - Test files using Vitest
 - `tsup.config.ts` - Build configuration with environment-based settings (line 3 checks NODE_ENV)
