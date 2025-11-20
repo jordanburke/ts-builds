@@ -2,7 +2,7 @@
  * Shareable Prettier configuration for TypeScript library templates
  * @see https://prettier.io/docs/sharing-configurations
  */
-module.exports = {
+export default {
   semi: false,
   trailingComma: "all",
   singleQuote: false,
