@@ -1,6 +1,6 @@
 {
   "name": "typescript-template-configs",
-  "version": "2.0.1",
+  "version": "3.0.0",
   "description": "Shared TypeScript configuration files for library templates. Provides standardized ESLint, Prettier, Vitest, TypeScript, and build configs.",
   "keywords": [
     "typescript",
@@ -50,24 +50,30 @@
     "@typescript-eslint/parser": "^8.47.0",
     "@vitest/coverage-v8": "^4.0.10",
     "@vitest/ui": "^4.0.10",
-    "cross-env": "^10.1.0",
-    "eslint": "^9.39.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-prettier": "^5.5.4",
     "eslint-plugin-simple-import-sort": "^12.1.1",
     "globals": "^16.5.0",
+    "ts-node": "^10.9.2"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "eslint": "^9.39.1",
     "prettier": "^3.6.2",
     "rimraf": "^6.1.2",
-    "ts-node": "^10.9.2",
+    "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "vitest": "^4.0.10"
   },
-  "devDependencies": {
-    "tsup": "^8.5.1"
-  },
   "peerDependencies": {
-    "tsup": "^8.x"
+    "cross-env": "^10.x",
+    "eslint": "^9.x",
+    "prettier": "^3.x",
+    "rimraf": "^6.x",
+    "tsup": "^8.x",
+    "typescript": "^5.x",
+    "vitest": "^4.x"
   },
   "peerDependenciesMeta": {
     "tsup": {
