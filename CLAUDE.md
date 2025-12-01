@@ -50,6 +50,7 @@ Releases are automated via GitHub Actions. To publish a new version:
    - Create a GitHub Release with auto-generated notes
 
 **Workflows**:
+
 - `publish.yml` - Triggers on `v*` tags, publishes to npm
 - `auto-release.yml` - Auto-bumps patch version for dependency updates
 
