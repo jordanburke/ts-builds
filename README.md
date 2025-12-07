@@ -1,118 +1,139 @@
 # ts-builds
 
-[![Validate Configs Package](https://github.com/jordanburke/ts-builds/actions/workflows/node.js.yml/badge.svg)](https://github.com/jordanburke/ts-builds/actions/workflows/node.js.yml)
+[![npm version](https://img.shields.io/npm/v/ts-builds.svg)](https://www.npmjs.com/package/ts-builds)
+[![Validate](https://github.com/jordanburke/ts-builds/actions/workflows/node.js.yml/badge.svg)](https://github.com/jordanburke/ts-builds/actions/workflows/node.js.yml)
 
-Shared TypeScript configuration files for library templates. Provides standardized ESLint, Prettier, Vitest, TypeScript, and build configs.
+Shared TypeScript build tooling. Bundles ESLint, Prettier, Vitest, TypeScript and provides a CLI for running standardized commands across projects.
 
-## 📦 What's Included
+## Quick Start
 
-This package provides base configuration files for TypeScript library templates:
-
-### Locked Configs (Use As-Is)
-
-- **`.prettierrc`** - Code formatting rules
-- **`.prettierignore`** - Files to ignore from formatting
-
-### Extendable Configs (Can Be Customized)
-
-- **`eslint.config.base.mjs`** - Base ESLint rules + TypeScript support
-- **`vitest.config.base.ts`** - Vitest test framework configuration
-- **`tsconfig.base.json`** - TypeScript compiler base settings
-- **`tsdown.config.base.ts`** - Build configuration for tsdown
-- **`package-scripts.json`** - Standardized npm scripts reference
-
-## 🚀 Installation
+### New Project
 
 ```bash
-pnpm add -D ts-builds
+mkdir my-library && cd my-library
+pnpm init
 
-# Also install peer dependency:
-pnpm add -D tsdown
+# Install (bundles all tooling)
+pnpm add -D ts-builds tsdown
+
+# Initialize
+npx ts-builds init      # Creates .npmrc with hoist patterns
+npx ts-builds config    # Creates ts-builds.config.json
+
+# Create source files
+mkdir src test
+echo 'export const hello = () => "Hello!"' > src/index.ts
+
+# Validate
+npx ts-builds validate
 ```
 
-## 🛠️ CLI Commands
-
-### Initialize Project
+### Existing Project
 
 ```bash
-npx ts-builds
-# or
-npx ts-builds init
+pnpm add -D ts-builds tsdown
+
+npx ts-builds init      # Creates .npmrc
+npx ts-builds config    # Creates config file
+npx ts-builds cleanup   # Remove redundant dependencies
+
+npx ts-builds validate
 ```
 
-Creates `.npmrc` to configure pnpm to hoist CLI binaries from peer dependencies.
+## CLI Commands
 
-### Show Help
+### Setup Commands
 
 ```bash
-npx ts-builds help
+npx ts-builds init           # Create .npmrc with hoist patterns
+npx ts-builds config         # Create ts-builds.config.json
+npx ts-builds config --force # Overwrite existing config
+npx ts-builds info           # Show bundled packages
+npx ts-builds cleanup        # Remove redundant dependencies
+npx ts-builds help           # Show all commands
 ```
 
-### List Bundled Packages
+### Script Commands
 
 ```bash
-npx ts-builds info
+npx ts-builds validate       # Run full validation chain
+npx ts-builds format         # Format with Prettier
+npx ts-builds format:check   # Check formatting only
+npx ts-builds lint           # Lint with ESLint (--fix)
+npx ts-builds lint:check     # Check lint only
+npx ts-builds typecheck      # TypeScript type checking
+npx ts-builds test           # Run tests once
+npx ts-builds test:watch     # Watch mode
+npx ts-builds test:coverage  # With coverage
+npx ts-builds build          # Production build
+npx ts-builds dev            # Watch mode build
 ```
 
-Shows all 19 packages bundled with this config (eslint, prettier, typescript, vitest, etc.) that you **don't need to install separately**.
+## Package.json Scripts
 
-### Remove Redundant Dependencies
-
-```bash
-npx ts-builds cleanup
-# or auto-confirm with
-npx ts-builds cleanup --yes
-```
-
-Scans your `package.json` and removes any devDependencies that are already bundled with `ts-builds`.
-
-### Minimal Installation
-
-Since this package bundles all tooling, you only need:
+Add these to delegate all commands to ts-builds:
 
 ```json
 {
-  "devDependencies": {
-    "ts-builds": "^1.0.0",
-    "tsdown": "^0.12.0"
+  "scripts": {
+    "validate": "ts-builds validate",
+    "format": "ts-builds format",
+    "format:check": "ts-builds format:check",
+    "lint": "ts-builds lint",
+    "lint:check": "ts-builds lint:check",
+    "typecheck": "ts-builds typecheck",
+    "test": "ts-builds test",
+    "test:watch": "ts-builds test:watch",
+    "build": "ts-builds build",
+    "dev": "ts-builds dev",
+    "prepublishOnly": "pnpm validate"
   }
 }
 ```
 
-**For local development** (testing before publishing):
+## Configuration
 
-```bash
-# Build first, then test
-pnpm build
-node dist/cli.js help
+Create `ts-builds.config.json` to customize behavior:
 
-# Or link globally
-pnpm link --global
-ts-builds help
-```
-
-## 📖 Usage
-
-### Prettier (Locked - Use Exact Copy)
-
-Copy the Prettier config to your project root:
-
-```bash
-cp node_modules/ts-builds/.prettierrc .
-cp node_modules/ts-builds/.prettierignore .
-```
-
-Or reference it in your `package.json`:
+### Basic
 
 ```json
 {
-  "prettier": "ts-builds/prettier"
+  "srcDir": "./src",
+  "validateChain": ["format", "lint", "typecheck", "test", "build"]
 }
 ```
 
-### ESLint (Extendable)
+### Advanced (Monorepos, Custom Commands)
 
-**Basic usage (inherit all base rules):**
+```json
+{
+  "srcDir": "./src",
+  "commands": {
+    "compile": "tsc",
+    "docs:validate": "pnpm docs:build && pnpm docs:check",
+    "landing:validate": { "run": "pnpm validate", "cwd": "./landing" }
+  },
+  "chains": {
+    "validate": ["validate:core", "validate:landing"],
+    "validate:core": ["format", "lint", "compile", "test", "docs:validate", "build"],
+    "validate:landing": ["landing:validate"]
+  }
+}
+```
+
+Run named chains:
+
+```bash
+npx ts-builds validate:core
+npx ts-builds validate:landing
+```
+
+## Extendable Configs
+
+ts-builds exports base configurations you can extend:
+
+### ESLint
 
 ```javascript
 // eslint.config.mjs
@@ -121,28 +142,7 @@ import baseConfig from "ts-builds/eslint"
 export default [...baseConfig]
 ```
 
-**Extended usage (add variant-specific rules):**
-
-```javascript
-// eslint.config.mjs
-import baseConfig from "ts-builds/eslint"
-
-export default [
-  ...baseConfig,
-  {
-    // React-specific rules
-    files: ["**/*.tsx"],
-    rules: {
-      "react/jsx-uses-react": "error",
-      "react-hooks/rules-of-hooks": "error",
-    },
-  },
-]
-```
-
-### Vitest (Extendable)
-
-**Basic usage:**
+### Vitest
 
 ```typescript
 // vitest.config.ts
@@ -152,25 +152,7 @@ import baseConfig from "ts-builds/vitest"
 export default defineConfig(baseConfig)
 ```
 
-**Extended usage:**
-
-```typescript
-// vitest.config.ts
-import { defineConfig } from "vitest/config"
-import baseConfig from "ts-builds/vitest"
-
-export default defineConfig({
-  ...baseConfig,
-  test: {
-    ...baseConfig.test,
-    setupFiles: ["./test/setup.ts"], // Add custom setup
-  },
-})
-```
-
-### TypeScript (Extendable)
-
-**Basic usage:**
+### TypeScript
 
 ```json
 {
@@ -181,22 +163,7 @@ export default defineConfig({
 }
 ```
 
-**Extended usage:**
-
-```json
-{
-  "extends": "ts-builds/tsconfig",
-  "compilerOptions": {
-    "outDir": "./dist",
-    "jsx": "react-jsx",
-    "lib": ["ES2020", "DOM"]
-  }
-}
-```
-
-### Tsdown (Extendable)
-
-**Basic usage:**
+### tsdown
 
 ```typescript
 // tsdown.config.ts
@@ -205,106 +172,25 @@ import baseConfig from "ts-builds/tsdown"
 export default baseConfig
 ```
 
-**Extended usage (customize entry points):**
-
-```typescript
-// tsdown.config.ts
-import baseConfig from "ts-builds/tsdown"
-import type { UserConfig } from "tsdown"
-
-export default {
-  ...baseConfig,
-  entry: ["src/index.ts", "src/cli.ts"], // Multiple entry points
-} satisfies UserConfig
-```
-
-### Package Scripts (Reference Only)
-
-The `package-scripts.json` file contains standardized npm scripts. Copy the relevant scripts to your `package.json`:
+### Prettier
 
 ```json
 {
-  "scripts": {
-    "validate": "pnpm format && pnpm lint && pnpm test && pnpm build",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "lint": "eslint ./src --fix",
-    "lint:check": "eslint ./src",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "test:ui": "vitest --ui",
-    "build": "rimraf dist && cross-env NODE_ENV=production tsdown",
-    "build:watch": "tsdown --watch",
-    "dev": "tsdown --watch",
-    "prepublishOnly": "pnpm validate",
-    "ts-types": "tsc"
-  }
+  "prettier": "ts-builds/prettier"
 }
 ```
 
-## 🔄 Update Workflow
+## Bundled Packages
 
-When configs are updated in this package, update your template:
+Run `npx ts-builds info` to see all bundled packages. You don't need to install:
 
-```bash
-# Update to latest version
-pnpm update ts-builds
+- eslint, prettier, typescript, vitest
+- @typescript-eslint/eslint-plugin, @typescript-eslint/parser
+- eslint-config-prettier, eslint-plugin-prettier, eslint-plugin-import
+- @vitest/coverage-v8, @vitest/ui
+- cross-env, rimraf, ts-node
+- And more...
 
-# Re-copy locked files (Prettier)
-cp node_modules/ts-builds/.prettierrc .
-cp node_modules/ts-builds/.prettierignore .
+## License
 
-# Test that everything still works
-pnpm validate
-```
-
-## 🎯 Design Philosophy
-
-### Locked vs Extendable
-
-**Locked files** ensure consistency across all templates:
-
-- **Prettier** - Code formatting should be identical everywhere
-- Prevents formatting debates and merge conflicts
-
-**Extendable files** allow variant-specific customization:
-
-- **ESLint** - Different variants need different rules (React, Node.js, etc.)
-- **Vitest** - Some variants need custom test setup
-- **TypeScript** - Browser vs Node targets, JSX support, etc.
-- **Build configs** - Different entry points, output formats
-
-### Semantic Versioning
-
-This package follows semver:
-
-- **Patch** (1.0.x) - Bug fixes in configs
-- **Minor** (1.x.0) - New configs added, backward compatible
-- **Major** (x.0.0) - Breaking changes to existing configs
-
-## 📚 Available Template Variants
-
-Templates using these configs:
-
-- **[typescript-library-template](https://github.com/jordanburke/typescript-library-template)** - Base template (tsdown)
-- **typescript-library-template-vite** - Vite-based variant (coming soon)
-- **typescript-library-template-react** - React library variant (coming soon)
-
-## 🤝 Contributing
-
-Found a bug or want to improve the configs?
-
-1. Fork this repository
-2. Make your changes
-3. Test in a template project
-4. Submit a PR with explanation
-
-## 📄 License
-
-MIT © Jordan Burke
-
-## 🔗 Related
-
-- [STANDARDIZATION_GUIDE.md](./STANDARDIZATION_GUIDE.md) - How to apply this pattern
-- [package-scripts.json](./package-scripts.json) - Script reference documentation
+MIT
