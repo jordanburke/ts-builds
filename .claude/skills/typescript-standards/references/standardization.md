@@ -1,10 +1,51 @@
 # Project Standardization Guide
 
-Complete guide for applying typescript-library-template standards to existing TypeScript projects.
+Complete guide for applying ts-builds standards to existing TypeScript projects.
 
 ## Overview
 
-This guide helps you migrate existing TypeScript projects to use the standardized tooling, build configuration, and workflow from typescript-library-template.
+This guide helps you migrate existing TypeScript projects to use the standardized tooling, build configuration, and workflow from **ts-builds**.
+
+## Quick Migration (Recommended)
+
+The fastest way to standardize a project is using the ts-builds CLI:
+
+```bash
+# Install ts-builds (bundles all tooling)
+pnpm add -D ts-builds tsdown
+
+# Initialize (creates .npmrc with hoist patterns)
+npx ts-builds init
+
+# Remove redundant dependencies
+npx ts-builds cleanup
+
+# Update package.json scripts (see below)
+
+# Validate everything works
+npx ts-builds validate
+```
+
+**Update package.json scripts:**
+
+```json
+{
+  "scripts": {
+    "validate": "ts-builds validate",
+    "format": "ts-builds format",
+    "lint": "ts-builds lint",
+    "typecheck": "ts-builds typecheck",
+    "test": "ts-builds test",
+    "build": "ts-builds build",
+    "dev": "ts-builds dev",
+    "prepublishOnly": "pnpm validate"
+  }
+}
+```
+
+## Manual Migration (Alternative)
+
+If you prefer more control, follow the detailed steps below.
 
 ## Pre-Migration Assessment
 
@@ -712,7 +753,7 @@ After successful migration:
 
 ## Resources
 
-- **Template Repository**: https://github.com/jordanburke/typescript-library-template
+- **ts-builds Package**: https://github.com/jordanburke/ts-builds
 - **tsdown Documentation**: https://tsdown.egoist.dev/
 - **Vitest Migration**: https://vitest.dev/guide/migration.html
 - **ESLint Flat Config**: https://eslint.org/docs/latest/use/configure/configuration-files

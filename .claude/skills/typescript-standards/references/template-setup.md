@@ -1,13 +1,13 @@
 # Template Setup Guide
 
-Complete guide for creating a new TypeScript library using the typescript-library-template.
+Complete guide for creating a new TypeScript library using ts-builds.
 
 ## Prerequisites
 
 Before starting, ensure you have:
 
 - **Node.js**: ≥ 18.0.0
-- **pnpm**: Latest version (template uses 10.18.3+)
+- **pnpm**: Latest version (10.x+)
 - **Git**: For version control
 - **npm account**: For publishing (optional)
 
@@ -21,33 +21,49 @@ git --version
 
 ## Initial Setup
 
-### Step 1: Clone the Template
+### Step 1: Create Project and Install ts-builds
 
 ```bash
-# Clone the repository
-git clone https://github.com/jordanburke/typescript-library-template.git my-library-name
-
-# Navigate to the directory
+# Create and initialize project
+mkdir my-library-name
 cd my-library-name
+pnpm init
 
-# Remove the template's git history
-rm -rf .git
+# Install ts-builds (bundles all tooling)
+pnpm add -D ts-builds tsdown
 
-# Initialize your own repository
-git init
+# Initialize (creates .npmrc with hoist patterns)
+npx ts-builds init
+
+# Create source directory
+mkdir src
+echo 'export const hello = () => "Hello, world!"' > src/index.ts
 ```
 
-### Step 2: Install Dependencies
+### Step 2: Set Up Scripts and Validate
+
+Add scripts to package.json:
+
+```json
+{
+  "scripts": {
+    "validate": "ts-builds validate",
+    "format": "ts-builds format",
+    "lint": "ts-builds lint",
+    "test": "ts-builds test",
+    "build": "ts-builds build",
+    "dev": "ts-builds dev",
+    "prepublishOnly": "pnpm validate"
+  }
+}
+```
 
 ```bash
-# Install all dependencies
-pnpm install
-
 # Verify installation
-pnpm validate
+npx ts-builds validate
 ```
 
-If `pnpm validate` succeeds, you have a working setup!
+If validation succeeds, you have a working setup!
 
 ## Customization Checklist
 
@@ -546,7 +562,7 @@ Common issues:
 
 ## Resources
 
-- **Template Repository**: https://github.com/jordanburke/typescript-library-template
+- **ts-builds Package**: https://github.com/jordanburke/ts-builds
 - **npm Documentation**: https://docs.npmjs.com/
 - **tsdown Documentation**: https://tsdown.dev/
 - **Vitest Documentation**: https://vitest.dev/

@@ -1,6 +1,51 @@
 # Tooling Reference
 
-Comprehensive reference for all tooling configurations used in the typescript-library-template.
+Comprehensive reference for all tooling configurations used in ts-builds.
+
+## ts-builds CLI
+
+ts-builds provides a CLI that runs standardized commands across all projects.
+
+### Setup Commands
+
+```bash
+npx ts-builds init      # Initialize .npmrc with hoist patterns
+npx ts-builds info      # Show bundled packages
+npx ts-builds cleanup   # Remove redundant dependencies
+npx ts-builds help      # Show all commands
+```
+
+### Script Commands
+
+```bash
+npx ts-builds validate      # Run full validation chain
+npx ts-builds format        # Format with Prettier (--write)
+npx ts-builds format:check  # Check formatting only
+npx ts-builds lint          # Lint with ESLint (--fix)
+npx ts-builds lint:check    # Check lint only
+npx ts-builds typecheck     # TypeScript type checking
+npx ts-builds test          # Run tests once
+npx ts-builds test:watch    # Watch mode
+npx ts-builds test:coverage # With coverage
+npx ts-builds build         # Production build
+npx ts-builds dev           # Watch mode build
+```
+
+### Configuration (ts-builds.config.json)
+
+```json
+{
+  "srcDir": "./src",
+  "validateChain": ["format", "lint", "typecheck", "test", "build"],
+  "commands": {
+    "custom-cmd": "echo 'custom'",
+    "subdir-cmd": { "run": "pnpm validate", "cwd": "./subproject" }
+  },
+  "chains": {
+    "validate:fast": ["format", "lint", "typecheck"]
+  }
+}
+```
 
 ## tsdown Configuration
 

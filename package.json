@@ -1,6 +1,6 @@
 {
   "name": "ts-builds",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Shared TypeScript configuration files for library templates. Provides standardized ESLint, Prettier, Vitest, TypeScript, and build configs.",
   "keywords": [
     "typescript",
@@ -79,13 +79,19 @@
     }
   },
   "scripts": {
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "build": "rimraf dist && tsdown",
-    "test": "vitest run",
+    "bootstrap": "rimraf dist && tsdown",
+    "validate": "node dist/cli.js validate",
+    "validate:bootstrap": "pnpm bootstrap && pnpm validate",
+    "format": "node dist/cli.js format",
+    "format:check": "node dist/cli.js format:check",
+    "lint": "node dist/cli.js lint",
+    "lint:check": "node dist/cli.js lint:check",
+    "typecheck": "node dist/cli.js typecheck",
+    "test": "node dist/cli.js test",
     "test:watch": "vitest",
-    "validate": "pnpm format && pnpm build && pnpm test",
-    "prepublishOnly": "pnpm validate"
+    "build": "node dist/cli.js build",
+    "dev": "node dist/cli.js dev",
+    "prepublishOnly": "pnpm validate:bootstrap"
   },
   "packageManager": "pnpm@10.24.0+sha512.01ff8ae71b4419903b65c60fb2dc9d34cf8bb6e06d03bde112ef38f7a34d6904c424ba66bea5cdcf12890230bf39f9580473140ed9c946fef328b6e5238a345a"
 }

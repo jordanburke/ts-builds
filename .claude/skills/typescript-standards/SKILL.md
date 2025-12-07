@@ -1,13 +1,15 @@
 ---
 name: typescript-standards
-description: Guide for creating TypeScript libraries using the typescript-library-template pattern and applying its standards to existing projects. Use when setting up new npm packages, standardizing build scripts, configuring tooling (tsdown, Vitest, ESLint, Prettier), or applying dual module format patterns.
+description: Guide for creating TypeScript libraries using the ts-builds pattern and applying its standards to existing projects. Use when setting up new npm packages, standardizing build scripts, configuring tooling (tsdown, Vitest, ESLint, Prettier), or applying dual module format patterns.
 ---
 
 # TypeScript Project Standards
 
 ## Overview
 
-This skill helps you create professional TypeScript libraries using the typescript-library-template pattern and apply these standards to existing projects. It provides a modern, production-ready setup with dual module format support, comprehensive testing, and consistent code quality tooling.
+This skill helps you create professional TypeScript libraries using the **ts-builds** package and apply these standards to existing projects. It provides a modern, production-ready setup with dual module format support, comprehensive testing, and consistent code quality tooling.
+
+**ts-builds** bundles all tooling (ESLint, Prettier, Vitest, TypeScript) and provides a CLI for running standardized commands across projects.
 
 ## When to Use This Skill
 
@@ -26,69 +28,124 @@ Trigger this skill when:
 ### Scenario 1: Creating a New Project
 
 ```bash
-# Clone the template
-git clone https://github.com/jordanburke/typescript-library-template.git my-library
-cd my-library
+# Create new project
+mkdir my-library && cd my-library
+pnpm init
 
-# Remove template's git history
-rm -rf .git
-git init
+# Install ts-builds (bundles all tooling)
+pnpm add -D ts-builds tsdown
 
-# Install dependencies
-pnpm install
+# Initialize (creates .npmrc with hoist patterns)
+npx ts-builds init
 
-# Customize (see references/template-setup.md for checklist)
-# - Update package.json (name, description, repository)
-# - Update README.md
-# - Add your code to src/
+# Set up package.json scripts (see below)
+# Add your code to src/
 
 # Validate everything works
-pnpm validate
+npx ts-builds validate
 ```
 
 ### Scenario 2: Applying Standards to Existing Project
 
 See `references/standardization.md` for detailed migration guide. Quick version:
 
-1. **Update scripts** in package.json to standardized pattern
-2. **Install tooling**: tsdown, vitest, eslint, prettier
-3. **Copy configs**: tsdown.config.ts, vitest.config.ts, eslint.config.mjs
-4. **Update build outputs**: Dual module format with proper exports
-5. **Run validation**: `pnpm validate`
+1. **Install ts-builds**: `pnpm add -D ts-builds tsdown`
+2. **Run init**: `npx ts-builds init`
+3. **Update scripts** in package.json to use ts-builds CLI
+4. **Create config** (optional): `ts-builds.config.json` for customization
+5. **Run validation**: `npx ts-builds validate`
 
 ## Core Standards
 
 ### Script Commands
 
-The template follows a consistent command pattern:
+ts-builds provides a CLI that runs standardized commands. Use either directly or via package.json scripts.
 
-**Main validation command:**
+**Direct CLI usage:**
 
 ```bash
-pnpm validate    # Format → Lint → Test → Build (use before commits)
+npx ts-builds validate      # Format → Lint → Typecheck → Test → Build
+npx ts-builds format        # Format with Prettier (--write)
+npx ts-builds format:check  # Check formatting only
+npx ts-builds lint          # Lint with ESLint (--fix)
+npx ts-builds lint:check    # Check lint only
+npx ts-builds typecheck     # TypeScript type checking (tsc --noEmit)
+npx ts-builds test          # Run tests once
+npx ts-builds test:watch    # Watch mode
+npx ts-builds test:coverage # With coverage report
+npx ts-builds test:ui       # Interactive UI
+npx ts-builds build         # Production build (dist/)
+npx ts-builds build:watch   # Watch mode build
+npx ts-builds dev           # Alias for build:watch
 ```
 
-**Individual operations:**
+**Recommended package.json scripts:**
+
+```json
+{
+  "scripts": {
+    "validate": "ts-builds validate",
+    "format": "ts-builds format",
+    "format:check": "ts-builds format:check",
+    "lint": "ts-builds lint",
+    "lint:check": "ts-builds lint:check",
+    "typecheck": "ts-builds typecheck",
+    "test": "ts-builds test",
+    "test:watch": "ts-builds test:watch",
+    "build": "ts-builds build",
+    "dev": "ts-builds dev",
+    "prepublishOnly": "pnpm validate"
+  }
+}
+```
+
+This delegates all commands to ts-builds, ensuring consistency across projects.
+
+### Configuration (ts-builds.config.json)
+
+Create `ts-builds.config.json` in your project root to customize behavior:
+
+**Basic configuration:**
+
+```json
+{
+  "srcDir": "./src",
+  "validateChain": ["format", "lint", "typecheck", "test", "build"]
+}
+```
+
+**Advanced configuration (monorepos, custom commands):**
+
+```json
+{
+  "srcDir": "./src",
+  "commands": {
+    "compile": "tsc",
+    "docs:validate": "pnpm docs:build && pnpm docs:check",
+    "landing:validate": { "run": "pnpm validate", "cwd": "./landing" }
+  },
+  "chains": {
+    "validate": ["validate:core", "validate:landing"],
+    "validate:core": ["format", "lint", "compile", "test", "docs:validate", "build"],
+    "validate:landing": ["landing:validate"]
+  }
+}
+```
+
+**Configuration options:**
+
+- `srcDir` - Source directory for linting (default: `./src`)
+- `testDir` - Test directory (default: `./test`)
+- `validateChain` - Default validate sequence (backward compat)
+- `commands` - Custom commands (string or `{ run, cwd }`)
+- `chains` - Named command chains (can reference other chains)
+
+**Named chains usage:**
 
 ```bash
-# Formatting
-pnpm format           # Write formatted code
-pnpm format:check     # Validate formatting only
-
-# Linting
-pnpm lint             # Fix ESLint issues
-pnpm lint:check       # Check ESLint issues only
-
-# Testing
-pnpm test             # Run tests once
-pnpm test:watch       # Watch mode
-pnpm test:coverage    # With coverage report
-pnpm test:ui          # Interactive UI
-
-# Building
-pnpm build            # Production build (dist/)
-pnpm dev              # Development watch (lib/)
-pnpm ts-types         # Type check only
+npx ts-builds validate       # Run default chain
+npx ts-builds validate:core  # Run named chain
+npx ts-builds validate:landing  # Run another chain
 ```
 
 ### Dual Module Format
@@ -301,18 +358,20 @@ project/
 
 When applying these standards to an existing project:
 
-- [ ] Update package.json scripts to standardized pattern
-- [ ] Install required devDependencies (tsdown, vitest, eslint, prettier)
-- [ ] Copy tsdown.config.ts and adjust for your project
-- [ ] Copy vitest.config.ts and adjust test patterns
-- [ ] Copy eslint.config.mjs and adjust rules if needed
-- [ ] Add/update .prettierrc with standard config
+- [ ] Install ts-builds: `pnpm add -D ts-builds tsdown`
+- [ ] Run init: `npx ts-builds init`
+- [ ] Update package.json scripts to use ts-builds CLI
+- [ ] (Optional) Create ts-builds.config.json for customization
+- [ ] Run cleanup: `npx ts-builds cleanup` to remove redundant deps
+- [ ] Copy/extend tsdown.config.ts for your project
+- [ ] Copy/extend vitest.config.ts for test patterns
+- [ ] Copy/extend eslint.config.mjs (or use ts-builds base)
 - [ ] Update tsconfig.json for strict mode
 - [ ] Update package.json exports for dual module format
 - [ ] Migrate tests to Vitest (if using different framework)
 - [ ] Update GitHub Actions to use `pnpm validate`
 - [ ] Update documentation (README, CLAUDE.md)
-- [ ] Test with `pnpm validate`
+- [ ] Test with `npx ts-builds validate`
 - [ ] Verify published package works in both CJS and ESM projects
 
 ## Resources
@@ -325,20 +384,20 @@ When applying these standards to an existing project:
 
 ### External Links
 
-- **GitHub Template**: https://github.com/jordanburke/typescript-library-template
+- **ts-builds Package**: https://github.com/jordanburke/ts-builds
 - **tsdown Documentation**: https://tsdown.egoist.dev/
 - **Vitest Documentation**: https://vitest.dev/
 - **ESLint Flat Config**: https://eslint.org/docs/latest/use/configure/configuration-files
 
 ### Key Files to Reference
 
-When working with this template, these files contain the canonical configurations:
+When working with ts-builds, these files contain the canonical configurations:
 
+- `ts-builds.config.json` - Project-specific configuration
 - `tsdown.config.ts` - Build configuration with environment logic
 - `vitest.config.ts` - Test configuration with coverage
 - `eslint.config.mjs` - Linting rules and TypeScript integration
 - `package.json` - Scripts, exports, and dependency versions
-- `STANDARDIZATION_GUIDE.md` - Migration instructions
 
 ## Best Practices
 

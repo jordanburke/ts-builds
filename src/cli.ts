@@ -1,8 +1,140 @@
+import { spawn } from "node:child_process"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { createInterface } from "node:readline"
 
 const targetDir = process.cwd()
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+interface CommandDef {
+  run: string
+  cwd?: string
+}
+
+interface TsBuildsConfig {
+  srcDir?: string
+  testDir?: string
+  // Custom commands beyond built-ins
+  commands?: Record<string, string | CommandDef>
+  // Named chains - can reference built-ins, custom commands, or other chains
+  chains?: Record<string, string[]>
+  // Default validate chain (backward compat)
+  validateChain?: string[]
+}
+
+interface ResolvedConfig {
+  srcDir: string
+  testDir: string
+  commands: Record<string, CommandDef>
+  chains: Record<string, string[]>
+}
+
+const defaultChains: Record<string, string[]> = {
+  validate: ["format", "lint", "typecheck", "test", "build"],
+}
+
+function loadConfig(): ResolvedConfig {
+  const configPath = join(targetDir, "ts-builds.config.json")
+  let userConfig: TsBuildsConfig = {}
+
+  if (existsSync(configPath)) {
+    try {
+      userConfig = JSON.parse(readFileSync(configPath, "utf-8"))
+    } catch {
+      console.error("Warning: Failed to parse ts-builds.config.json, using defaults")
+    }
+  }
+
+  // Normalize commands to CommandDef format
+  const commands: Record<string, CommandDef> = {}
+  if (userConfig.commands) {
+    for (const [name, cmd] of Object.entries(userConfig.commands)) {
+      commands[name] = typeof cmd === "string" ? { run: cmd } : cmd
+    }
+  }
+
+  // Merge chains, with validateChain for backward compat
+  const chains: Record<string, string[]> = { ...defaultChains }
+  if (userConfig.validateChain) {
+    chains.validate = userConfig.validateChain
+  }
+  if (userConfig.chains) {
+    Object.assign(chains, userConfig.chains)
+  }
+
+  return {
+    srcDir: userConfig.srcDir ?? "./src",
+    testDir: userConfig.testDir ?? "./test",
+    commands,
+    chains,
+  }
+}
+
+// ============================================================================
+// Command Runner
+// ============================================================================
+
+interface RunOptions {
+  cwd?: string
+}
+
+function runCommand(command: string, args: string[], options: RunOptions = {}): Promise<number> {
+  const cwd = options.cwd ? join(targetDir, options.cwd) : targetDir
+
+  return new Promise((resolve) => {
+    const child = spawn(command, args, {
+      cwd,
+      stdio: "inherit",
+      shell: true,
+    })
+
+    child.on("close", (code) => {
+      resolve(code ?? 1)
+    })
+
+    child.on("error", (err) => {
+      console.error(`Failed to run ${command}: ${err.message}`)
+      resolve(1)
+    })
+  })
+}
+
+function runShellCommand(shellCmd: string, options: RunOptions = {}): Promise<number> {
+  const cwd = options.cwd ? join(targetDir, options.cwd) : targetDir
+
+  return new Promise((resolve) => {
+    const child = spawn(shellCmd, {
+      cwd,
+      stdio: "inherit",
+      shell: true,
+    })
+
+    child.on("close", (code) => {
+      resolve(code ?? 1)
+    })
+
+    child.on("error", (err) => {
+      console.error(`Failed to run: ${err.message}`)
+      resolve(1)
+    })
+  })
+}
+
+async function runSequence(commands: Array<{ name: string; cmd: string; args: string[] }>): Promise<number> {
+  for (const { name, cmd, args } of commands) {
+    console.log(`\n▶ Running ${name}...`)
+    const code = await runCommand(cmd, args)
+    if (code !== 0) {
+      console.error(`\n✗ ${name} failed with exit code ${code}`)
+      return code
+    }
+    console.log(`✓ ${name} complete`)
+  }
+  return 0
+}
 
 // Packages bundled with ts-builds (users don't need these)
 const bundledPackages = [
@@ -75,31 +207,71 @@ function ensureNpmrcHoistPatterns(): void {
 
 function showHelp(): void {
   console.log(`
-ts-builds - Shared TypeScript configuration files
+ts-builds - Shared TypeScript build tooling
 
 USAGE:
   npx ts-builds [command]
 
-COMMANDS:
+SETUP COMMANDS:
   init      Initialize project with config files (default)
   info      Show bundled packages you don't need to install
   cleanup   Remove redundant dependencies from package.json
   help      Show this help message
 
+SCRIPT COMMANDS:
+  validate      Run full validation chain (configurable)
+  format        Format code with Prettier (--write)
+  format:check  Check formatting without writing
+  lint          Lint and fix with ESLint
+  lint:check    Check lint without fixing
+  typecheck     Run TypeScript type checking (tsc --noEmit)
+  test          Run tests once (vitest run)
+  test:watch    Run tests in watch mode
+  test:coverage Run tests with coverage
+  test:ui       Launch Vitest UI
+  build         Production build (rimraf dist && tsdown)
+  build:watch   Watch mode build
+  dev           Alias for build:watch
+
+CONFIGURATION:
+  Create ts-builds.config.json in your project root:
+
+  Basic:
+  {
+    "srcDir": "./src",
+    "validateChain": ["format", "lint", "typecheck", "test", "build"]
+  }
+
+  Advanced (monorepo with custom commands):
+  {
+    "srcDir": "./src",
+    "commands": {
+      "docs:validate": "pnpm docs:build && pnpm docs:check",
+      "landing:validate": { "run": "pnpm validate", "cwd": "./landing" }
+    },
+    "chains": {
+      "validate": ["validate:core", "validate:landing"],
+      "validate:core": ["format", "lint", "compile", "test", "docs:validate", "build"],
+      "validate:landing": ["landing:validate"]
+    }
+  }
+
+USAGE IN PACKAGE.JSON:
+  {
+    "scripts": {
+      "validate": "ts-builds validate",
+      "validate:core": "ts-builds validate:core",
+      "format": "ts-builds format",
+      "lint": "ts-builds lint",
+      "test": "ts-builds test",
+      "build": "ts-builds build"
+    }
+  }
+
 EXAMPLES:
-  npx ts-builds          # Initialize project
-  npx ts-builds info     # List bundled packages
-  npx ts-builds cleanup  # Remove redundant deps
-
-DESCRIPTION:
-  This package bundles all ESLint, Prettier, Vitest, and TypeScript
-  tooling as dependencies. You only need to install:
-
-  - ts-builds (this package)
-  - tsdown (peer dependency for building)
-
-  Run 'npx ts-builds info' to see the full list
-  of bundled packages.
+  npx ts-builds validate       # Run default validation chain
+  npx ts-builds validate:core  # Run named chain
+  npx ts-builds lint           # Run single command
 `)
 }
 
@@ -211,8 +383,127 @@ function init(): void {
   console.log("  - Run 'npx ts-builds cleanup' to remove redundant deps")
 }
 
+// ============================================================================
+// Script Commands
+// ============================================================================
+
+async function runFormat(check = false): Promise<number> {
+  const args = check ? ["--check", "."] : ["--write", "."]
+  return runCommand("prettier", args)
+}
+
+async function runLint(check = false): Promise<number> {
+  const config = loadConfig()
+  const args = check ? [config.srcDir] : ["--fix", config.srcDir]
+  return runCommand("eslint", args)
+}
+
+async function runTypecheck(): Promise<number> {
+  return runCommand("tsc", ["--noEmit"])
+}
+
+async function runTest(mode: "run" | "watch" | "coverage" | "ui" = "run"): Promise<number> {
+  switch (mode) {
+    case "watch":
+      return runCommand("vitest", [])
+    case "coverage":
+      return runCommand("vitest", ["run", "--coverage"])
+    case "ui":
+      return runCommand("vitest", ["--ui"])
+    default:
+      return runCommand("vitest", ["run"])
+  }
+}
+
+async function runBuild(watch = false): Promise<number> {
+  if (watch) {
+    return runCommand("tsdown", ["--watch"])
+  }
+  const cleanCode = await runCommand("rimraf", ["dist"])
+  if (cleanCode !== 0) return cleanCode
+  return runCommand("cross-env", ["NODE_ENV=production", "tsdown"])
+}
+
+// Built-in command definitions
+function getBuiltinCommands(config: ResolvedConfig): Record<string, CommandDef> {
+  return {
+    format: { run: "prettier --write ." },
+    "format:check": { run: "prettier --check ." },
+    lint: { run: `eslint --fix ${config.srcDir}` },
+    "lint:check": { run: `eslint ${config.srcDir}` },
+    typecheck: { run: "tsc --noEmit" },
+    "ts-types": { run: "tsc --noEmit" },
+    test: { run: "vitest run" },
+    "test:watch": { run: "vitest" },
+    "test:coverage": { run: "vitest run --coverage" },
+    "test:ui": { run: "vitest --ui" },
+    build: { run: "rimraf dist && cross-env NODE_ENV=production tsdown" },
+    "build:watch": { run: "tsdown --watch" },
+    dev: { run: "tsdown --watch" },
+    compile: { run: "tsc" },
+  }
+}
+
+async function runChain(chainName: string, config: ResolvedConfig, visited = new Set<string>()): Promise<number> {
+  // Prevent infinite recursion
+  if (visited.has(chainName)) {
+    console.error(`Circular chain reference detected: ${chainName}`)
+    return 1
+  }
+  visited.add(chainName)
+
+  const chain = config.chains[chainName]
+  if (!chain) {
+    console.error(`Unknown chain: ${chainName}`)
+    return 1
+  }
+
+  const builtins = getBuiltinCommands(config)
+
+  console.log(`\n📋 Running chain: ${chainName} [${chain.join(" → ")}]`)
+
+  for (const step of chain) {
+    // Check if step is another chain
+    if (config.chains[step]) {
+      const code = await runChain(step, config, visited)
+      if (code !== 0) return code
+      continue
+    }
+
+    // Check custom commands first, then builtins
+    const cmdDef = config.commands[step] ?? builtins[step]
+    if (!cmdDef) {
+      console.error(`Unknown command or chain: ${step}`)
+      return 1
+    }
+
+    const cwdLabel = cmdDef.cwd ? ` (in ${cmdDef.cwd})` : ""
+    console.log(`\n▶ Running ${step}...${cwdLabel}`)
+
+    const code = await runShellCommand(cmdDef.run, { cwd: cmdDef.cwd })
+    if (code !== 0) {
+      console.error(`\n✗ ${step} failed with exit code ${code}`)
+      return code
+    }
+    console.log(`✓ ${step} complete`)
+  }
+
+  return 0
+}
+
+async function runValidate(chainName = "validate"): Promise<number> {
+  const config = loadConfig()
+  return runChain(chainName, config)
+}
+
+// ============================================================================
+// Main
+// ============================================================================
+
 // Parse command
 const command = process.argv[2] || "init"
+
+const subCommand = process.argv[3]
 
 switch (command) {
   case "help":
@@ -228,8 +519,66 @@ switch (command) {
   case "--cleanup":
     await cleanup()
     break
+
+  // Script commands
+  case "format":
+    process.exit(await runFormat(subCommand === "check"))
+    break
+  case "format:check":
+    process.exit(await runFormat(true))
+    break
+  case "lint":
+    process.exit(await runLint(subCommand === "check"))
+    break
+  case "lint:check":
+    process.exit(await runLint(true))
+    break
+  case "typecheck":
+  case "ts-types":
+    process.exit(await runTypecheck())
+    break
+  case "test":
+    process.exit(await runTest(subCommand as "run" | "watch" | "coverage" | "ui" | undefined))
+    break
+  case "test:watch":
+    process.exit(await runTest("watch"))
+    break
+  case "test:coverage":
+    process.exit(await runTest("coverage"))
+    break
+  case "test:ui":
+    process.exit(await runTest("ui"))
+    break
+  case "build":
+    process.exit(await runBuild(subCommand === "watch"))
+    break
+  case "build:watch":
+  case "dev":
+    process.exit(await runBuild(true))
+    break
+  case "validate":
+    process.exit(await runValidate())
+    break
+
   case "init":
-  default:
     init()
     break
+
+  default: {
+    // Check if it's a named chain (e.g., validate:core, validate:landing)
+    const config = loadConfig()
+    if (config.chains[command]) {
+      process.exit(await runValidate(command))
+    } else if (config.commands[command]) {
+      // Run a custom command directly
+      const cmdDef = config.commands[command]
+      const code = await runShellCommand(cmdDef.run, { cwd: cmdDef.cwd })
+      process.exit(code)
+    } else {
+      console.error(`Unknown command: ${command}`)
+      console.log("Run 'ts-builds help' for usage information.")
+      process.exit(1)
+    }
+    break
+  }
 }
