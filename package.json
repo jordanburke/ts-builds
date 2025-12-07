@@ -1,6 +1,6 @@
 {
   "name": "ts-builds",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Shared TypeScript configuration files for library templates. Provides standardized ESLint, Prettier, Vitest, TypeScript, and build configs.",
   "keywords": [
     "typescript",
@@ -18,11 +18,11 @@
   "homepage": "https://github.com/jordanburke/ts-builds",
   "repository": {
     "type": "git",
-    "url": "https://github.com/jordanburke/ts-builds"
+    "url": "git+https://github.com/jordanburke/ts-builds.git"
   },
   "main": "./prettier-config.js",
   "bin": {
-    "ts-builds": "./dist/cli.js"
+    "ts-builds": "dist/cli.js"
   },
   "exports": {
     ".": "./prettier-config.js",
