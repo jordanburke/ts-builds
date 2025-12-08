@@ -68,7 +68,7 @@
     "vitest": "^4.0.15"
   },
   "devDependencies": {
-    "tsdown": "^0.16.8"
+    "tsdown": "^0.17.2"
   },
   "peerDependencies": {
     "tsdown": "^0.x"
