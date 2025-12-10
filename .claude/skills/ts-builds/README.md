@@ -1,12 +1,12 @@
-# TypeScript Standards Skill
+# ts-builds Skill
 
-Claude Code skill for creating and standardizing TypeScript library projects.
+Claude Code skill for creating and standardizing TypeScript library projects using ts-builds.
 
 ## Overview
 
 This skill provides comprehensive guidance for:
 
-- Creating new TypeScript libraries from the typescript-library-template
+- Creating new TypeScript libraries using ts-builds
 - Applying standardized tooling and scripts to existing projects
 - Configuring modern build tools (tsdown, Vitest, ESLint, Prettier)
 - Setting up dual module format (CommonJS + ES modules)
@@ -14,7 +14,7 @@ This skill provides comprehensive guidance for:
 ## Skill Contents
 
 ```
-typescript-standards/
+ts-builds/
 ├── SKILL.md                        # Main skill guide (loaded by Claude Code)
 └── references/
     ├── template-setup.md           # Complete guide for new projects
@@ -39,10 +39,10 @@ The skill automatically activates when:
 
 ```bash
 # Copy to Claude Code skills directory
-cp -r .claude/skills/typescript-standards ~/.claude/skills/
+cp -r .claude/skills/ts-builds ~/.claude/skills/
 
 # Verify installation
-ls ~/.claude/skills/typescript-standards
+ls ~/.claude/skills/ts-builds
 ```
 
 ### For Marketplace Distribution
@@ -55,7 +55,7 @@ This skill is configured for marketplace distribution via `.claude-plugin/market
 
 Complete walkthrough for creating new libraries:
 
-- Clone and customize the template
+- Install ts-builds and initialize project
 - Project configuration checklist
 - Development workflow
 - Publishing to npm
@@ -65,7 +65,7 @@ See: `references/template-setup.md`
 
 ### 2. Standardization Guide
 
-Migrate existing projects to template standards:
+Migrate existing projects to ts-builds standards:
 
 - Step-by-step migration process
 - Tool-by-tool configuration updates
@@ -122,23 +122,23 @@ pnpm dev             # Development watch
 ```typescript
 // User: "Create a new TypeScript library for date utilities"
 // Claude Code (using this skill):
-// 1. Guides through cloning template
-// 2. Provides customization checklist
-// 3. Explains development workflow
-// 4. Assists with implementation
-// 5. Validates before publish
+// 1. Guides through installing ts-builds
+// 2. Runs init and config commands
+// 3. Sets up package.json scripts
+// 4. Provides customization checklist
+// 5. Explains development workflow
 ```
 
 ### Standardizing Existing Project
 
 ```typescript
-// User: "Apply typescript-library-template standards to this project"
+// User: "Apply ts-builds standards to this project"
 // Claude Code (using this skill):
 // 1. Analyzes current setup
 // 2. Proposes migration plan
-// 3. Updates dependencies
-// 4. Copies configurations
-// 5. Migrates tests and build
+// 3. Installs ts-builds
+// 4. Updates package.json scripts
+// 5. Runs cleanup to remove redundant deps
 // 6. Validates everything works
 ```
 
@@ -226,7 +226,7 @@ The skill includes solutions for common issues:
 
 ## Resources
 
-- **Template Repository**: https://github.com/jordanburke/typescript-library-template
+- **ts-builds Package**: https://github.com/jordanburke/ts-builds
 - **Example Implementation**: See the functype project for advanced usage
 - **Marketplace Distribution**: `.claude-plugin/marketplace.json`
 
@@ -234,12 +234,17 @@ The skill includes solutions for common issues:
 
 To improve this skill:
 
-1. Edit files in `.claude/skills/typescript-standards/`
+1. Edit files in `.claude/skills/ts-builds/`
 2. Test changes with Claude Code
 3. Update documentation as needed
 4. Commit changes to the repository
 
 ## Version History
+
+- **1.1.0** - Renamed to ts-builds, updated CLI documentation
+  - Renamed skill from typescript-standards to ts-builds
+  - Updated all CLI command documentation
+  - Added custom commands and named chains documentation
 
 - **1.0.0** - Initial release
   - Template setup guide
@@ -249,4 +254,4 @@ To improve this skill:
 
 ## License
 
-MIT - Same as the typescript-library-template repository
+MIT - Same as the ts-builds package

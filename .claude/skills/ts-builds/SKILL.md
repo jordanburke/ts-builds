@@ -1,9 +1,9 @@
 ---
-name: typescript-standards
-description: Guide for creating TypeScript libraries using the ts-builds pattern and applying its standards to existing projects. Use when setting up new npm packages, standardizing build scripts, configuring tooling (tsdown, Vitest, ESLint, Prettier), or applying dual module format patterns.
+name: ts-builds
+description: Guide for creating TypeScript libraries using ts-builds and applying its standards to existing projects. Use when setting up new npm packages, standardizing build scripts, configuring tooling (tsdown, Vitest, ESLint, Prettier), or applying dual module format patterns.
 ---
 
-# TypeScript Project Standards
+# ts-builds
 
 ## Overview
 
@@ -71,30 +71,43 @@ npx ts-builds validate
 ### Setup Commands
 
 ```bash
-npx ts-builds init      # Create .npmrc with hoist patterns (run first)
-npx ts-builds config    # Create ts-builds.config.json
-npx ts-builds config --force  # Overwrite existing config
-npx ts-builds info      # Show bundled packages you don't need to install
-npx ts-builds cleanup   # Remove redundant dependencies from package.json
-npx ts-builds help      # Show all commands
+npx ts-builds            # Default: runs init
+npx ts-builds init       # Create .npmrc with hoist patterns (run first)
+npx ts-builds config     # Create ts-builds.config.json
+npx ts-builds config --force  # Overwrite existing config (or -f)
+npx ts-builds info       # Show bundled packages you don't need to install
+npx ts-builds cleanup    # Remove redundant dependencies from package.json
+npx ts-builds cleanup --yes   # Auto-confirm removal (or -y)
+npx ts-builds help       # Show all commands (or --help, -h)
 ```
 
 ### Script Commands
 
 ```bash
-npx ts-builds validate      # Run full validation chain
-npx ts-builds format        # Format with Prettier (--write)
-npx ts-builds format:check  # Check formatting only
-npx ts-builds lint          # Lint with ESLint (--fix)
-npx ts-builds lint:check    # Check lint only
-npx ts-builds typecheck     # TypeScript type checking (tsc --noEmit)
-npx ts-builds test          # Run tests once
-npx ts-builds test:watch    # Watch mode
-npx ts-builds test:coverage # With coverage report
-npx ts-builds test:ui       # Interactive UI
-npx ts-builds build         # Production build (dist/)
-npx ts-builds build:watch   # Watch mode build
-npx ts-builds dev           # Alias for build:watch
+npx ts-builds validate       # Run full validation chain (configurable)
+npx ts-builds format         # Format with Prettier (--write)
+npx ts-builds format:check   # Check formatting only
+npx ts-builds lint           # Lint with ESLint (--fix)
+npx ts-builds lint:check     # Check lint only
+npx ts-builds typecheck      # TypeScript type checking (tsc --noEmit)
+npx ts-builds ts-types       # Alias for typecheck
+npx ts-builds test           # Run tests once (vitest run)
+npx ts-builds test:watch     # Watch mode (vitest)
+npx ts-builds test:coverage  # With coverage report (vitest run --coverage)
+npx ts-builds test:ui        # Interactive UI (vitest --ui)
+npx ts-builds build          # Production build (rimraf dist && cross-env NODE_ENV=production tsdown)
+npx ts-builds build:watch    # Watch mode build (tsdown --watch)
+npx ts-builds dev            # Alias for build:watch
+```
+
+### Named Chains and Custom Commands
+
+Run custom validation chains or commands defined in config:
+
+```bash
+npx ts-builds validate       # Run default validate chain
+npx ts-builds validate:core  # Run named chain "validate:core"
+npx ts-builds my-custom-cmd  # Run custom command from config
 ```
 
 ## Core Standards
