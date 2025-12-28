@@ -6,7 +6,7 @@ export const tsdown: UserConfig = {
   sourcemap: true,
   clean: true,
   dts: true,
-  format: ["cjs", "esm"],
+  format: ["esm"],
   minify: env === "production",
   target: "es2020",
   outDir: env === "production" ? "dist" : "lib",

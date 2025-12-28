@@ -1,13 +1,13 @@
 ---
 name: ts-builds
-description: Guide for creating TypeScript libraries using ts-builds and applying its standards to existing projects. Use when setting up new npm packages, standardizing build scripts, configuring tooling (tsdown, Vitest, ESLint, Prettier), or applying dual module format patterns.
+description: Guide for creating TypeScript libraries using ts-builds and applying its standards to existing projects. Use when setting up new npm packages, standardizing build scripts, configuring tooling (tsdown, Vitest, ESLint, Prettier), or applying ESM patterns.
 ---
 
 # ts-builds
 
 ## Overview
 
-This skill helps you create professional TypeScript libraries using the **ts-builds** package and apply these standards to existing projects. It provides a modern, production-ready setup with dual module format support, comprehensive testing, and consistent code quality tooling.
+This skill helps you create professional TypeScript libraries using the **ts-builds** package and apply these standards to existing projects. It provides a modern, production-ready setup with ESM-only output, comprehensive testing, and consistent code quality tooling.
 
 **ts-builds** bundles all tooling (ESLint, Prettier, Vitest, TypeScript) and provides a CLI for running standardized commands across projects.
 
@@ -17,7 +17,7 @@ Trigger this skill when:
 
 - Creating a new TypeScript library or npm package
 - Standardizing build scripts across TypeScript projects
-- Setting up or migrating to dual module format (CommonJS + ES modules)
+- Setting up ESM-only TypeScript projects
 - Configuring modern tooling (tsdown, Vitest, ESLint, Prettier)
 - Applying consistent code quality standards
 - Publishing packages to npm
@@ -183,22 +183,23 @@ npx ts-builds validate:core  # Run named chain
 npx ts-builds validate:landing  # Run another chain
 ```
 
-### Dual Module Format
+### ESM-Only Format
 
-The template supports both CommonJS and ES modules:
+The template outputs ESM-only (no CommonJS):
 
 **package.json exports:**
 
 ```json
 {
+  "type": "module",
   "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "require": "./dist/index.js",
-      "import": "./dist/index.mjs"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   }
 }
@@ -215,8 +216,8 @@ The template supports both CommonJS and ES modules:
 Key features:
 
 - Environment-based output (lib/ vs dist/)
-- Dual format (CJS + ESM)
-- TypeScript declarations for both formats
+- ESM-only format
+- TypeScript declarations (.d.ts)
 - Source maps in development
 - Minification in production
 - Watch mode for development
@@ -273,8 +274,8 @@ Configuration highlights:
 1. **Audit current setup** - identify gaps
 2. **Update package.json** - scripts and dependencies
 3. **Copy configurations** - tsdown, vitest, eslint
-4. **Migrate build** - switch to tsdown with dual format
-5. **Update exports** - proper dual module support
+4. **Migrate build** - switch to tsdown with ESM-only
+5. **Update exports** - proper ESM exports
 6. **Test thoroughly** - ensure all builds work
 7. **Update documentation** - new commands and workflows
 
@@ -354,7 +355,7 @@ project/
 **"Cannot find module" errors:**
 
 - Check package.json exports match build outputs
-- Verify both .js and .mjs files exist in dist/
+- Verify .js files exist in dist/
 - Ensure types field points to .d.ts file
 
 **Watch mode not working:**
@@ -377,11 +378,11 @@ project/
 
 ### Import Issues
 
-**Dual module problems:**
+**ESM import problems:**
 
-- Verify package.json exports use correct paths
-- Check tsdown generates both .js and .mjs
-- Test with both `require()` and `import`
+- Verify package.json has `"type": "module"`
+- Check package.json exports use correct paths
+- Verify .js files are generated in dist/
 
 **Type definitions missing:**
 
@@ -402,12 +403,12 @@ When applying these standards to an existing project:
 - [ ] Copy/extend vitest.config.ts for test patterns
 - [ ] Copy/extend eslint.config.mjs (or use ts-builds base)
 - [ ] Update tsconfig.json for strict mode
-- [ ] Update package.json exports for dual module format
+- [ ] Update package.json exports for ESM-only format
 - [ ] Migrate tests to Vitest (if using different framework)
 - [ ] Update GitHub Actions to use `pnpm validate`
 - [ ] Update documentation (README, CLAUDE.md)
 - [ ] Test with `npx ts-builds validate`
-- [ ] Verify published package works in both CJS and ESM projects
+- [ ] Verify published package works in ESM projects
 
 ## Resources
 
@@ -455,7 +456,7 @@ When working with ts-builds, these files contain the canonical configurations:
 1. **Test locally** - use `npm link` to test before publishing
 2. **Version semantically** - follow semver (major.minor.patch)
 3. **Update changelog** - document changes for users
-4. **Verify dual format** - test in both CJS and ESM projects
+4. **Verify ESM works** - test in ESM projects
 
 ### Documentation
 

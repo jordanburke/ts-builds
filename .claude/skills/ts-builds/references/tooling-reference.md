@@ -66,7 +66,7 @@ npx ts-builds my-custom-cmd  # Run custom command from config
 
 ## tsdown Configuration
 
-tsdown is the build tool that handles TypeScript compilation, bundling, and dual module format generation.
+tsdown is the build tool that handles TypeScript compilation, bundling, and ESM output generation.
 
 ### Basic Configuration
 
@@ -82,7 +82,7 @@ export const tsdown: Options = {
   sourcemap: true,
   clean: true,
   dts: true,
-  format: ["cjs", "esm"],
+  format: ["esm"],
   minify: env === "production",
   bundle: env === "production",
   skipNodeModulesBundle: true,
@@ -111,14 +111,14 @@ entry: ["src/**/*.ts"]
 **format** - Output module formats:
 
 ```typescript
-// Dual format (recommended for libraries)
+// ESM-only (recommended for modern libraries)
+format: ["esm"]
+
+// Legacy dual format (if CJS needed)
 format: ["cjs", "esm"]
 
-// Triple format (includes IIFE for browser)
-format: ["cjs", "esm", "iife"]
-
-// Single format
-format: ["esm"]
+// Browser format (IIFE)
+format: ["iife"]
 ```
 
 **dts** - TypeScript declaration files:
@@ -252,16 +252,16 @@ export const tsdown: Options = {
     utils: "src/utils/index.ts",
     types: "src/types/index.ts",
   },
-  format: ["cjs", "esm"],
+  format: ["esm"],
   dts: true,
 }
 ```
 
 This generates:
 
-- `dist/index.js`, `dist/index.mjs`, `dist/index.d.ts`
-- `dist/utils.js`, `dist/utils.mjs`, `dist/utils.d.ts`
-- `dist/types.js`, `dist/types.mjs`, `dist/types.d.ts`
+- `dist/index.js`, `dist/index.d.ts`
+- `dist/utils.js`, `dist/utils.d.ts`
+- `dist/types.js`, `dist/types.d.ts`
 
 **Browser-Compatible Build:**
 
@@ -281,7 +281,7 @@ export const tsdown: Options = {
 ```typescript
 export const tsdown: Options = {
   entry: ["src/index.ts"],
-  format: ["cjs", "esm"],
+  format: ["esm"],
   dts: true,
   external: ["react", "react-dom"], // Don't bundle peer deps
   skipNodeModulesBundle: true,
@@ -808,32 +808,32 @@ import { MyClass } from "@utils/MyClass"
   "name": "my-library",
   "version": "1.0.0",
   "description": "My TypeScript library",
+  "type": "module",
   "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "require": "./dist/index.js",
-      "import": "./dist/index.mjs"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "files": ["dist", "lib"],
   "scripts": {
-    "validate": "pnpm format && pnpm lint && pnpm test && pnpm build",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
-    "lint": "eslint ./src --fix",
-    "lint:check": "eslint ./src",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "test:ui": "vitest --ui",
-    "build": "rimraf dist && cross-env NODE_ENV=production tsdown",
-    "build:watch": "tsdown --watch",
-    "dev": "tsdown --watch",
+    "validate": "ts-builds validate",
+    "format": "ts-builds format",
+    "format:check": "ts-builds format:check",
+    "lint": "ts-builds lint",
+    "lint:check": "ts-builds lint:check",
+    "test": "ts-builds test",
+    "test:watch": "ts-builds test:watch",
+    "test:coverage": "ts-builds test:coverage",
+    "test:ui": "ts-builds test:ui",
+    "build": "ts-builds build",
+    "dev": "ts-builds dev",
     "prepublishOnly": "pnpm validate",
-    "ts-types": "tsc --noEmit"
+    "typecheck": "ts-builds typecheck"
   }
 }
 ```

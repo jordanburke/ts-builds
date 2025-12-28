@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a TypeScript library template designed to be cloned/forked for creating new npm packages. It provides standardized build scripts, modern tooling, and dual module format support (CommonJS + ES modules).
+This is a TypeScript library template designed to be cloned/forked for creating new npm packages. It provides standardized build scripts, modern tooling, and ESM-only output.
 
 **Template Usage**: See STANDARDIZATION_GUIDE.md for instructions on applying this pattern to other TypeScript projects.
 
@@ -66,8 +66,8 @@ Releases are automated via GitHub Actions. To publish a new version:
 - **Dual Output Directories**:
   - `lib/` - Development builds (NODE_ENV !== "production", used during `pnpm dev`)
   - `dist/` - Production builds (NODE_ENV === "production", used for publishing)
-- **Format Support**: Generates both CommonJS (`.js`) and ES modules (`.mjs`)
-- **TypeScript**: Auto-generates `.d.ts` declaration files for both formats
+- **Format Support**: ESM-only output (`.js` with `"type": "module"`)
+- **TypeScript**: Auto-generates `.d.ts` declaration files
 - **Environment-Based Behavior**:
   - Production: minified, no watch
   - Development: source maps, watch mode, faster builds
@@ -87,7 +87,7 @@ Releases are automated via GitHub Actions. To publish a new version:
 ### Package Configuration
 
 - **Entry Points**: Main source in `src/index.ts`, builds all files in `src/**/*.ts`
-- **Exports**: Supports both `require()` and `import` with proper type definitions
+- **Exports**: ESM imports with proper type definitions
 - **Publishing**:
   - Configured for npm with public access
   - Both `lib/` and `dist/` directories are published (see package.json "files" field)
