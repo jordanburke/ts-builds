@@ -11,4 +11,6 @@ export const tsdown: UserConfig = {
   target: "es2020",
   outDir: env === "production" ? "dist" : "lib",
   entry: ["src/index.ts", "src/**/*.ts"],
+  // Use .js/.d.ts extensions (not .mjs/.d.mts) since packages use "type": "module"
+  outExtensions: () => ({ js: ".js", dts: ".d.ts" }),
 }
