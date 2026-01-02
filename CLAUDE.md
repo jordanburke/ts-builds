@@ -148,6 +148,36 @@ ts-builds help
 
 Only peer dependency needed: `tsdown`
 
+### CLI Configuration
+
+Create `ts-builds.config.json` in your project root to customize behavior:
+
+```json
+{
+  "srcDir": "./src",
+  "testDir": "./test",
+  "lint": {
+    "useProjectEslint": true
+  },
+  "validateChain": ["format", "lint", "typecheck", "test", "build"]
+}
+```
+
+**Configuration Options:**
+
+| Option                  | Type     | Default                                            | Description                                                  |
+| ----------------------- | -------- | -------------------------------------------------- | ------------------------------------------------------------ |
+| `srcDir`                | string   | `"./src"`                                          | Source directory for linting                                 |
+| `testDir`               | string   | `"./test"`                                         | Test directory                                               |
+| `lint.useProjectEslint` | boolean  | `false`                                            | Use project's ESLint instead of bundled (for custom plugins) |
+| `validateChain`         | string[] | `["format", "lint", "typecheck", "test", "build"]` | Commands to run for validate                                 |
+| `commands`              | object   | `{}`                                               | Custom commands                                              |
+| `chains`                | object   | `{}`                                               | Named command chains                                         |
+
+**Using Custom ESLint Plugins:**
+
+If your project uses ESLint plugins not bundled with ts-builds (e.g., `eslint-plugin-functional`), set `lint.useProjectEslint: true` to use your project's ESLint installation instead of the bundled version.
+
 ## Key Files
 
 - `src/index.ts` - Main library entry point

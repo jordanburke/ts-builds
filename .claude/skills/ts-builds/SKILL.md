@@ -171,9 +171,25 @@ Create `ts-builds.config.json` in your project root to customize behavior:
 
 - `srcDir` - Source directory for linting (default: `./src`)
 - `testDir` - Test directory (default: `./test`)
+- `lint.useProjectEslint` - Use project's ESLint instead of bundled (default: `false`)
 - `validateChain` - Default validate sequence (backward compat)
 - `commands` - Custom commands (string or `{ run, cwd }`)
 - `chains` - Named command chains (can reference other chains)
+
+**Using custom ESLint plugins:**
+
+If your project uses ESLint plugins not bundled with ts-builds (e.g., `eslint-plugin-functional`, `eslint-plugin-react-hooks`), set `lint.useProjectEslint: true`:
+
+```json
+{
+  "srcDir": "./src",
+  "lint": {
+    "useProjectEslint": true
+  }
+}
+```
+
+This tells ts-builds to use your project's ESLint installation instead of the bundled version, allowing custom plugins to be resolved correctly.
 
 **Named chains usage:**
 

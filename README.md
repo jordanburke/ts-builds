@@ -104,6 +104,21 @@ Create `ts-builds.config.json` to customize behavior:
 }
 ```
 
+### With Custom ESLint Plugins
+
+If your project uses ESLint plugins not bundled with ts-builds (e.g., `eslint-plugin-functional`, `eslint-plugin-react-hooks`):
+
+```json
+{
+  "srcDir": "./src",
+  "lint": {
+    "useProjectEslint": true
+  }
+}
+```
+
+This tells ts-builds to use your project's ESLint installation instead of the bundled version.
+
 ### Advanced (Monorepos, Custom Commands)
 
 ```json

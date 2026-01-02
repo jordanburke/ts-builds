@@ -14,9 +14,15 @@ interface CommandDef {
   cwd?: string
 }
 
+interface LintConfig {
+  useProjectEslint?: boolean
+}
+
 interface TsBuildsConfig {
   srcDir?: string
   testDir?: string
+  // Lint configuration
+  lint?: LintConfig
   // Custom commands beyond built-ins
   commands?: Record<string, string | CommandDef>
   // Named chains - can reference built-ins, custom commands, or other chains
@@ -28,6 +34,7 @@ interface TsBuildsConfig {
 interface ResolvedConfig {
   srcDir: string
   testDir: string
+  lint: { useProjectEslint: boolean }
   commands: Record<string, CommandDef>
   chains: Record<string, string[]>
 }
@@ -68,6 +75,9 @@ function loadConfig(): ResolvedConfig {
   return {
     srcDir: userConfig.srcDir ?? "./src",
     testDir: userConfig.testDir ?? "./test",
+    lint: {
+      useProjectEslint: userConfig.lint?.useProjectEslint ?? false,
+    },
     commands,
     chains,
   }
@@ -243,6 +253,14 @@ CONFIGURATION:
     "validateChain": ["format", "lint", "typecheck", "test", "build"]
   }
 
+  With custom ESLint plugins (e.g., eslint-plugin-functional):
+  {
+    "srcDir": "./src",
+    "lint": {
+      "useProjectEslint": true
+    }
+  }
+
   Advanced (monorepo with custom commands):
   {
     "srcDir": "./src",
@@ -405,9 +423,18 @@ function createConfig(force = false): void {
 Configuration options:
   srcDir         Source directory for linting (default: "./src")
   testDir        Test directory (default: "./test")
+  lint           Lint settings: { "useProjectEslint": true }
   validateChain  Commands to run for validate (default shown above)
   commands       Custom commands: { "name": "shell command" }
   chains         Named chains: { "validate:fast": ["format", "lint"] }
+
+Example with custom ESLint plugins:
+{
+  "srcDir": "./src",
+  "lint": {
+    "useProjectEslint": true
+  }
+}
 
 Example with custom commands:
 {
@@ -435,8 +462,9 @@ async function runFormat(check = false): Promise<number> {
 
 async function runLint(check = false): Promise<number> {
   const config = loadConfig()
+  const eslintCmd = config.lint.useProjectEslint ? "npx eslint" : "eslint"
   const args = check ? [config.srcDir] : ["--fix", config.srcDir]
-  return runCommand("eslint", args)
+  return runCommand(eslintCmd, args)
 }
 
 async function runTypecheck(): Promise<number> {
@@ -467,11 +495,12 @@ async function runBuild(watch = false): Promise<number> {
 
 // Built-in command definitions
 function getBuiltinCommands(config: ResolvedConfig): Record<string, CommandDef> {
+  const eslintCmd = config.lint.useProjectEslint ? "npx eslint" : "eslint"
   return {
     format: { run: "prettier --write ." },
     "format:check": { run: "prettier --check ." },
-    lint: { run: `eslint --fix ${config.srcDir}` },
-    "lint:check": { run: `eslint ${config.srcDir}` },
+    lint: { run: `${eslintCmd} --fix ${config.srcDir}` },
+    "lint:check": { run: `${eslintCmd} ${config.srcDir}` },
     typecheck: { run: "tsc --noEmit" },
     "ts-types": { run: "tsc --noEmit" },
     test: { run: "vitest run" },

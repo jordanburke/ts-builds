@@ -11,6 +11,7 @@ Future enhancement suggestions for ts-builds.
 **Use Case**: React SPAs and applications that use Vite instead of tsdown for bundling.
 
 **Proposed Implementation**:
+
 - Add `buildMode` config option: `"tsdown"` (default) | `"vite"`
 - When `buildMode: "vite"`:
   - `ts-builds build` runs `vite build`
@@ -18,6 +19,7 @@ Future enhancement suggestions for ts-builds.
 - Export base Vite config: `ts-builds/vite`
 
 **Config Example**:
+
 ```json
 {
   "srcDir": "./src",
@@ -26,6 +28,7 @@ Future enhancement suggestions for ts-builds.
 ```
 
 **CLI Changes**:
+
 ```typescript
 // In cli.ts builtinCommands
 build: config.buildMode === "vite"
@@ -42,6 +45,7 @@ build: config.buildMode === "vite"
 **Use Case**: Projects deploying to Cloudflare Workers that want standardized lint/format/test but use Wrangler for builds.
 
 **Proposed Implementation**:
+
 - Add `platform` config option: `"node"` (default) | `"cloudflare-worker"`
 - When `platform: "cloudflare-worker"`:
   - Keep lint/format/test/typecheck unchanged
@@ -51,6 +55,7 @@ build: config.buildMode === "vite"
 - Export Wrangler-compatible tsconfig: `ts-builds/tsconfig-workers`
 
 **Config Example**:
+
 ```json
 {
   "srcDir": "./src",
@@ -73,20 +78,18 @@ build: config.buildMode === "vite"
 **Use Case**: pnpm/npm workspaces with multiple packages needing coordinated builds.
 
 **Proposed Implementation**:
+
 - Add `monorepo` config section for package build order
 - Support `cwd` in custom commands (already works)
 - Add parallel execution for independent packages
 
 **Config Example**:
+
 ```json
 {
   "monorepo": {
     "packages": ["shared", "shared-ui", "app"],
-    "buildOrder": [
-      ["shared"],
-      ["shared-ui"],
-      ["app"]
-    ]
+    "buildOrder": [["shared"], ["shared-ui"], ["app"]]
   },
   "chains": {
     "build:all": ["build:shared", "build:shared-ui", "build:app"]

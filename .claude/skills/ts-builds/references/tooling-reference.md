@@ -53,6 +53,9 @@ npx ts-builds my-custom-cmd  # Run custom command from config
 ```json
 {
   "srcDir": "./src",
+  "lint": {
+    "useProjectEslint": false
+  },
   "validateChain": ["format", "lint", "typecheck", "test", "build"],
   "commands": {
     "custom-cmd": "echo 'custom'",
@@ -63,6 +66,21 @@ npx ts-builds my-custom-cmd  # Run custom command from config
   }
 }
 ```
+
+**Configuration options:**
+
+| Option                  | Type     | Default                                            | Description                                                  |
+| ----------------------- | -------- | -------------------------------------------------- | ------------------------------------------------------------ |
+| `srcDir`                | string   | `"./src"`                                          | Source directory for linting                                 |
+| `testDir`               | string   | `"./test"`                                         | Test directory                                               |
+| `lint.useProjectEslint` | boolean  | `false`                                            | Use project's ESLint instead of bundled (for custom plugins) |
+| `validateChain`         | string[] | `["format", "lint", "typecheck", "test", "build"]` | Commands to run for validate                                 |
+| `commands`              | object   | `{}`                                               | Custom commands                                              |
+| `chains`                | object   | `{}`                                               | Named command chains                                         |
+
+**Using custom ESLint plugins:**
+
+If your project uses ESLint plugins not bundled with ts-builds (e.g., `eslint-plugin-functional`), set `lint.useProjectEslint: true` to use your project's ESLint installation:
 
 ## tsdown Configuration
 

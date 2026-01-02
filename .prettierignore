@@ -1,2 +1,24 @@
+# Dependencies
 node_modules
+
+# Build outputs
+dist
+lib
+coverage
+
+# Lock files
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+
+# Minified files
+*.min.js
+*.min.css
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# IDE
+.idea
+.vscode
