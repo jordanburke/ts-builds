@@ -146,7 +146,7 @@ ts-builds help
 - **Published files**: `dist/` included in npm package
 - **Commands**: help, info, cleanup, init (default)
 
-Only peer dependency needed: `tsdown`
+Peer dependencies: `tsdown` (for library builds) or `vite` (for SPA builds) - both optional
 
 ### CLI Configuration
 
@@ -169,6 +169,7 @@ Create `ts-builds.config.json` in your project root to customize behavior:
 | ----------------------- | -------- | -------------------------------------------------- | ------------------------------------------------------------ |
 | `srcDir`                | string   | `"./src"`                                          | Source directory for linting                                 |
 | `testDir`               | string   | `"./test"`                                         | Test directory                                               |
+| `buildMode`             | string   | `"tsdown"`                                         | Build tool: `"tsdown"` (libraries) or `"vite"` (SPAs)        |
 | `lint.useProjectEslint` | boolean  | `false`                                            | Use project's ESLint instead of bundled (for custom plugins) |
 | `validateChain`         | string[] | `["format", "lint", "typecheck", "test", "build"]` | Commands to run for validate                                 |
 | `commands`              | object   | `{}`                                               | Custom commands                                              |
@@ -177,6 +178,25 @@ Create `ts-builds.config.json` in your project root to customize behavior:
 **Using Custom ESLint Plugins:**
 
 If your project uses ESLint plugins not bundled with ts-builds (e.g., `eslint-plugin-functional`), set `lint.useProjectEslint: true` to use your project's ESLint installation instead of the bundled version.
+
+**Using Vite for SPAs/React Apps:**
+
+Set `buildMode: "vite"` to use Vite instead of tsdown for builds:
+
+```json
+{
+  "srcDir": "./src",
+  "buildMode": "vite"
+}
+```
+
+With Vite mode:
+
+- `ts-builds build` → `rimraf dist && vite build`
+- `ts-builds dev` → `vite` (dev server with HMR)
+- `ts-builds preview` → `vite preview`
+
+Requires `vite` as a peer dependency instead of `tsdown`.
 
 ## Key Files
 

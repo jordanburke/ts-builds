@@ -95,9 +95,10 @@ npx ts-builds test           # Run tests once (vitest run)
 npx ts-builds test:watch     # Watch mode (vitest)
 npx ts-builds test:coverage  # With coverage report (vitest run --coverage)
 npx ts-builds test:ui        # Interactive UI (vitest --ui)
-npx ts-builds build          # Production build (rimraf dist && cross-env NODE_ENV=production tsdown)
-npx ts-builds build:watch    # Watch mode build (tsdown --watch)
-npx ts-builds dev            # Alias for build:watch
+npx ts-builds build          # Production build (tsdown or vite, based on buildMode)
+npx ts-builds build:watch    # Watch mode build
+npx ts-builds dev            # Dev mode (tsdown --watch or vite dev server)
+npx ts-builds preview        # Preview production build (vite preview)
 ```
 
 ### Named Chains and Custom Commands
@@ -171,10 +172,30 @@ Create `ts-builds.config.json` in your project root to customize behavior:
 
 - `srcDir` - Source directory for linting (default: `./src`)
 - `testDir` - Test directory (default: `./test`)
+- `buildMode` - Build tool: `"tsdown"` (default, libraries) or `"vite"` (SPAs)
 - `lint.useProjectEslint` - Use project's ESLint instead of bundled (default: `false`)
 - `validateChain` - Default validate sequence (backward compat)
 - `commands` - Custom commands (string or `{ run, cwd }`)
 - `chains` - Named command chains (can reference other chains)
+
+**Using Vite for SPAs/React Apps:**
+
+Set `buildMode: "vite"` to use Vite instead of tsdown:
+
+```json
+{
+  "srcDir": "./src",
+  "buildMode": "vite"
+}
+```
+
+With Vite mode:
+
+- `ts-builds build` → `vite build`
+- `ts-builds dev` → `vite` (dev server with HMR)
+- `ts-builds preview` → `vite preview`
+
+Requires `vite` as peer dependency instead of `tsdown`.
 
 **Using custom ESLint plugins:**
 

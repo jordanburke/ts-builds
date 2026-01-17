@@ -9,6 +9,8 @@ const targetDir = process.cwd()
 // Configuration
 // ============================================================================
 
+type BuildMode = "tsdown" | "vite"
+
 interface CommandDef {
   run: string
   cwd?: string
@@ -21,6 +23,8 @@ interface LintConfig {
 interface TsBuildsConfig {
   srcDir?: string
   testDir?: string
+  // Build mode: "tsdown" (default, for libraries) or "vite" (for SPAs/React apps)
+  buildMode?: BuildMode
   // Lint configuration
   lint?: LintConfig
   // Custom commands beyond built-ins
@@ -34,6 +38,7 @@ interface TsBuildsConfig {
 interface ResolvedConfig {
   srcDir: string
   testDir: string
+  buildMode: BuildMode
   lint: { useProjectEslint: boolean }
   commands: Record<string, CommandDef>
   chains: Record<string, string[]>
@@ -75,6 +80,7 @@ function loadConfig(): ResolvedConfig {
   return {
     srcDir: userConfig.srcDir ?? "./src",
     testDir: userConfig.testDir ?? "./test",
+    buildMode: userConfig.buildMode ?? "tsdown",
     lint: {
       useProjectEslint: userConfig.lint?.useProjectEslint ?? false,
     },
@@ -240,9 +246,10 @@ SCRIPT COMMANDS:
   test:watch    Run tests in watch mode
   test:coverage Run tests with coverage
   test:ui       Launch Vitest UI
-  build         Production build (rimraf dist && tsdown)
+  build         Production build (tsdown or vite build, based on buildMode)
   build:watch   Watch mode build
-  dev           Alias for build:watch
+  dev           Development mode (tsdown --watch or vite dev server)
+  preview       Preview production build (vite preview)
 
 CONFIGURATION:
   Create ts-builds.config.json in your project root:
@@ -251,6 +258,12 @@ CONFIGURATION:
   {
     "srcDir": "./src",
     "validateChain": ["format", "lint", "typecheck", "test", "build"]
+  }
+
+  For SPAs/React apps using Vite:
+  {
+    "srcDir": "./src",
+    "buildMode": "vite"
   }
 
   With custom ESLint plugins (e.g., eslint-plugin-functional):
@@ -303,13 +316,22 @@ ${bundledPackages.map((pkg) => `  - ${pkg}`).join("\n")}
 
 You ONLY need to install:
   - ts-builds (this package)
-  - tsdown (peer dependency, optional)
+  - tsdown (peer dependency, for library builds - optional)
+  - vite (peer dependency, for SPA builds - optional)
 
-Example minimal package.json devDependencies:
+Example minimal package.json for libraries:
 {
   "devDependencies": {
     "ts-builds": "^3.0.0",
-    "tsdown": "^0.12.0"
+    "tsdown": "^0.19.0"
+  }
+}
+
+Example minimal package.json for SPAs/React apps:
+{
+  "devDependencies": {
+    "ts-builds": "^3.0.0",
+    "vite": "^7.0.0"
   }
 }
 `)
@@ -423,6 +445,7 @@ function createConfig(force = false): void {
 Configuration options:
   srcDir         Source directory for linting (default: "./src")
   testDir        Test directory (default: "./test")
+  buildMode      "tsdown" (default, libraries) or "vite" (SPAs/React apps)
   lint           Lint settings: { "useProjectEslint": true }
   validateChain  Commands to run for validate (default shown above)
   commands       Custom commands: { "name": "shell command" }
@@ -485,17 +508,41 @@ async function runTest(mode: "run" | "watch" | "coverage" | "ui" = "run"): Promi
 }
 
 async function runBuild(watch = false): Promise<number> {
-  if (watch) {
-    return runCommand("tsdown", ["--watch"])
+  const config = loadConfig()
+
+  if (config.buildMode === "vite") {
+    if (watch) return runCommand("vite", ["build", "--watch"])
+    const cleanCode = await runCommand("rimraf", ["dist"])
+    if (cleanCode !== 0) return cleanCode
+    return runCommand("vite", ["build"])
   }
+
+  // Default: tsdown
+  if (watch) return runCommand("tsdown", ["--watch"])
   const cleanCode = await runCommand("rimraf", ["dist"])
   if (cleanCode !== 0) return cleanCode
   return runCommand("cross-env", ["NODE_ENV=production", "tsdown"])
 }
 
+async function runDev(): Promise<number> {
+  const config = loadConfig()
+  return config.buildMode === "vite" ? runCommand("vite", []) : runCommand("tsdown", ["--watch"])
+}
+
 // Built-in command definitions
 function getBuiltinCommands(config: ResolvedConfig): Record<string, CommandDef> {
   const eslintCmd = config.lint.useProjectEslint ? "npx eslint" : "eslint"
+
+  // Build commands based on mode
+  const buildCmd =
+    config.buildMode === "vite"
+      ? { run: "rimraf dist && vite build" }
+      : { run: "rimraf dist && cross-env NODE_ENV=production tsdown" }
+
+  const buildWatchCmd = config.buildMode === "vite" ? { run: "vite build --watch" } : { run: "tsdown --watch" }
+
+  const devCmd = config.buildMode === "vite" ? { run: "vite" } : { run: "tsdown --watch" }
+
   return {
     format: { run: "prettier --write ." },
     "format:check": { run: "prettier --check ." },
@@ -507,9 +554,10 @@ function getBuiltinCommands(config: ResolvedConfig): Record<string, CommandDef> 
     "test:watch": { run: "vitest" },
     "test:coverage": { run: "vitest run --coverage" },
     "test:ui": { run: "vitest --ui" },
-    build: { run: "rimraf dist && cross-env NODE_ENV=production tsdown" },
-    "build:watch": { run: "tsdown --watch" },
-    dev: { run: "tsdown --watch" },
+    build: buildCmd,
+    "build:watch": buildWatchCmd,
+    dev: devCmd,
+    preview: { run: "vite preview" },
     compile: { run: "tsc" },
   }
 }
@@ -623,8 +671,13 @@ switch (command) {
     process.exit(await runBuild(subCommand === "watch"))
     break
   case "build:watch":
-  case "dev":
     process.exit(await runBuild(true))
+    break
+  case "dev":
+    process.exit(await runDev())
+    break
+  case "preview":
+    process.exit(await runCommand("vite", ["preview"]))
     break
   case "validate":
     process.exit(await runValidate())

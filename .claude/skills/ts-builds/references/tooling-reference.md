@@ -33,9 +33,10 @@ npx ts-builds test           # Run tests once (vitest run)
 npx ts-builds test:watch     # Watch mode (vitest)
 npx ts-builds test:coverage  # With coverage (vitest run --coverage)
 npx ts-builds test:ui        # Interactive UI (vitest --ui)
-npx ts-builds build          # Production build (rimraf dist && cross-env NODE_ENV=production tsdown)
-npx ts-builds build:watch    # Watch mode build (tsdown --watch)
-npx ts-builds dev            # Alias for build:watch
+npx ts-builds build          # Production build (tsdown or vite, based on buildMode)
+npx ts-builds build:watch    # Watch mode build
+npx ts-builds dev            # Dev mode (tsdown --watch or vite dev server)
+npx ts-builds preview        # Preview production build (vite preview)
 ```
 
 ### Named Chains and Custom Commands
@@ -73,6 +74,7 @@ npx ts-builds my-custom-cmd  # Run custom command from config
 | ----------------------- | -------- | -------------------------------------------------- | ------------------------------------------------------------ |
 | `srcDir`                | string   | `"./src"`                                          | Source directory for linting                                 |
 | `testDir`               | string   | `"./test"`                                         | Test directory                                               |
+| `buildMode`             | string   | `"tsdown"`                                         | Build tool: `"tsdown"` (libraries) or `"vite"` (SPAs)        |
 | `lint.useProjectEslint` | boolean  | `false`                                            | Use project's ESLint instead of bundled (for custom plugins) |
 | `validateChain`         | string[] | `["format", "lint", "typecheck", "test", "build"]` | Commands to run for validate                                 |
 | `commands`              | object   | `{}`                                               | Custom commands                                              |
@@ -862,7 +864,7 @@ import { MyClass } from "@utils/MyClass"
 my-library/
 ├── .claude/
 │   └── skills/
-│       └── typescript-standards/
+│       └── ts-builds/
 ├── src/
 │   ├── index.ts
 │   └── utils/

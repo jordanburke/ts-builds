@@ -3,7 +3,7 @@ import { defineConfig } from "tsdown"
 export default defineConfig([
   // Config files (no shebang)
   {
-    entry: ["src/tsdown.config.base.ts", "src/vitest.config.base.ts"],
+    entry: ["src/tsdown.config.base.ts", "src/vitest.config.base.ts", "src/vite.config.base.ts"],
     format: ["esm"],
     dts: false,
     clean: true,

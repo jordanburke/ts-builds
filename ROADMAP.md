@@ -2,23 +2,15 @@
 
 Future enhancement suggestions for ts-builds.
 
-## Potential Enhancements
+## Implemented
 
-### 1. Vite Build Mode
+### 1. Vite Build Mode ✅
 
-**Status**: Documented in `package-scripts.json` as variants, not yet wired up
+**Status**: Implemented
 
 **Use Case**: React SPAs and applications that use Vite instead of tsdown for bundling.
 
-**Proposed Implementation**:
-
-- Add `buildMode` config option: `"tsdown"` (default) | `"vite"`
-- When `buildMode: "vite"`:
-  - `ts-builds build` runs `vite build`
-  - `ts-builds dev` runs `vite dev` (with HMR)
-- Export base Vite config: `ts-builds/vite`
-
-**Config Example**:
+**Configuration**:
 
 ```json
 {
@@ -27,16 +19,32 @@ Future enhancement suggestions for ts-builds.
 }
 ```
 
-**CLI Changes**:
+**Commands with `buildMode: "vite"`**:
+
+- `ts-builds build` → `rimraf dist && vite build`
+- `ts-builds dev` → `vite` (dev server with HMR)
+- `ts-builds build:watch` → `vite build --watch`
+- `ts-builds preview` → `vite preview`
+
+**Base Config Export**: `ts-builds/vite`
 
 ```typescript
-// In cli.ts builtinCommands
-build: config.buildMode === "vite"
-  ? { run: "rimraf dist && vite build" }
-  : { run: "rimraf dist && cross-env NODE_ENV=production tsdown" },
+// vite.config.ts
+import { vite } from "ts-builds/vite"
+import { defineConfig, mergeConfig } from "vite"
+
+export default defineConfig(
+  mergeConfig(vite, {
+    // your customizations
+  }),
+)
 ```
 
+**Peer Dependency**: `vite ^7.x` (optional)
+
 ---
+
+## Potential Enhancements
 
 ### 2. Cloudflare Workers Support
 
@@ -101,16 +109,14 @@ build: config.buildMode === "vite"
 
 ## Current Workaround
 
-All of the above can be achieved TODAY using custom commands in `ts-builds.config.json`:
+Cloudflare Workers and monorepo support can be achieved using custom commands:
 
 ```json
 {
   "srcDir": "./src",
   "commands": {
-    "build:vite": "vite build",
     "build:workers": "tsc --build && tsc-alias",
     "deploy": "wrangler deploy",
-    "dev:vite": "vite dev",
     "dev:workers": "wrangler dev"
   },
   "chains": {
@@ -119,12 +125,12 @@ All of the above can be achieved TODAY using custom commands in `ts-builds.confi
 }
 ```
 
-This works well - the native support would just be cleaner and more discoverable.
+This works well - native support would just be cleaner and more discoverable.
 
 ---
 
 ## Priority
 
-1. **Vite mode** - High value, many SPAs use Vite
+1. ~~**Vite mode** - High value, many SPAs use Vite~~ ✅ Implemented
 2. **Monorepo support** - Medium value, custom commands work fine
 3. **Cloudflare Workers** - Lower priority, niche use case, custom commands sufficient

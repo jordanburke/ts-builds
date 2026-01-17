@@ -1,20 +1,20 @@
 {
-  "name": "typescript-standards",
+  "name": "ts-builds",
   "owner": {
     "name": "Jordan Burke",
     "email": "jordan.burke@gmail.com"
   },
   "metadata": {
-    "description": "Skills for creating TypeScript libraries using modern tooling and applying standardized build patterns",
+    "description": "Skills for creating TypeScript libraries using ts-builds and applying standardized build patterns",
     "version": "1.0.0"
   },
   "plugins": [
     {
-      "name": "typescript-standards",
-      "description": "Guide for creating TypeScript libraries using the typescript-library-template pattern and applying its standards to existing projects. Use when setting up new npm packages, standardizing build scripts, configuring tooling (tsdown, Vitest, ESLint, Prettier), or applying dual module format patterns.",
+      "name": "ts-builds",
+      "description": "Guide for creating TypeScript libraries using ts-builds and applying its standards to existing projects. Use when setting up new npm packages, standardizing build scripts, configuring tooling (tsdown, Vitest, ESLint, Prettier), or applying ESM patterns.",
       "source": "./",
       "strict": false,
-      "skills": ["./.claude/skills/typescript-standards"]
+      "skills": ["./.claude/skills/ts-builds"]
     }
   ]
 }

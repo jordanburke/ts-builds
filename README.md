@@ -65,8 +65,9 @@ npx ts-builds typecheck      # TypeScript type checking
 npx ts-builds test           # Run tests once
 npx ts-builds test:watch     # Watch mode
 npx ts-builds test:coverage  # With coverage
-npx ts-builds build          # Production build
-npx ts-builds dev            # Watch mode build
+npx ts-builds build          # Production build (tsdown or vite)
+npx ts-builds dev            # Dev mode (tsdown --watch or vite dev server)
+npx ts-builds preview        # Preview production build (vite preview)
 ```
 
 ## Package.json Scripts
@@ -118,6 +119,27 @@ If your project uses ESLint plugins not bundled with ts-builds (e.g., `eslint-pl
 ```
 
 This tells ts-builds to use your project's ESLint installation instead of the bundled version.
+
+### For SPAs/React Apps (Vite)
+
+Use Vite instead of tsdown for SPA builds:
+
+```bash
+pnpm add -D ts-builds vite
+```
+
+```json
+{
+  "srcDir": "./src",
+  "buildMode": "vite"
+}
+```
+
+With `buildMode: "vite"`:
+
+- `ts-builds build` → `vite build`
+- `ts-builds dev` → `vite` (dev server with HMR)
+- `ts-builds preview` → `vite preview`
 
 ### Advanced (Monorepos, Custom Commands)
 
@@ -193,6 +215,20 @@ export default baseConfig
 {
   "prettier": "ts-builds/prettier"
 }
+```
+
+### Vite (for SPAs)
+
+```typescript
+// vite.config.ts
+import { vite } from "ts-builds/vite"
+import { defineConfig, mergeConfig } from "vite"
+
+export default defineConfig(
+  mergeConfig(vite, {
+    // your customizations
+  }),
+)
 ```
 
 ## Bundled Packages
