@@ -54,6 +54,10 @@ export default [
       parser: tsParser,
       ecmaVersion: 2020,
       sourceType: "module",
+
+      parserOptions: {
+        projectService: true,
+      },
     },
 
     settings: {
