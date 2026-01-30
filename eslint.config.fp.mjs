@@ -1,5 +1,71 @@
-// Re-export eslint-config-functype recommended config
-// Adds functional programming rules: no-let, immutable-data, prefer-immutable-types
-import functypeConfig from "eslint-config-functype"
+// ESLint FP config: Base + functional programming rules from eslint-config-functype
+// Includes: no-let, immutable-data, prefer-immutable-types, etc.
+import path from "node:path"
+import { fileURLToPath } from "node:url"
 
-export default functypeConfig.configs.recommended
+import { FlatCompat } from "@eslint/eslintrc"
+import js from "@eslint/js"
+import typescriptEslint from "@typescript-eslint/eslint-plugin"
+import tsParser from "@typescript-eslint/parser"
+import functypeConfig from "eslint-config-functype"
+import functional from "eslint-plugin-functional"
+import prettier from "eslint-plugin-prettier"
+import simpleImportSort from "eslint-plugin-simple-import-sort"
+import globals from "globals"
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const compat = new FlatCompat({
+  baseDirectory: __dirname,
+  recommendedConfig: js.configs.recommended,
+  allConfig: js.configs.all,
+})
+
+export default [
+  {
+    ignores: [
+      "**/.gitignore",
+      "**/.eslintignore",
+      "**/node_modules",
+      "**/.DS_Store",
+      "**/dist-ssr",
+      "**/*.local",
+      "**/tsconfig.json",
+    ],
+  },
+  ...compat.extends("eslint:recommended", "plugin:@typescript-eslint/recommended", "plugin:prettier/recommended"),
+  {
+    plugins: {
+      "@typescript-eslint": typescriptEslint,
+      "simple-import-sort": simpleImportSort,
+      functional,
+      prettier,
+    },
+
+    languageOptions: {
+      globals: {
+        ...globals.browser,
+        ...globals.amd,
+        ...globals.node,
+      },
+
+      parser: tsParser,
+      ecmaVersion: 2020,
+      sourceType: "module",
+    },
+
+    settings: {
+      "import/resolver": {
+        node: {
+          paths: ["'src'"],
+          extensions: [".js", ".ts"],
+        },
+      },
+    },
+
+    rules: {
+      // Include all rules from eslint-config-functype recommended
+      ...functypeConfig.configs.recommended.rules,
+    },
+  },
+]
