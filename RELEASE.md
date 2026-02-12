@@ -1,5 +1,7 @@
 # Release Process
 
+[![npm version](https://img.shields.io/npm/v/ts-builds.svg)](https://www.npmjs.com/package/ts-builds)
+
 This package uses **npm trusted publishers** for secure, tokenless publishing from GitHub Actions.
 
 ## Automatic Releases (Dependency Updates)
