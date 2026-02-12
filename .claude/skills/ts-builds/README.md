@@ -154,7 +154,7 @@ Environment-based builds with dual format output
 
 Testing with coverage and multiple reporters
 
-### eslint.config.mjs
+### eslint.config.js
 
 Flat config with TypeScript, Prettier, and import sorting
 

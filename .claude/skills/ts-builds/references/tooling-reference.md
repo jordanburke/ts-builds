@@ -479,31 +479,18 @@ export default defineConfig({
 
 ## ESLint Configuration
 
-ESLint enforces code quality and style rules.
+ESLint 10 with native flat config. No FlatCompat needed.
 
 ### Basic Configuration (Flat Config)
 
-File: `eslint.config.mjs`
+File: `eslint.config.js` (works with `"type": "module"` in package.json)
 
 ```javascript
-import path from "node:path"
-import { fileURLToPath } from "node:url"
-
-import { FlatCompat } from "@eslint/eslintrc"
 import js from "@eslint/js"
-import typescriptEslint from "@typescript-eslint/eslint-plugin"
-import tsParser from "@typescript-eslint/parser"
-import prettier from "eslint-plugin-prettier"
+import prettierRecommended from "eslint-plugin-prettier/recommended"
 import simpleImportSort from "eslint-plugin-simple-import-sort"
 import globals from "globals"
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
-  allConfig: js.configs.all,
-})
+import tseslint from "typescript-eslint"
 
 export default [
   {
@@ -517,34 +504,23 @@ export default [
       "**/coverage",
     ],
   },
-  ...compat.extends("eslint:recommended", "plugin:@typescript-eslint/recommended", "plugin:prettier/recommended"),
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  prettierRecommended,
   {
     plugins: {
-      "@typescript-eslint": typescriptEslint,
       "simple-import-sort": simpleImportSort,
-      prettier,
     },
-
     languageOptions: {
       globals: {
         ...globals.node,
         ...globals.es2021,
       },
-
-      parser: tsParser,
       ecmaVersion: 2020,
       sourceType: "module",
     },
-
     rules: {
-      "prettier/prettier": [
-        "error",
-        {},
-        {
-          usePrettierrc: true,
-        },
-      ],
-
+      "prettier/prettier": ["error", {}, { usePrettierrc: true }],
       "@typescript-eslint/no-unused-vars": "off",
       "@typescript-eslint/explicit-function-return-type": "off",
       "simple-import-sort/imports": "error",
@@ -564,27 +540,29 @@ export default [
 }
 ```
 
-**extends** - Base configurations:
+**Base configs** - Spread recommended configs:
 
 ```javascript
-...compat.extends(
-  "eslint:recommended",
-  "plugin:@typescript-eslint/recommended",
-  "plugin:prettier/recommended"
-)
+js.configs.recommended,           // ESLint core recommended rules
+...tseslint.configs.recommended,  // TypeScript parser + plugin + rules (array)
+prettierRecommended,              // Prettier plugin + config-prettier (object)
 ```
 
-**plugins** - ESLint plugins:
+- `tseslint.configs.recommended` is an array and must be spread
+- `prettierRecommended` is a single object (no spread)
+- The unified `typescript-eslint` package replaces the separate `@typescript-eslint/parser` and `@typescript-eslint/eslint-plugin`
+
+**plugins** - Only manually declare plugins not provided by config presets:
 
 ```javascript
 plugins: {
-  "@typescript-eslint": typescriptEslint,
   "simple-import-sort": simpleImportSort,
-  "prettier": prettier
 }
 ```
 
-**languageOptions** - Parser and globals:
+Note: `@typescript-eslint` and `prettier` plugins are already registered by `tseslint.configs.recommended` and `prettierRecommended` respectively.
+
+**languageOptions** - Globals and parsing:
 
 ```javascript
 languageOptions: {
@@ -592,11 +570,12 @@ languageOptions: {
     ...globals.node,
     ...globals.es2021,
   },
-  parser: tsParser,
   ecmaVersion: 2020,
   sourceType: "module"
 }
 ```
+
+Note: The TypeScript parser is already configured by `tseslint.configs.recommended`.
 
 **rules** - Custom rule configuration:
 
@@ -872,7 +851,7 @@ my-library/
 │   └── index.spec.ts
 ├── .gitignore
 ├── .prettierrc
-├── eslint.config.mjs
+├── eslint.config.js
 ├── package.json
 ├── tsconfig.json
 ├── tsdown.config.ts
@@ -902,10 +881,10 @@ my-library/
 ### Linting Issues
 
 **Problem**: "Parsing error"
-**Solution**: Ensure @typescript-eslint/parser is configured correctly
+**Solution**: Ensure `typescript-eslint` is configured correctly (parser is provided by `tseslint.configs.recommended`)
 
 **Problem**: "Rule conflicts"
-**Solution**: Make sure eslint-config-prettier is last in extends
+**Solution**: Make sure `prettierRecommended` (from `eslint-plugin-prettier/recommended`) is included in your config array
 
 ## Resources
 

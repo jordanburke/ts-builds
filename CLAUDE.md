@@ -80,7 +80,7 @@ Releases are automated via GitHub Actions. To publish a new version:
 
 ### Code Quality Tools
 
-- **ESLint**: Flat config setup in `eslint.config.mjs` with TypeScript support
+- **ESLint**: Flat config setup in `eslint.config.base.js` with TypeScript support
 - **Prettier**: Integrated with ESLint for consistent formatting
 - **Import Sorting**: Automatic import organization via `simple-import-sort`
 
@@ -117,12 +117,11 @@ npx ts-builds cleanup --yes  # auto-confirm removal
 
 ### Bundled Packages
 
-The CLI's `info` command shows all 18 packages bundled with this config that users don't need to install:
+The CLI's `info` command shows all 14 packages bundled with this config that users don't need to install:
 
-- eslint, prettier, typescript, vitest
-- @typescript-eslint/eslint-plugin, @typescript-eslint/parser
-- eslint-config-prettier, eslint-plugin-prettier, eslint-plugin-import, eslint-plugin-simple-import-sort
-- @eslint/js, @eslint/eslintrc, globals
+- eslint, prettier, typescript, typescript-eslint, vitest
+- @eslint/js, eslint-plugin-prettier, eslint-plugin-simple-import-sort
+- eslint-config-prettier (flagged by cleanup for consumer projects)
 - @vitest/coverage-v8, @vitest/ui
 - cross-env, rimraf, ts-node
 
@@ -205,5 +204,5 @@ Requires `vite` as a peer dependency instead of `tsdown`.
 - `test/*.spec.ts` - Test files using Vitest
 - `tsdown.config.ts` - Build configuration
 - `vitest.config.ts` - Test configuration with coverage settings
-- `eslint.config.mjs` - Linting rules and TypeScript integration
+- `eslint.config.base.js` - Linting rules and TypeScript integration
 - `STANDARDIZATION_GUIDE.md` - Instructions for applying this pattern to other projects

@@ -173,7 +173,7 @@ ts-builds exports base configurations you can extend:
 ### ESLint
 
 ```javascript
-// eslint.config.mjs
+// eslint.config.js
 import baseConfig from "ts-builds/eslint"
 
 export default [...baseConfig]
@@ -235,12 +235,11 @@ export default defineConfig(
 
 Run `npx ts-builds info` to see all bundled packages. You don't need to install:
 
-- eslint, prettier, typescript, vitest
-- @typescript-eslint/eslint-plugin, @typescript-eslint/parser
-- eslint-config-prettier, eslint-plugin-prettier, eslint-plugin-import
+- eslint, prettier, typescript, typescript-eslint, vitest
+- @eslint/js, eslint-plugin-prettier, eslint-plugin-simple-import-sort
+- eslint-config-prettier (flagged by cleanup)
 - @vitest/coverage-v8, @vitest/ui
 - cross-env, rimraf, ts-node
-- And more...
 
 ## License
 

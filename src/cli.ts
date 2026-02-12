@@ -154,22 +154,19 @@ async function runSequence(commands: Array<{ name: string; cmd: string; args: st
 
 // Packages bundled with ts-builds (users don't need these)
 const bundledPackages = [
-  "@eslint/eslintrc",
   "@eslint/js",
-  "@typescript-eslint/eslint-plugin",
-  "@typescript-eslint/parser",
   "@vitest/coverage-v8",
   "@vitest/ui",
   "cross-env",
   "eslint",
   "eslint-config-prettier",
-  "eslint-plugin-import",
   "eslint-plugin-prettier",
   "eslint-plugin-simple-import-sort",
   "prettier",
   "rimraf",
   "ts-node",
   "typescript",
+  "typescript-eslint",
   "vitest",
 ] as const
 

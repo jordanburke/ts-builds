@@ -273,11 +273,10 @@ Configuration highlights:
 
 **ESLint:**
 
-- Flat config (eslint.config.mjs)
-- TypeScript support
-- Prettier integration
+- Native flat config (eslint.config.js) with ESLint 10
+- TypeScript support via unified `typescript-eslint` package
+- Prettier integration via `eslint-plugin-prettier/recommended`
 - Import sorting with simple-import-sort
-- Strict type checking
 
 **Prettier:**
 
@@ -380,7 +379,7 @@ project/
 ├── dist/                  # Prod builds (gitignored)
 ├── tsdown.config.ts         # Build config
 ├── vitest.config.ts       # Test config
-├── eslint.config.mjs      # Lint config
+├── eslint.config.js      # Lint config
 ├── .prettierrc            # Format config (optional)
 └── package.json           # Scripts + exports
 ```
@@ -438,7 +437,7 @@ When applying these standards to an existing project:
 - [ ] Run cleanup: `npx ts-builds cleanup` to remove redundant deps
 - [ ] Copy/extend tsdown.config.ts for your project
 - [ ] Copy/extend vitest.config.ts for test patterns
-- [ ] Copy/extend eslint.config.mjs (or use ts-builds base)
+- [ ] Copy/extend eslint.config.js (or use ts-builds base)
 - [ ] Update tsconfig.json for strict mode
 - [ ] Update package.json exports for ESM-only format
 - [ ] Migrate tests to Vitest (if using different framework)
@@ -469,7 +468,7 @@ When working with ts-builds, these files contain the canonical configurations:
 - `ts-builds.config.json` - Project-specific configuration
 - `tsdown.config.ts` - Build configuration with environment logic
 - `vitest.config.ts` - Test configuration with coverage
-- `eslint.config.mjs` - Linting rules and TypeScript integration
+- `eslint.config.js` - Linting rules and TypeScript integration
 - `package.json` - Scripts, exports, and dependency versions
 
 ## Best Practices

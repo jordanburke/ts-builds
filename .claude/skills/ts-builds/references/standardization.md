@@ -146,10 +146,10 @@ pnpm add -D tsdown cross-env rimraf
 pnpm add -D vitest @vitest/coverage-v8 @vitest/ui
 
 # Linting and formatting
-pnpm add -D eslint @eslint/js @eslint/eslintrc
-pnpm add -D @typescript-eslint/parser @typescript-eslint/eslint-plugin
-pnpm add -D eslint-config-prettier eslint-plugin-prettier
-pnpm add -D eslint-plugin-simple-import-sort eslint-plugin-import
+pnpm add -D eslint @eslint/js
+pnpm add -D typescript-eslint
+pnpm add -D eslint-plugin-prettier
+pnpm add -D eslint-plugin-simple-import-sort
 pnpm add -D prettier
 
 # TypeScript
@@ -170,7 +170,7 @@ const isDev = process.env.NODE_ENV !== "production"
 
 export default defineConfig({
   entry: ["src/index.ts"],
-  format: ["cjs", "esm"],
+  format: ["esm"],
   dts: true,
   splitting: false,
   sourcemap: isDev,
@@ -184,7 +184,7 @@ export default defineConfig({
 **Customize for your project:**
 
 - **Multiple entry points**: `entry: ["src/index.ts", "src/utils.ts"]`
-- **Additional formats**: `format: ["cjs", "esm", "iife"]`
+- **Additional formats**: `format: ["esm", "cjs"]` (if CJS needed)
 - **External dependencies**: `external: ["peer-dependency-name"]`
 - **Bundle splitting**: `splitting: true` (for code splitting)
 
@@ -237,49 +237,50 @@ Most Jest tests work with minimal changes. Main differences:
 
 ### Step 6: Create ESLint Configuration
 
-Create `eslint.config.mjs` (flat config format):
+Create `eslint.config.js` (flat config format, works with `"type": "module"` in package.json):
 
 ```javascript
-import eslint from "@eslint/js"
-import tseslint from "@typescript-eslint/eslint-plugin"
-import tsparser from "@typescript-eslint/parser"
-import prettier from "eslint-plugin-prettier"
+import js from "@eslint/js"
+import prettierRecommended from "eslint-plugin-prettier/recommended"
 import simpleImportSort from "eslint-plugin-simple-import-sort"
 import globals from "globals"
+import tseslint from "typescript-eslint"
 
 export default [
   {
     ignores: ["dist/**", "lib/**", "node_modules/**", "coverage/**"],
   },
-  eslint.configs.recommended,
+  js.configs.recommended,
+  ...tseslint.configs.recommended,
+  prettierRecommended,
   {
-    files: ["**/*.ts", "**/*.tsx"],
+    plugins: {
+      "simple-import-sort": simpleImportSort,
+    },
     languageOptions: {
-      parser: tsparser,
-      parserOptions: {
-        ecmaVersion: "latest",
-        sourceType: "module",
-      },
       globals: {
         ...globals.node,
         ...globals.es2021,
       },
-    },
-    plugins: {
-      "@typescript-eslint": tseslint,
-      prettier: prettier,
-      "simple-import-sort": simpleImportSort,
+      ecmaVersion: 2020,
+      sourceType: "module",
     },
     rules: {
-      "prettier/prettier": "error",
+      "prettier/prettier": ["error", {}, { usePrettierrc: true }],
+      "@typescript-eslint/no-unused-vars": "off",
+      "@typescript-eslint/explicit-function-return-type": "off",
       "simple-import-sort/imports": "error",
       "simple-import-sort/exports": "error",
-      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_", varsIgnorePattern: "^_" }],
-      "@typescript-eslint/no-explicit-any": "warn",
     },
   },
 ]
 ```
+
+Key points:
+
+- `tseslint.configs.recommended` provides the TypeScript parser, plugin, and rules (spread as array)
+- `prettierRecommended` provides the Prettier plugin and config-prettier rules (single object)
+- Only `simple-import-sort` needs manual plugin declaration
 
 ### Step 7: Create Prettier Configuration
 
@@ -349,20 +350,21 @@ Update `tsconfig.json` for strict mode:
 
 ### Step 9: Update package.json Exports
 
-Update your package.json for dual module format:
+Update your package.json for ESM-only format:
 
 ```json
 {
   "name": "your-package",
   "version": "1.0.0",
+  "type": "module",
   "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "require": "./dist/index.js",
-      "import": "./dist/index.mjs"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "files": ["lib", "dist"]
@@ -376,13 +378,13 @@ Update your package.json for dual module format:
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "require": "./dist/index.js",
-      "import": "./dist/index.mjs"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./utils": {
       "types": "./dist/utils.d.ts",
-      "require": "./dist/utils.js",
-      "import": "./dist/utils.mjs"
+      "import": "./dist/utils.js",
+      "default": "./dist/utils.js"
     }
   }
 }
@@ -524,7 +526,7 @@ module.exports = {
 ```typescript
 export default defineConfig({
   entry: ["src/index.ts"],
-  format: ["cjs", "esm"], // More modern than UMD
+  format: ["esm"],
   dts: true,
   splitting: false,
   sourcemap: true,
@@ -561,7 +563,7 @@ export default {
 ```typescript
 export default defineConfig({
   entry: ["src/index.ts"],
-  format: ["cjs", "esm"],
+  format: ["esm"],
   dts: true,
 })
 ```
@@ -675,7 +677,7 @@ export default defineConfig({
 
 **Problem**: ESLint rules too strict or misconfigured.
 
-**Solution**: Adjust rules in eslint.config.mjs:
+**Solution**: Adjust rules in eslint.config.js:
 
 ```javascript
 rules: {
@@ -689,14 +691,15 @@ rules: {
 
 **Problem**: Competing formatting rules.
 
-**Solution**: Ensure eslint-config-prettier is loaded:
+**Solution**: Use `eslint-plugin-prettier/recommended` which bundles config-prettier:
 
 ```javascript
-import prettier from "eslint-config-prettier"
+import prettierRecommended from "eslint-plugin-prettier/recommended"
 
 export default [
   // ... other configs
-  prettier, // Must be last to override other rules
+  prettierRecommended, // Includes prettier plugin + config-prettier
+  // ... your custom rules
 ]
 ```
 
@@ -709,7 +712,7 @@ After migration, verify:
 - [ ] `pnpm test` passes all tests
 - [ ] `pnpm lint` reports no errors
 - [ ] `pnpm format:check` shows code is formatted
-- [ ] `pnpm build` produces dist/ with .js, .mjs, and .d.ts files
+- [ ] `pnpm build` produces dist/ with .js and .d.ts files
 - [ ] `pnpm validate` passes completely
 - [ ] Old build artifacts removed
 - [ ] package.json exports configured correctly

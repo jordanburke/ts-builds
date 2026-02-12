@@ -490,13 +490,13 @@ Support imports like `your-library/feature`:
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "require": "./dist/index.js",
-      "import": "./dist/index.mjs"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./feature": {
       "types": "./dist/feature.d.ts",
-      "require": "./dist/feature.js",
-      "import": "./dist/feature.mjs"
+      "import": "./dist/feature.js",
+      "default": "./dist/feature.js"
     }
   }
 }
