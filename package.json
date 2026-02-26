@@ -1,6 +1,6 @@
 {
   "name": "ts-builds",
-  "version": "2.4.1",
+  "version": "2.5.0",
   "description": "Shared TypeScript configuration files for library templates. Provides standardized ESLint, Prettier, Vitest, TypeScript, and build configs.",
   "keywords": [
     "typescript",

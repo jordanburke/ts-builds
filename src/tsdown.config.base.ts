@@ -1,3 +1,5 @@
+import { resolve } from "node:path"
+
 import type { UserConfig } from "tsdown"
 
 const env = process.env.NODE_ENV
@@ -11,6 +13,7 @@ export const tsdown: UserConfig = {
   target: "es2020",
   outDir: env === "production" ? "dist" : "lib",
   entry: ["src/index.ts", "src/**/*.ts"],
+  alias: { "@": resolve(process.cwd(), "src") },
   // Use .js/.d.ts extensions (not .mjs/.d.mts) since packages use "type": "module"
   outExtensions: () => ({ js: ".js", dts: ".d.ts" }),
 }
