@@ -1,6 +1,6 @@
 {
   "name": "ts-builds",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "Shared TypeScript configuration files for library templates. Provides standardized ESLint, Prettier, Vitest, TypeScript, and build configs.",
   "keywords": [
     "typescript",
@@ -55,25 +55,25 @@
   "dependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "~24.10.15",
-    "@vitest/coverage-v8": "^4.0.18",
-    "@vitest/ui": "^4.0.18",
+    "@vitest/coverage-v8": "^4.1.0",
+    "@vitest/ui": "^4.1.0",
     "cross-env": "^10.1.0",
-    "eslint": "^10.0.2",
+    "eslint": "^10.0.3",
     "eslint-config-functype": "^2.0.0",
     "eslint-plugin-functional": "^9.0.4",
     "eslint-plugin-functype": "^2.0.0",
     "eslint-plugin-prettier": "^5.5.5",
     "eslint-plugin-simple-import-sort": "^12.1.1",
-    "globals": "^17.3.0",
+    "globals": "^17.4.0",
     "prettier": "^3.8.1",
     "rimraf": "^6.1.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.56.1",
-    "vitest": "^4.0.18"
+    "typescript-eslint": "^8.57.0",
+    "vitest": "^4.1.0"
   },
   "devDependencies": {
-    "tsdown": "^0.21.1"
+    "tsdown": "^0.21.2"
   },
   "peerDependencies": {
     "tsdown": "^0.x",
@@ -109,5 +109,5 @@
       }
     }
   },
-  "packageManager": "pnpm@10.30.1+sha512.3590e550d5384caa39bd5c7c739f72270234b2f6059e13018f975c313b1eb9fefcc09714048765d4d9efe961382c312e624572c0420762bdc5d5940cdf9be73a"
+  "packageManager": "pnpm@10.32.1+sha512.a706938f0e89ac1456b6563eab4edf1d1faf3368d1191fc5c59790e96dc918e4456ab2e67d613de1043d2e8c81f87303e6b40d4ffeca9df15ef1ad567348f2be"
 }
