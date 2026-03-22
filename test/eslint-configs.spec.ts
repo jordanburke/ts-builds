@@ -38,8 +38,6 @@ const typeAwareRules: Record<string, "off"> = {
   "@typescript-eslint/prefer-optional-chain": "off",
   "@typescript-eslint/no-unnecessary-condition": "off",
   "@typescript-eslint/strict-boolean-expressions": "off",
-  "functional/prefer-immutable-types": "off",
-  "functional/immutable-data": "off",
 }
 
 // Helper to lint code with a flat config and return messages.
@@ -108,22 +106,18 @@ describe("ESLint Config Exports", () => {
       expect(config.default.length).toBeGreaterThan(0)
     })
 
-    it("should include functional plugin", async () => {
-      const config = await import("../eslint.config.fp.js")
-      const plugins = getAllPlugins(config.default)
-      expect(plugins).toHaveProperty("functional")
-    })
-
-    it("should include functional rules from eslint-config-functype", async () => {
+    it("should include strict TypeScript rules from eslint-config-functype", async () => {
       const config = await import("../eslint.config.fp.js")
       const rules = getAllRules(config.default)
-      expect(rules).toHaveProperty("functional/no-let")
-      expect(rules).toHaveProperty("functional/immutable-data")
+      expect(rules).toHaveProperty("@typescript-eslint/consistent-type-imports")
+      expect(rules).toHaveProperty("@typescript-eslint/no-explicit-any")
+      expect(rules).toHaveProperty("prefer-const")
     })
 
-    it("should NOT include functype plugin", async () => {
+    it("should NOT include functional or functype plugins", async () => {
       const config = await import("../eslint.config.fp.js")
       const plugins = getAllPlugins(config.default)
+      expect(plugins).not.toHaveProperty("functional")
       expect(plugins).not.toHaveProperty("functype")
     })
   })
@@ -135,10 +129,10 @@ describe("ESLint Config Exports", () => {
       expect(config.default.length).toBeGreaterThan(0)
     })
 
-    it("should include both functional and functype plugins", async () => {
+    it("should include functype plugin", async () => {
       const config = await import("../eslint.config.functype.js")
       const plugins = getAllPlugins(config.default)
-      expect(plugins).toHaveProperty("functional")
+      expect(plugins).not.toHaveProperty("functional")
       expect(plugins).toHaveProperty("functype")
     })
 
@@ -150,10 +144,11 @@ describe("ESLint Config Exports", () => {
       expect(rules).toHaveProperty("functype/prefer-fold")
     })
 
-    it("should also include functional rules", async () => {
+    it("should include functype-specific rules but not functional rules", async () => {
       const config = await import("../eslint.config.functype.js")
       const rules = getAllRules(config.default)
-      expect(rules).toHaveProperty("functional/no-let")
+      expect(rules).toHaveProperty("functype/prefer-option")
+      expect(rules).not.toHaveProperty("functional/no-let")
     })
   })
 })
@@ -215,18 +210,18 @@ describe("ESLint Config Linting Behavior", () => {
   })
 
   describe("fp config", () => {
-    it("should flag let declarations", async () => {
+    it("should flag explicit any", async () => {
+      const { default: config } = await import("../eslint.config.fp.js")
+      const code = `const x: any = 1\nconsole.log(x)\n`
+      const messages = lint(code, config)
+      expect(ruleIds(messages)).toContain("@typescript-eslint/no-explicit-any")
+    })
+
+    it("should enforce prefer-const", async () => {
       const { default: config } = await import("../eslint.config.fp.js")
       const code = `let x = 1\nconsole.log(x)\n`
       const messages = lint(code, config)
-      expect(ruleIds(messages)).toContain("functional/no-let")
-    })
-
-    it("should allow const declarations", async () => {
-      const { default: config } = await import("../eslint.config.fp.js")
-      const code = `const x = 1\nconsole.log(x)\n`
-      const messages = lint(code, config)
-      expect(ruleIds(messages)).not.toContain("functional/no-let")
+      expect(ruleIds(messages)).toContain("prefer-const")
     })
 
     it("should still enforce import sorting", async () => {
@@ -246,11 +241,11 @@ describe("ESLint Config Linting Behavior", () => {
   })
 
   describe("functype config", () => {
-    it("should flag let declarations (inherits fp rules)", async () => {
+    it("should enforce prefer-const (inherits strict TS rules)", async () => {
       const { default: config } = await import("../eslint.config.functype.js")
       const code = `let x = 1\nconsole.log(x)\n`
       const messages = lint(code, config)
-      expect(ruleIds(messages)).toContain("functional/no-let")
+      expect(ruleIds(messages)).toContain("prefer-const")
     })
 
     it("should still enforce import sorting", async () => {

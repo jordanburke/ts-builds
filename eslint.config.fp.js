@@ -1,8 +1,6 @@
-// ESLint FP config: Base + functional programming rules from eslint-config-functype
-// Includes: no-let, immutable-data, prefer-immutable-types, etc.
+// ESLint FP config: Base + strict TypeScript rules from eslint-config-functype
 import js from "@eslint/js"
 import functypeConfig from "eslint-config-functype"
-import functional from "eslint-plugin-functional"
 import prettierRecommended from "eslint-plugin-prettier/recommended"
 import simpleImportSort from "eslint-plugin-simple-import-sort"
 import globals from "globals"
@@ -26,7 +24,6 @@ export default [
   {
     plugins: {
       "simple-import-sort": simpleImportSort,
-      functional,
     },
     languageOptions: {
       globals: {
