@@ -2,7 +2,6 @@
 // Full functype support: prefer-option, prefer-either, prefer-fold, etc.
 import js from "@eslint/js"
 import functypeConfig from "eslint-config-functype"
-import functional from "eslint-plugin-functional"
 import functypePlugin from "eslint-plugin-functype"
 import prettierRecommended from "eslint-plugin-prettier/recommended"
 import simpleImportSort from "eslint-plugin-simple-import-sort"
@@ -27,7 +26,6 @@ export default [
   {
     plugins: {
       "simple-import-sort": simpleImportSort,
-      functional,
       functype: functypePlugin,
     },
     languageOptions: {
