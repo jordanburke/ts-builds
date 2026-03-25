@@ -101,6 +101,17 @@ npx ts-builds dev            # Dev mode (tsdown --watch or vite dev server)
 npx ts-builds preview        # Preview production build (vite preview)
 ```
 
+### Analysis Commands
+
+```bash
+npx ts-builds size               # Report bundle sizes (raw + gzip)
+npx ts-builds size --save        # Save baseline for delta tracking
+npx ts-builds doctor             # Check package health (exports, files, types)
+npx ts-builds changelog          # Generate changelog from conventional commits
+npx ts-builds changelog --since v1.0.0 --version 2.0.0  # From specific tag
+npx ts-builds changelog --output CHANGELOG.md            # Write to file
+```
+
 ### Named Chains and Custom Commands
 
 Run custom validation chains or commands defined in config:

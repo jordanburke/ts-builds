@@ -37,6 +37,12 @@ This is a TypeScript library template designed to be cloned/forked for creating 
 - `pnpm build:watch` - Watch mode build
 - `pnpm dev` - Development build with watch mode (alias for build:watch)
 
+### Analysis
+
+- `pnpm build && node dist/cli.js size` - Report bundle sizes (raw + gzip)
+- `pnpm build && node dist/cli.js doctor` - Package health check
+- `pnpm build && node dist/cli.js changelog` - Generate changelog from conventional commits
+
 ### Publishing (Tag-based Release)
 
 Releases are automated via GitHub Actions. To publish a new version:

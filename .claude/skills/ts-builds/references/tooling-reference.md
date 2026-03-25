@@ -39,6 +39,17 @@ npx ts-builds dev            # Dev mode (tsdown --watch or vite dev server)
 npx ts-builds preview        # Preview production build (vite preview)
 ```
 
+### Analysis Commands
+
+```bash
+npx ts-builds size               # Report bundle sizes (raw + gzip)
+npx ts-builds size --save        # Save baseline for delta tracking
+npx ts-builds doctor             # Check package health (exports, files, types)
+npx ts-builds changelog          # Generate changelog from conventional commits
+npx ts-builds changelog --since v1.0.0 --version 2.0.0  # From specific tag
+npx ts-builds changelog --output CHANGELOG.md            # Write to file
+```
+
 ### Named Chains and Custom Commands
 
 Run custom validation chains or commands defined in config:
@@ -79,6 +90,12 @@ npx ts-builds my-custom-cmd  # Run custom command from config
 | `validateChain`         | string[] | `["format", "lint", "typecheck", "test", "build"]` | Commands to run for validate                                 |
 | `commands`              | object   | `{}`                                               | Custom commands                                              |
 | `chains`                | object   | `{}`                                               | Named command chains                                         |
+| `size.maxTotal`         | number   | —                                                  | Max total bundle size in bytes (fails if exceeded)           |
+| `size.maxFile`          | number   | —                                                  | Max per-file size in bytes                                   |
+| `size.gzip`             | boolean  | `true`                                             | Show gzip sizes in report                                    |
+| `size.baselineFile`     | string   | `".ts-builds-size.json"`                           | Path to size baseline file                                   |
+| `changelog.types`       | object   | `{ feat: "Features", fix: "Bug Fixes", ... }`     | Map commit type to section header                            |
+| `changelog.exclude`     | string[] | `["chore"]`                                        | Commit types to exclude from changelog                       |
 
 **Using custom ESLint plugins:**
 
