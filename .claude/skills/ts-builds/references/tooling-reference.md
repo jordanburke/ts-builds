@@ -82,7 +82,7 @@ npx ts-builds my-custom-cmd  # Run custom command from config
 
 **Using custom ESLint plugins:**
 
-If your project uses ESLint plugins not bundled with ts-builds (e.g., `eslint-plugin-functional`), set `lint.useProjectEslint: true` to use your project's ESLint installation:
+If your project uses ESLint plugins not bundled with ts-builds (e.g., `eslint-plugin-react-hooks`), set `lint.useProjectEslint: true` to use your project's ESLint installation:
 
 ## tsdown Configuration
 

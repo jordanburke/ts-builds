@@ -176,7 +176,7 @@ Create `ts-builds.config.json` in your project root to customize behavior:
 
 **Using Custom ESLint Plugins:**
 
-If your project uses ESLint plugins not bundled with ts-builds (e.g., `eslint-plugin-functional`), set `lint.useProjectEslint: true` to use your project's ESLint installation instead of the bundled version.
+If your project uses ESLint plugins not bundled with ts-builds (e.g., `eslint-plugin-react-hooks`), set `lint.useProjectEslint: true` to use your project's ESLint installation instead of the bundled version.
 
 **Using Vite for SPAs/React Apps:**
 

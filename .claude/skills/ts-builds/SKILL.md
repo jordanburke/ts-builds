@@ -199,7 +199,7 @@ Requires `vite` as peer dependency instead of `tsdown`.
 
 **Using custom ESLint plugins:**
 
-If your project uses ESLint plugins not bundled with ts-builds (e.g., `eslint-plugin-functional`, `eslint-plugin-react-hooks`), set `lint.useProjectEslint: true`:
+If your project uses ESLint plugins not bundled with ts-builds (e.g., `eslint-plugin-react-hooks`), set `lint.useProjectEslint: true`:
 
 ```json
 {
