@@ -94,7 +94,7 @@ npx ts-builds my-custom-cmd  # Run custom command from config
 | `size.maxFile`          | number   | —                                                  | Max per-file size in bytes                                   |
 | `size.gzip`             | boolean  | `true`                                             | Show gzip sizes in report                                    |
 | `size.baselineFile`     | string   | `".ts-builds-size.json"`                           | Path to size baseline file                                   |
-| `changelog.types`       | object   | `{ feat: "Features", fix: "Bug Fixes", ... }`     | Map commit type to section header                            |
+| `changelog.types`       | object   | `{ feat: "Features", fix: "Bug Fixes", ... }`      | Map commit type to section header                            |
 | `changelog.exclude`     | string[] | `["chore"]`                                        | Commit types to exclude from changelog                       |
 
 **Using custom ESLint plugins:**
