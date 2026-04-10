@@ -33,9 +33,6 @@ jobs:
       - name: Bootstrap and validate
         run: pnpm validate:bootstrap
 
-      - name: Update npm
-        run: npm install -g npm@latest
-
       - name: Verify package contents
         run: |
           echo "Files to be published:"
