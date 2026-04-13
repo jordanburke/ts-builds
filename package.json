@@ -63,7 +63,7 @@
     "eslint-plugin-functype": "^2.2.0",
     "eslint-plugin-prettier": "^5.5.5",
     "eslint-plugin-simple-import-sort": "^12.1.1",
-    "functype": "^0.56.0",
+    "functype": "^0.57.0",
     "functype-os": "^0.4.2",
     "globals": "^17.4.0",
     "prettier": "^3.8.2",
