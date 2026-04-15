@@ -12,7 +12,8 @@
     "skipLibCheck": true,
     "rootDir": "src",
     "emitDeclarationOnly": true,
-    "strictPropertyInitialization": false
+    "strictPropertyInitialization": false,
+    "types": ["node"]
   },
   "include": ["src/**/*"]
 }
