@@ -42,6 +42,7 @@ export default [
     },
     rules: {
       ...functypeConfig.configs.recommended.rules,
+      ...functypePlugin.configs.recommended.rules,
       "functype/prefer-option": "warn",
       "functype/prefer-either": "warn",
       "functype/prefer-fold": "warn",
