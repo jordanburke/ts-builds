@@ -23,9 +23,6 @@ importers:
       '@vitest/ui':
         specifier: ^4.1.5
         version: 4.1.5(vitest@4.1.5)
-      cross-env:
-        specifier: ^10.1.0
-        version: 10.1.0
       eslint:
         specifier: ^10.3.0
         version: 10.3.0
@@ -56,9 +53,6 @@ importers:
       prettier:
         specifier: ^3.8.3
         version: 3.8.3
-      rimraf:
-        specifier: ^6.1.3
-        version: 6.1.3
       ts-node:
         specifier: ^10.9.2
         version: 10.9.2(@types/node@24.10.15)(typescript@6.0.3)
@@ -75,6 +69,9 @@ importers:
         specifier: ^4.1.5
         version: 4.1.5(@types/node@24.10.15)(@vitest/coverage-v8@4.1.5)(@vitest/ui@4.1.5)(vite@8.0.11(@types/node@24.10.15))
     devDependencies:
+      rimraf:
+        specifier: ^6.1.3
+        version: 6.1.3
       tsdown:
         specifier: ^0.21.10
         version: 0.21.10(synckit@0.11.12)(typescript@6.0.3)
@@ -135,9 +132,6 @@ packages:
 
   '@emnapi/wasi-threads@1.2.1':
     resolution: {integrity: sha512-uTII7OYF+/Mes/MrcIOYp5yOtSMLBWSIoLPpcgwipoiKbli6k322tcoFsxoIIxPDqW01SQGAgko4EzZi2BNv2w==}
-
-  '@epic-web/invariant@1.0.0':
-    resolution: {integrity: sha512-lrTPqgvfFQtR/eY/qkIzp98OGdNJu0m5ji3q/nJI8v3SXkRKEnWiOxMmbvcSoAIzv/cGiuvRy57k4suKQSAdwA==}
 
   '@eslint-community/eslint-utils@4.9.1':
     resolution: {integrity: sha512-phrYmNiYppR7znFEdqgfWHXR6NCkZEK7hwWDHZUjit/2/U0r6XvkDl0SYnoM51Hq7FhCGdLDT6zxCCOY1hexsQ==}
@@ -652,11 +646,6 @@ packages:
 
   create-require@1.1.1:
     resolution: {integrity: sha512-dcKFX3jn0MpIaXjisoRvexIJVEKzaq7z2rZKxf+MSr9TkdmHmsU4m2lcLojrj/FHl8mk5VxMmYA+ftRkP/3oKQ==}
-
-  cross-env@10.1.0:
-    resolution: {integrity: sha512-GsYosgnACZTADcmEyJctkJIoqAhHjttw7RsFrVoJNXbsWWqaq6Ym+7kZjq6mS45O0jij6vtiReppKQEtqWy6Dw==}
-    engines: {node: '>=20'}
-    hasBin: true
 
   cross-spawn@7.0.6:
     resolution: {integrity: sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==}
@@ -1509,8 +1498,6 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
-  '@epic-web/invariant@1.0.0': {}
-
   '@eslint-community/eslint-utils@4.9.1(eslint@10.3.0)':
     dependencies:
       eslint: 10.3.0
@@ -1969,11 +1956,6 @@ snapshots:
   convert-source-map@2.0.0: {}
 
   create-require@1.1.1: {}
-
-  cross-env@10.1.0:
-    dependencies:
-      '@epic-web/invariant': 1.0.0
-      cross-spawn: 7.0.6
 
   cross-spawn@7.0.6:
     dependencies:
