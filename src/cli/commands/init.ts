@@ -9,8 +9,6 @@ const requiredHoistPatterns = [
   "public-hoist-pattern[]=*prettier*",
   "public-hoist-pattern[]=*vitest*",
   "public-hoist-pattern[]=typescript",
-  "public-hoist-pattern[]=*rimraf*",
-  "public-hoist-pattern[]=*cross-env*",
 ]
 
 export function ensureNpmrcHoistPatterns(): void {
@@ -94,13 +92,15 @@ Example with custom commands:
 {
   "srcDir": "./src",
   "commands": {
-    "docs": "pnpm docs:build",
-    "subproject": { "run": "pnpm validate", "cwd": "./packages/sub" }
+    "docs": "pnpm docs:build"
   },
   "chains": {
     "validate": ["format", "lint", "test", "build"],
     "validate:full": ["format", "lint", "typecheck", "test", "docs", "build"]
   }
 }
+
+For cross-package orchestration in a monorepo, use Turbo, nx, or
+\`pnpm -r\` rather than ts-builds chains with cwd-escaping commands.
 `)
 }

@@ -2,13 +2,11 @@ export const bundledPackages = [
   "@eslint/js",
   "@vitest/coverage-v8",
   "@vitest/ui",
-  "cross-env",
   "eslint",
   "eslint-config-prettier",
   "eslint-plugin-prettier",
   "eslint-plugin-simple-import-sort",
   "prettier",
-  "rimraf",
   "ts-node",
   "typescript",
   "typescript-eslint",
@@ -75,19 +73,19 @@ CONFIGURATION:
     }
   }
 
-  Advanced (monorepo with custom commands):
+  Advanced (custom commands and chains within a package):
   {
     "srcDir": "./src",
     "commands": {
-      "docs:validate": "pnpm docs:build && pnpm docs:check",
-      "landing:validate": { "run": "pnpm validate", "cwd": "./landing" }
+      "docs:validate": "pnpm docs:build && pnpm docs:check"
     },
     "chains": {
-      "validate": ["validate:core", "validate:landing"],
-      "validate:core": ["format", "lint", "compile", "test", "docs:validate", "build"],
-      "validate:landing": ["landing:validate"]
+      "validate": ["format", "lint", "compile", "test", "docs:validate", "build"]
     }
   }
+
+  For cross-package orchestration in a monorepo, use Turbo, nx, or
+  \`pnpm -r\` rather than ts-builds chains with cwd-escaping commands.
 
 USAGE IN PACKAGE.JSON:
   {

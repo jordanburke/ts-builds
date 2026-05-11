@@ -129,7 +129,7 @@ The CLI's `info` command shows all 14 packages bundled with this config that use
 - @eslint/js, eslint-plugin-prettier, eslint-plugin-simple-import-sort
 - eslint-config-prettier (flagged by cleanup for consumer projects)
 - @vitest/coverage-v8, @vitest/ui
-- cross-env, rimraf, ts-node
+- ts-node
 
 ### Local Development
 
@@ -197,11 +197,31 @@ Set `buildMode: "vite"` to use Vite instead of tsdown for builds:
 
 With Vite mode:
 
-- `ts-builds build` → `rimraf dist && vite build`
+- `ts-builds build` → cleans `dist/` via `fs.rm`, then `vite build`
 - `ts-builds dev` → `vite` (dev server with HMR)
 - `ts-builds preview` → `vite preview`
 
 Requires `vite` as a peer dependency instead of `tsdown`.
+
+### Build internals
+
+`ts-builds build` cleans `dist/` via Node's `fs.rm` (with retry on transient Windows errors `EBUSY`/`EPERM`/`ENOTEMPTY`/`EMFILE`) and passes `NODE_ENV=production` through `spawn`'s `env` option — the parent process's env is never mutated, so the helpers are safe to import into long-lived runners. No shelled-out `rimraf` or `cross-env`; consumers do not need to hoist those binaries in `.npmrc`.
+
+The `cleanDir` helper lives in `src/cli/commands/build.ts` and is exported for tests. Retry delays: `[100, 250, 500, 1000]` ms.
+
+**Module layout (no circular imports):**
+
+- `src/cli/process.ts` — spawn primitives (`runCommand`, `runShellCommand`, `runSequence`) with `cwd` + `env` options.
+- `src/cli/commands/build.ts` — single-command handlers (`runFormat`, `runLint`, `runBuild`, …) + `cleanDir`. Imports `process.ts` only.
+- `src/cli/runner.ts` — chain orchestration (`getBuiltinCommands`, `runChain`, `runValidate`). Imports `runBuild` statically and dispatches the `build` builtin through it via an internal `runFn` shape (not exposed in user config).
+
+### Bootstrap script
+
+`package.json` `scripts.bootstrap` is `rimraf dist && tsdown`. This is the only spot in the repo that still shell-outs to `rimraf` — and it must, because it runs _before_ the CLI exists to clean `dist/` via `fs.rm`. `rimraf` is kept in `devDependencies` (not runtime `dependencies`) so it does not propagate to consumers' install graphs.
+
+### Deprecation (since 2.8.0)
+
+`commands["validate:X"]` entries with a `cwd:` that escapes the package root emit a deprecation warning at config load (deduplicated per `name × cwd` pair) and are targeted for removal in **ts-builds 4.0**. Use a workspace orchestrator (Turbo, nx, `pnpm -r`) for cross-package validation instead. See issue #72.
 
 ## Key Files
 

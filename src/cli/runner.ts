@@ -1,79 +1,35 @@
-import { spawn } from "node:child_process"
-import { join } from "node:path"
-
+import { runBuild } from "./commands/build"
 import type { CommandDef, ResolvedConfig } from "./config"
-import { targetDir } from "./config"
+import { loadConfig } from "./config"
+import { runShellCommand } from "./process"
 
-export interface RunOptions {
-  cwd?: string
-}
+export type { RunOptions } from "./process"
+export { runCommand, runSequence, runShellCommand } from "./process"
 
-export function runCommand(command: string, args: string[], options: RunOptions = {}): Promise<number> {
-  const cwd = options.cwd ? join(targetDir, options.cwd) : targetDir
+/**
+ * A chain step is either:
+ *   - a `CommandDef` (shell-string `run`, optional `cwd`), or
+ *   - an internal node-function step (`runFn`) used by builtins that need
+ *     in-process behavior (e.g., the `build` builtin invokes `runBuild()`
+ *     directly so dist cleanup and NODE_ENV setup go through the Node API
+ *     instead of being shelled out).
+ *
+ * `runFn` is intentionally not exposed on `CommandDef` — user configs cannot
+ * supply a runFn through ts-builds.config.json.
+ */
+export type BuiltinCommand = CommandDef | { runFn: () => Promise<number> }
 
-  return new Promise((resolve) => {
-    const child = spawn(command, args, {
-      cwd,
-      stdio: "inherit",
-      shell: true,
-    })
-
-    child.on("close", (code) => {
-      resolve(code ?? 1)
-    })
-
-    child.on("error", (err) => {
-      console.error(`Failed to run ${command}: ${err.message}`)
-      resolve(1)
-    })
-  })
-}
-
-export function runShellCommand(shellCmd: string, options: RunOptions = {}): Promise<number> {
-  const cwd = options.cwd ? join(targetDir, options.cwd) : targetDir
-
-  return new Promise((resolve) => {
-    const child = spawn(shellCmd, {
-      cwd,
-      stdio: "inherit",
-      shell: true,
-    })
-
-    child.on("close", (code) => {
-      resolve(code ?? 1)
-    })
-
-    child.on("error", (err) => {
-      console.error(`Failed to run: ${err.message}`)
-      resolve(1)
-    })
-  })
-}
-
-export async function runSequence(commands: Array<{ name: string; cmd: string; args: string[] }>): Promise<number> {
-  for (const { name, cmd, args } of commands) {
-    console.log(`\n▶ Running ${name}...`)
-    const code = await runCommand(cmd, args)
-    if (code !== 0) {
-      console.error(`\n✗ ${name} failed with exit code ${code}`)
-      return code
-    }
-    console.log(`✓ ${name} complete`)
-  }
-  return 0
-}
-
-export function getBuiltinCommands(config: ResolvedConfig): Record<string, CommandDef> {
+export function getBuiltinCommands(config: ResolvedConfig): Record<string, BuiltinCommand> {
   const eslintCmd = config.lint.useProjectEslint ? "npx eslint" : "eslint"
 
-  const buildCmd =
-    config.buildMode === "vite"
-      ? { run: "rimraf dist && vite build" }
-      : { run: "rimraf dist && cross-env NODE_ENV=production tsdown" }
+  const buildCmd: BuiltinCommand = {
+    runFn: () => runBuild(false),
+  }
 
-  const buildWatchCmd = config.buildMode === "vite" ? { run: "vite build --watch" } : { run: "tsdown --watch" }
+  const buildWatchCmd: BuiltinCommand =
+    config.buildMode === "vite" ? { run: "vite build --watch" } : { run: "tsdown --watch" }
 
-  const devCmd = config.buildMode === "vite" ? { run: "vite" } : { run: "tsdown --watch" }
+  const devCmd: BuiltinCommand = config.buildMode === "vite" ? { run: "vite" } : { run: "tsdown --watch" }
 
   return {
     format: { run: "prettier --write ." },
@@ -122,16 +78,16 @@ export async function runChain(
       continue
     }
 
-    const cmdDef = config.commands[step] ?? builtins[step]
+    const cmdDef: CommandDef | BuiltinCommand | undefined = config.commands[step] ?? builtins[step]
     if (!cmdDef) {
       console.error(`Unknown command or chain: ${step}`)
       return 1
     }
 
-    const cwdLabel = cmdDef.cwd ? ` (in ${cmdDef.cwd})` : ""
+    const cwdLabel = "cwd" in cmdDef && cmdDef.cwd ? ` (in ${cmdDef.cwd})` : ""
     console.log(`\n▶ Running ${step}...${cwdLabel}`)
 
-    const code = await runShellCommand(cmdDef.run, { cwd: cmdDef.cwd })
+    const code = "runFn" in cmdDef ? await cmdDef.runFn() : await runShellCommand(cmdDef.run, { cwd: cmdDef.cwd })
     if (code !== 0) {
       console.error(`\n✗ ${step} failed with exit code ${code}`)
       return code
@@ -140,4 +96,9 @@ export async function runChain(
   }
 
   return 0
+}
+
+export async function runValidate(chainName = "validate"): Promise<number> {
+  const config = loadConfig()
+  return runChain(chainName, config)
 }
