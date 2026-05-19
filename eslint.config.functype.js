@@ -43,13 +43,6 @@ export default [
     rules: {
       ...functypeConfig.configs.recommended.rules,
       ...functypePlugin.configs.recommended.rules,
-      "functype/prefer-option": "warn",
-      "functype/prefer-either": "warn",
-      "functype/prefer-fold": "warn",
-      "functype/prefer-map": "warn",
-      "functype/prefer-flatmap": "warn",
-      "functype/no-imperative-loops": "warn",
-      "functype/prefer-do-notation": "warn",
     },
   },
 ]
