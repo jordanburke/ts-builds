@@ -4,16 +4,18 @@
 
 **Goal:** Adopt pnpm 11 as ts-builds' own toolchain AND change the `init` CLI command to emit pnpm-11-compatible config, so the package works on pnpm 11 and keeps configuring consumers correctly.
 
-**Architecture:** pnpm 11 makes `.npmrc` auth/registry-only and stops reading the `package.json` `pnpm` field; all non-auth settings move to `pnpm-workspace.yaml`. Two independent surfaces change: (1) the repo's own config (its `pnpm` field + root `.npmrc` hoist patterns relocate to a new `pnpm-workspace.yaml`; toolchain pin + CI Node floor bump), and (2) the consumer-facing `init` command (stops writing `public-hoist-pattern[]` to `.npmrc`, instead writes `publicHoistPattern` to `pnpm-workspace.yaml`, which pnpm 10 *and* 11 both honor).
+**Architecture:** pnpm 11 makes `.npmrc` auth/registry-only and stops reading the `package.json` `pnpm` field; all non-auth settings move to `pnpm-workspace.yaml`. Two independent surfaces change: (1) the repo's own config (its `pnpm` field + root `.npmrc` hoist patterns relocate to a new `pnpm-workspace.yaml`; toolchain pin + CI Node floor bump), and (2) the consumer-facing `init` command (stops writing `public-hoist-pattern[]` to `.npmrc`, instead writes `publicHoistPattern` to `pnpm-workspace.yaml`, which pnpm 10 _and_ 11 both honor).
 
 **Tech Stack:** pnpm 11.x (via corepack), Node 24 (`.nvmrc`), tsdown, Vitest, TypeScript, GitHub Actions.
 
 **Decisions locked in (from planning):**
+
 1. Scope = **both** internal adoption + CLI output change.
 2. `init` output = **`pnpm-workspace.yaml` only** (works on pnpm 10 & 11; drops pnpm ≤9 hoist support).
 3. Strict defaults = **keep** `minimumReleaseAge` (1 day) and `strictDepBuilds` on; document the tradeoff.
 
 **Verified facts (sources):**
+
 - pnpm 11.0.0 requires **Node 22+**, is pure-ESM, bumps the **store to v11** (one-time re-fetch on first install). (github.com/pnpm/pnpm releases/tag/v11.0.0)
 - In pnpm 11, **only auth/registry** settings are read from `.npmrc`; `publicHoistPattern`, `overrides`, `peerDependencyRules`, `minimumReleaseAge` go in `pnpm-workspace.yaml`. The `package.json` `pnpm` field is **no longer read**. (pnpm.io/settings)
 - **pnpm 10 also reads** `pnpm-workspace.yaml` settings (`overrides`, `peerDependencyRules`, `publicHoistPattern`) — so a single `pnpm-workspace.yaml` serves both. (pnpm.io/10.x/settings)
@@ -21,6 +23,7 @@
 - YAML key is camelCase `publicHoistPattern` (vs `.npmrc`'s `public-hoist-pattern[]`).
 
 **Current repo state (observed 2026-06-01):**
+
 - `package.json:106-115` — `pnpm` field: `peerDependencyRules.allowedVersions.eslint = "10"`, `overrides.unrun = "0.2.37"`.
 - `package.json:116` — `packageManager: pnpm@10.34.1+sha512…`.
 - Root `.npmrc` — header comment + 6 `public-hoist-pattern[]` lines (`*eslint*`, `*prettier*`, `*vitest*`, `typescript`, `*rimraf*`, `*cross-env*`).
@@ -38,17 +41,17 @@
 
 ## File Structure
 
-| File | Responsibility | Action |
-|---|---|---|
-| `pnpm-workspace.yaml` (root) | The repo's OWN pnpm settings: `overrides`, `peerDependencyRules`, `publicHoistPattern` | Create |
-| `package.json` | Drop the `pnpm` field; bump `packageManager` to pnpm 11 | Modify |
-| `.npmrc` (root) | Now empty (hoist patterns relocated) | Delete |
-| `src/.npmrc` | Unpublished duplicate of hoist patterns | Delete |
-| `.github/workflows/node.js.yml` | CI Node floor 22.x → 24.x | Modify |
-| `src/cli/commands/init.ts` | Consumer `init`: write `pnpm-workspace.yaml` instead of `.npmrc` | Modify |
-| `src/cli/commands/info.ts` | Help text for `init` | Modify |
-| `test/cli.spec.ts` | Replace `.npmrc` assertions with `pnpm-workspace.yaml` assertions | Modify |
-| `README.md`, `CLAUDE.md` | Doc updates for new `init` behavior + pnpm-11 notes | Modify |
+| File                            | Responsibility                                                                         | Action |
+| ------------------------------- | -------------------------------------------------------------------------------------- | ------ |
+| `pnpm-workspace.yaml` (root)    | The repo's OWN pnpm settings: `overrides`, `peerDependencyRules`, `publicHoistPattern` | Create |
+| `package.json`                  | Drop the `pnpm` field; bump `packageManager` to pnpm 11                                | Modify |
+| `.npmrc` (root)                 | Now empty (hoist patterns relocated)                                                   | Delete |
+| `src/.npmrc`                    | Unpublished duplicate of hoist patterns                                                | Delete |
+| `.github/workflows/node.js.yml` | CI Node floor 22.x → 24.x                                                              | Modify |
+| `src/cli/commands/init.ts`      | Consumer `init`: write `pnpm-workspace.yaml` instead of `.npmrc`                       | Modify |
+| `src/cli/commands/info.ts`      | Help text for `init`                                                                   | Modify |
+| `test/cli.spec.ts`              | Replace `.npmrc` assertions with `pnpm-workspace.yaml` assertions                      | Modify |
+| `README.md`, `CLAUDE.md`        | Doc updates for new `init` behavior + pnpm-11 notes                                    | Modify |
 
 The two phases are independent and each leaves the repo green: **Phase A** (Tasks 1–6) migrates the repo's own toolchain; **Phase B** (Tasks 7–10) changes the consumer-facing CLI. Phase B does not require Phase A.
 
@@ -59,6 +62,7 @@ The two phases are independent and each leaves the repo green: **Phase A** (Task
 ### Task 1: Relocate the repo's pnpm settings into `pnpm-workspace.yaml`
 
 **Files:**
+
 - Create: `pnpm-workspace.yaml`
 
 - [ ] **Step 1: Create `pnpm-workspace.yaml` with the relocated settings**
@@ -104,6 +108,7 @@ git commit -m "chore(pnpm): relocate settings to pnpm-workspace.yaml"
 ### Task 2: Remove the deprecated config surfaces
 
 **Files:**
+
 - Modify: `package.json:106-115` (remove `pnpm` field)
 - Delete: `.npmrc` (root)
 - Delete: `src/.npmrc`
@@ -130,9 +135,11 @@ Ensure the preceding line still ends with a comma and the JSON remains valid (th
 - [ ] **Step 2: Delete the relocated `.npmrc` files**
 
 Run:
+
 ```bash
 git rm .npmrc src/.npmrc
 ```
+
 Expected: both files staged for deletion. (Root `.npmrc` held only the header + 6 hoist patterns, now in `pnpm-workspace.yaml`; `src/.npmrc` was an unpublished duplicate.)
 
 - [ ] **Step 3: Verify install + validate are unaffected (still on pnpm 10)**
@@ -152,6 +159,7 @@ git commit -m "chore(pnpm): drop package.json pnpm field and redundant .npmrc fi
 ### Task 3: Bump the toolchain to pnpm 11
 
 **Files:**
+
 - Modify: `package.json` (`packageManager` field, rewritten by corepack)
 
 - [ ] **Step 1: Pin pnpm 11 via corepack**
@@ -181,6 +189,7 @@ git commit -m "chore(pnpm): bump toolchain to pnpm 11"
 ### Task 4: Raise the CI Node floor to 24
 
 **Files:**
+
 - Modify: `.github/workflows/node.js.yml:15` (matrix)
 
 - [ ] **Step 1: Bump the Node matrix**
@@ -188,17 +197,17 @@ git commit -m "chore(pnpm): bump toolchain to pnpm 11"
 In `.github/workflows/node.js.yml`, change:
 
 ```yaml
-    strategy:
-      matrix:
-        node-version: [22.x]
+strategy:
+  matrix:
+    node-version: [22.x]
 ```
 
 to:
 
 ```yaml
-    strategy:
-      matrix:
-        node-version: [24.x]
+strategy:
+  matrix:
+    node-version: [24.x]
 ```
 
 (`publish.yml` already uses `node-version-file: ".nvmrc"` = v24, and `pnpm/action-setup@v4` in both workflows reads the `packageManager` field, so it auto-picks pnpm 11 — no other workflow edits needed.)
@@ -220,6 +229,7 @@ git commit -m "ci: raise Node floor to 24 for pnpm 11"
 ### Task 5: Document the strict-defaults tradeoff
 
 **Files:**
+
 - Modify: `CLAUDE.md` (Architecture / Build internals section)
 
 - [ ] **Step 1: Add a pnpm-11 notes block to `CLAUDE.md`**
@@ -234,6 +244,7 @@ This repo is pinned to pnpm 11 via `packageManager`. Settings live in
 `pnpm` field (no longer read by pnpm 11).
 
 pnpm 11 secure defaults are left ON:
+
 - `minimumReleaseAge` (1 day) — pnpm refuses dependency versions published less
   than 24h ago. CI installs from a committed `pnpm-lock.yaml`, so pinned versions
   are unaffected; this only bites a fresh `pnpm add` / lockfile re-resolution of a
@@ -274,6 +285,7 @@ Expected: completes with no error. If pnpm 11 refuses any pinned dependency beca
 ### Task 7: Switch `init` to emit `pnpm-workspace.yaml` (TDD)
 
 **Files:**
+
 - Modify: `src/cli/commands/init.ts`
 - Test: `test/cli.spec.ts` (replace the `init .npmrc generation` block)
 
@@ -315,7 +327,7 @@ describe("init pnpm-workspace.yaml generation", () => {
   it("preserves pre-existing pnpm-workspace.yaml content", () => {
     const dir = makeTempDir()
     try {
-      const existing = "packages:\n  - \"packages/*\"\n"
+      const existing = 'packages:\n  - "packages/*"\n'
       writeFileSync(join(dir, "pnpm-workspace.yaml"), existing)
       runCli([], dir)
       const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
@@ -412,6 +424,7 @@ git commit -m "feat(cli): init writes pnpm-workspace.yaml instead of .npmrc"
 ### Task 8: Update the `init` help text
 
 **Files:**
+
 - Modify: `src/cli/commands/info.ts:26`
 
 - [ ] **Step 1: Update the help line**
@@ -445,6 +458,7 @@ git commit -m "docs(cli): update init help text for pnpm-workspace.yaml"
 ### Task 9: Update README and CLAUDE.md for the new `init` behavior
 
 **Files:**
+
 - Modify: `README.md` (lines referencing `.npmrc`, currently 20, 36, 48)
 - Modify: `CLAUDE.md` (CLI Usage / init description)
 
@@ -490,6 +504,7 @@ Expected: no matches for `public-hoist-pattern[]`, `ensureNpmrcHoistPatterns`, o
 ### Task 11: Release
 
 **Files:**
+
 - Modify: `package.json` (`version`)
 
 - [ ] **Step 1: Bump version**
@@ -519,6 +534,7 @@ Expected: validate ✓, publish ✓, GitHub Release ✓. Confirm `npm view ts-bu
 ## Self-Review
 
 **Spec coverage:**
+
 - Decision 1 (both scopes) → Phase A (Tasks 1–6) + Phase B (Tasks 7–10). ✓
 - Decision 2 (`pnpm-workspace.yaml` only for init) → Task 7 (no `.npmrc` written; test asserts its absence). ✓
 - Decision 3 (keep strict defaults, document) → Task 3 Step 3 (handle via `allowBuilds`, not disable), Task 5 (docs), Task 6 (verify CI install). ✓
