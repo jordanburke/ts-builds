@@ -23,7 +23,7 @@ USAGE:
   npx ts-builds [command]
 
 SETUP COMMANDS:
-  init      Initialize project with .npmrc hoist patterns (default)
+  init      Initialize project with pnpm-workspace.yaml hoist patterns (default)
   config    Create ts-builds.config.json (use --force to overwrite)
   info      Show bundled packages you don't need to install
   cleanup   Remove redundant dependencies from package.json
