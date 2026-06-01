@@ -5,9 +5,9 @@ import { Fs } from "functype-os"
 
 import { targetDir } from "../config"
 
-type Severity = "error" | "warning" | "info"
+export type Severity = "error" | "warning" | "info"
 
-interface CheckResult {
+export interface CheckResult {
   severity: Severity
   message: string
 }
