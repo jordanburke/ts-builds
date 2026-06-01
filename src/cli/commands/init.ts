@@ -14,7 +14,7 @@ export function ensureWorkspaceHoistPatterns(): void {
   const wsPath = join(targetDir, "pnpm-workspace.yaml")
   const existing = existsSync(wsPath) ? readFileSync(wsPath, "utf-8") : ""
 
-  if (existing.includes("publicHoistPattern")) {
+  if (/^publicHoistPattern:/m.test(existing)) {
     return
   }
 

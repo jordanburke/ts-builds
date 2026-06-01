@@ -117,6 +117,20 @@ describe("init pnpm-workspace.yaml generation", () => {
     }
   })
 
+  it("appends valid YAML when the existing file has no trailing newline", () => {
+    const dir = makeTempDir()
+    try {
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), `packages:\n  - "packages/*"`)
+      runCli([], dir)
+      const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      // The pre-existing key and the appended key must be on separate lines.
+      expect(ws).toMatch(/- "packages\/\*"\npublicHoistPattern:/)
+      expect(ws).toContain(`  - "*eslint*"`)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it("does not create a .npmrc", () => {
     const dir = makeTempDir()
     try {
