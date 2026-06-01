@@ -237,6 +237,13 @@ pnpm 11 secure defaults are intentionally left ON:
   scripts. Approve specific packages via an `allowBuilds` map in
   `pnpm-workspace.yaml`; do not disable the protection globally.
 
+`ts-builds doctor` reports pnpm 11 readiness: it flags `public-hoist-pattern[]`
+lines in `.npmrc` and a `package.json` `pnpm` field (both ignored by pnpm 11).
+`ts-builds doctor --fix` migrates them to `pnpm-workspace.yaml` (`publicHoistPattern`,
+`overrides`, `peerDependencyRules`), strips the inert `.npmrc` lines, and prunes the
+`pnpm` field. Exotic `pnpm` keys (e.g. `packageExtensions`) and pre-existing target
+keys are reported for manual migration rather than altered.
+
 ### Deprecation (since 2.8.0)
 
 `commands["validate:X"]` entries with a `cwd:` that escapes the package root emit a deprecation warning at config load (deduplicated per `name × cwd` pair) and are targeted for removal in **ts-builds 4.0**. Use a workspace orchestrator (Turbo, nx, `pnpm -r`) for cross-package validation instead. See issue #72.
