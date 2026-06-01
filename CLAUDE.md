@@ -205,7 +205,7 @@ Requires `vite` as a peer dependency instead of `tsdown`.
 
 ### Build internals
 
-`ts-builds build` cleans `dist/` via Node's `fs.rm` (with retry on transient Windows errors `EBUSY`/`EPERM`/`ENOTEMPTY`/`EMFILE`) and passes `NODE_ENV=production` through `spawn`'s `env` option — the parent process's env is never mutated, so the helpers are safe to import into long-lived runners. No shelled-out `rimraf` or `cross-env`; consumers do not need to hoist those binaries in `.npmrc`.
+`ts-builds build` cleans `dist/` via Node's `fs.rm` (with retry on transient Windows errors `EBUSY`/`EPERM`/`ENOTEMPTY`/`EMFILE`) and passes `NODE_ENV=production` through `spawn`'s `env` option — the parent process's env is never mutated, so the helpers are safe to import into long-lived runners. No shelled-out `rimraf` or `cross-env`; consumers do not need to hoist those binaries in `pnpm-workspace.yaml`.
 
 The `cleanDir` helper lives in `src/cli/commands/build.ts` and is exported for tests. Retry delays: `[100, 250, 500, 1000]` ms.
 
