@@ -4,48 +4,31 @@ import { join } from "node:path"
 import type { TsBuildsConfig } from "../config"
 import { targetDir } from "../config"
 
-const requiredHoistPatterns = [
-  "public-hoist-pattern[]=*eslint*",
-  "public-hoist-pattern[]=*prettier*",
-  "public-hoist-pattern[]=*vitest*",
-  "public-hoist-pattern[]=typescript",
-]
+const hoistPatterns = ["*eslint*", "*prettier*", "*vitest*", "typescript"]
 
-export function ensureNpmrcHoistPatterns(): void {
-  const npmrcPath = join(targetDir, ".npmrc")
-  const existingContent = existsSync(npmrcPath) ? readFileSync(npmrcPath, "utf-8") : ""
+function renderHoistBlock(): string {
+  return "publicHoistPattern:\n" + hoistPatterns.map((p) => `  - "${p}"`).join("\n") + "\n"
+}
 
-  const missingPatterns = requiredHoistPatterns.filter((pattern) => !existingContent.includes(pattern))
+export function ensureWorkspaceHoistPatterns(): void {
+  const wsPath = join(targetDir, "pnpm-workspace.yaml")
+  const existing = existsSync(wsPath) ? readFileSync(wsPath, "utf-8") : ""
 
-  if (missingPatterns.length === 0) {
+  if (existing.includes("publicHoistPattern")) {
     return
   }
 
-  const header = "# Hoist CLI tool binaries from peer dependencies"
-  const hasHeader = existingContent.includes(header)
+  const separator = existing.length > 0 && !existing.endsWith("\n") ? "\n" : ""
+  const newContent = existing + separator + renderHoistBlock()
 
-  let newContent = existingContent
-  if (!hasHeader && missingPatterns.length > 0) {
-    const separator =
-      existingContent.length > 0 && !existingContent.endsWith("\n") ? "\n\n" : existingContent.length > 0 ? "\n" : ""
-    newContent = existingContent + separator + header + "\n"
-  }
-
-  for (const pattern of missingPatterns) {
-    if (!newContent.endsWith("\n") && newContent.length > 0) {
-      newContent += "\n"
-    }
-    newContent += pattern + "\n"
-  }
-
-  writeFileSync(npmrcPath, newContent)
-  console.log(`✓ Updated .npmrc with ${missingPatterns.length} missing hoist pattern(s)`)
+  writeFileSync(wsPath, newContent)
+  console.log(`✓ Updated pnpm-workspace.yaml with publicHoistPattern (${hoistPatterns.length} patterns)`)
 }
 
 export function init(): void {
   console.log("Initializing ts-builds...")
 
-  ensureNpmrcHoistPatterns()
+  ensureWorkspaceHoistPatterns()
 
   console.log("\nDone! Your project is configured to hoist CLI binaries from peer dependencies.")
   console.log("\nNext steps:")
