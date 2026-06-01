@@ -114,7 +114,7 @@ This package includes a CLI for initializing projects and managing dependencies.
 ### Commands
 
 ```bash
-npx ts-builds          # init (default) - create .npmrc
+npx ts-builds          # init (default) - create pnpm-workspace.yaml
 npx ts-builds help     # show help and usage
 npx ts-builds info     # list bundled packages
 npx ts-builds cleanup  # remove redundant deps from package.json

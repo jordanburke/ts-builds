@@ -17,7 +17,7 @@ pnpm init
 pnpm add -D ts-builds tsdown
 
 # Initialize
-npx ts-builds init      # Creates .npmrc with hoist patterns
+npx ts-builds init      # Creates pnpm-workspace.yaml with hoist patterns
 npx ts-builds config    # Creates ts-builds.config.json
 
 # Create source files
@@ -33,7 +33,7 @@ npx ts-builds validate
 ```bash
 pnpm add -D ts-builds tsdown
 
-npx ts-builds init      # Creates .npmrc
+npx ts-builds init      # Creates pnpm-workspace.yaml
 npx ts-builds config    # Creates config file
 npx ts-builds cleanup   # Remove redundant dependencies
 
@@ -45,7 +45,7 @@ npx ts-builds validate
 ### Setup Commands
 
 ```bash
-npx ts-builds init           # Create .npmrc with hoist patterns
+npx ts-builds init           # Create pnpm-workspace.yaml with hoist patterns
 npx ts-builds config         # Create ts-builds.config.json
 npx ts-builds config --force # Overwrite existing config
 npx ts-builds info           # Show bundled packages
