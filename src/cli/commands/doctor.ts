@@ -4,6 +4,7 @@ import { List, Option } from "functype"
 import { Fs } from "functype-os"
 
 import { targetDir } from "../config"
+import { detectPnpm11Issues, migratePnpm11 } from "../pnpm11"
 
 export type Severity = "error" | "warning" | "info"
 
@@ -186,7 +187,7 @@ function checkPeerDeps(pkg: PackageJson): List<CheckResult> {
   )
 }
 
-export async function runDoctor(): Promise<number> {
+export async function runDoctor(fix = false): Promise<number> {
   const packageJsonPath = join(targetDir, "package.json")
 
   return Fs.readFileSync(packageJsonPath).fold(
@@ -206,6 +207,7 @@ export async function runDoctor(): Promise<number> {
         { name: "Files", results: checkFiles(pkg) },
         { name: "Declarations", results: checkDeclarations("dist") },
         { name: "Peer dependencies", results: checkPeerDeps(pkg) },
+        { name: "pnpm 11 readiness", results: detectPnpm11Issues() },
       ])
 
       let errors = 0
@@ -237,7 +239,23 @@ export async function runDoctor(): Promise<number> {
 
       console.log(`Summary: ${errors} error(s), ${warnings} warning(s), ${passed} passed`)
 
-      return errors > 0 ? 1 : 0
+      let migrationErrors = 0
+      if (fix) {
+        const migration = migratePnpm11()
+        console.log("\nApplying pnpm 11 migration...")
+        if (migration.actions.length === 0) {
+          console.log("  + Nothing to migrate")
+        } else {
+          for (const action of migration.actions) {
+            const glyph = action.kind === "migrated" || action.kind === "removed" ? "+" : "!"
+            console.log(`  ${glyph} ${action.message}`)
+          }
+        }
+        migrationErrors = migration.errors
+        console.log()
+      }
+
+      return errors + migrationErrors > 0 ? 1 : 0
     },
   )
 }

@@ -141,3 +141,32 @@ describe("init pnpm-workspace.yaml generation", () => {
     }
   })
 })
+
+describe("doctor --fix pnpm 11 migration", () => {
+  it("reports readiness in plain doctor and migrates with --fix", () => {
+    const dir = makeTempDir()
+    try {
+      writeFileSync(join(dir, ".npmrc"), "public-hoist-pattern[]=*eslint*\n")
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ name: "x", version: "1.0.0", pnpm: { overrides: { foo: "1.0.0" } } }, null, 2),
+      )
+
+      // plain doctor: reports, writes nothing
+      const report = runCli(["doctor"], dir)
+      expect(report).toContain("pnpm 11 readiness")
+      expect(existsSync(join(dir, "pnpm-workspace.yaml"))).toBe(false)
+
+      // doctor --fix: migrates
+      runCli(["doctor", "--fix"], dir)
+      const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      expect(ws).toContain("publicHoistPattern:")
+      expect(ws).toContain("overrides:")
+      expect(existsSync(join(dir, ".npmrc"))).toBe(false)
+      const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"))
+      expect(pkg.pnpm).toBeUndefined()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
