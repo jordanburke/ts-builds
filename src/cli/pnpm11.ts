@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { List } from "functype"
@@ -47,17 +47,17 @@ export function detectPnpm11Issues(dir: string = targetDir): List<CheckResult> {
   return List(results)
 }
 
-export interface MigrationAction {
+export type MigrationAction = {
   kind: "migrated" | "removed" | "skipped" | "manual"
   message: string
 }
 
-export interface MigrationReport {
+export type MigrationReport = {
   actions: MigrationAction[]
   errors: number
 }
 
-interface PnpmField {
+type PnpmField = {
   overrides?: Record<string, string>
   peerDependencyRules?: {
     allowedVersions?: Record<string, string>
@@ -74,8 +74,9 @@ function hasTopLevelKey(yaml: string, key: string): boolean {
 }
 
 function appendBlock(existing: string, block: string): string {
-  const separator = existing.length > 0 && !existing.endsWith("\n") ? "\n" : ""
-  return existing + separator + block
+  if (existing.length === 0) return block
+  const base = existing.endsWith("\n") ? existing : existing + "\n"
+  return base + "\n" + block
 }
 
 function renderPublicHoistPattern(patterns: string[]): string {
@@ -121,9 +122,14 @@ function safeWrite(path: string, content: string): boolean {
 export function migratePnpm11(dir: string = targetDir): MigrationReport {
   const actions: MigrationAction[] = []
   let errors = 0
+  // Destructive edits to the SOURCE files are deferred until the destination
+  // (pnpm-workspace.yaml) is safely on disk — otherwise a failed ws write would
+  // lose config that was already stripped from .npmrc / package.json.
+  const sourceMutations: Array<() => void> = []
 
   const wsPath = join(dir, "pnpm-workspace.yaml")
-  let ws = existsSync(wsPath) ? readFileSync(wsPath, "utf-8") : ""
+  const wsExists = existsSync(wsPath) && statSync(wsPath).isFile()
+  let ws = wsExists ? readFileSync(wsPath, "utf-8") : ""
   let wsChanged = false
 
   // (a) .npmrc hoist patterns -> pnpm-workspace.yaml
@@ -150,16 +156,20 @@ export function migratePnpm11(dir: string = targetDir): MigrationReport {
           })
           .join("\n")
 
-        if (remaining.trim() === "") {
-          try {
-            rmSync(npmrcPath)
-            actions.push({ kind: "removed", message: "Removed empty .npmrc" })
-          } catch {
+        sourceMutations.push(() => {
+          if (remaining.trim() === "") {
+            try {
+              rmSync(npmrcPath)
+              actions.push({ kind: "removed", message: "Removed empty .npmrc" })
+            } catch {
+              errors++
+              actions.push({ kind: "manual", message: "Could not remove .npmrc — delete the migrated hoist lines manually" })
+            }
+          } else if (!safeWrite(npmrcPath, remaining.endsWith("\n") ? remaining : remaining + "\n")) {
             errors++
+            actions.push({ kind: "manual", message: "Could not rewrite .npmrc — delete the migrated hoist lines manually" })
           }
-        } else if (!safeWrite(npmrcPath, remaining.endsWith("\n") ? remaining : remaining + "\n")) {
-          errors++
-        }
+        })
       }
     }
   }
@@ -210,14 +220,26 @@ export function migratePnpm11(dir: string = targetDir): MigrationReport {
         pkgChanged = true
       }
 
-      if (pkgChanged && !safeWrite(pkgPath, JSON.stringify(pkg, null, 2) + "\n")) {
-        errors++
+      if (pkgChanged) {
+        sourceMutations.push(() => {
+          if (!safeWrite(pkgPath, JSON.stringify(pkg, null, 2) + "\n")) {
+            errors++
+            actions.push({ kind: "manual", message: "Could not rewrite package.json — remove the migrated pnpm field keys manually" })
+          }
+        })
       }
     }
   }
 
+  // Write the destination FIRST. If it fails, leave the source files untouched.
   if (wsChanged && !safeWrite(wsPath, ws)) {
     errors++
+    actions.push({ kind: "manual", message: "Could not write pnpm-workspace.yaml — no changes made to .npmrc or package.json" })
+    return { actions, errors }
+  }
+
+  for (const mutate of sourceMutations) {
+    mutate()
   }
 
   return { actions, errors }

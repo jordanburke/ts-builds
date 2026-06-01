@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -168,6 +168,22 @@ describe("migratePnpm11", () => {
       expect(wsAfterSecond).toBe(wsAfterFirst)
       expect(report2.actions.length).toBe(0)
       expect(report2.errors).toBe(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("does not touch .npmrc when the pnpm-workspace.yaml write fails", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, ".npmrc"), "public-hoist-pattern[]=*eslint*\n")
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      // Force the ws write to fail by making the path a directory (EISDIR).
+      mkdirSync(join(dir, "pnpm-workspace.yaml"))
+      const report = migratePnpm11(dir)
+      expect(report.errors).toBeGreaterThan(0)
+      // .npmrc must be preserved — no data loss.
+      expect(readFileSync(join(dir, ".npmrc"), "utf-8")).toContain("public-hoist-pattern[]=*eslint*")
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
