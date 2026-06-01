@@ -219,6 +219,24 @@ The `cleanDir` helper lives in `src/cli/commands/build.ts` and is exported for t
 
 `package.json` `scripts.bootstrap` is `rimraf dist && tsdown`. This is the only spot in the repo that still shell-outs to `rimraf` — and it must, because it runs _before_ the CLI exists to clean `dist/` via `fs.rm`. `rimraf` is kept in `devDependencies` (not runtime `dependencies`) so it does not propagate to consumers' install graphs.
 
+### pnpm 11
+
+This repo is pinned to pnpm 11 via the `packageManager` field. Settings live in
+`pnpm-workspace.yaml`, NOT `.npmrc` (auth/registry only under pnpm 11) or the
+`package.json` `pnpm` field (no longer read by pnpm 11). The relocated settings
+are `overrides`, `peerDependencyRules`, and `publicHoistPattern`.
+
+pnpm 11 secure defaults are intentionally left ON:
+
+- `minimumReleaseAge` (1 day) — pnpm refuses dependency versions published less
+  than 24h ago. CI installs from the committed `pnpm-lock.yaml`, so pinned
+  versions are unaffected; this only bites a fresh `pnpm add` or a lockfile
+  re-resolution of a just-published package. One-off override:
+  `pnpm install --config.minimumReleaseAge=0`.
+- `strictDepBuilds` (true) — installs fail on un-approved dependency build
+  scripts. Approve specific packages via an `allowBuilds` map in
+  `pnpm-workspace.yaml`; do not disable the protection globally.
+
 ### Deprecation (since 2.8.0)
 
 `commands["validate:X"]` entries with a `cwd:` that escapes the package root emit a deprecation warning at config load (deduplicated per `name × cwd` pair) and are targeted for removal in **ts-builds 4.0**. Use a workspace orchestrator (Turbo, nx, `pnpm -r`) for cross-package validation instead. See issue #72.
