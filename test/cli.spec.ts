@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs"
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
@@ -72,59 +72,70 @@ describe("dist/cli.js bundle invariants", () => {
   })
 })
 
-describe("init .npmrc generation", () => {
-  it("produces exactly the expected hoist patterns (no rimraf, no cross-env)", () => {
+describe("init pnpm-workspace.yaml generation", () => {
+  it("produces the expected publicHoistPattern list", () => {
     const dir = makeTempDir()
     try {
       runCli([], dir)
-      const npmrc = readFileSync(join(dir, ".npmrc"), "utf-8")
-      const patterns = npmrc
-        .split("\n")
-        .filter((l) => l.startsWith("public-hoist-pattern[]="))
-        .sort()
-      expect(patterns).toEqual([
-        "public-hoist-pattern[]=*eslint*",
-        "public-hoist-pattern[]=*prettier*",
-        "public-hoist-pattern[]=*vitest*",
-        "public-hoist-pattern[]=typescript",
-      ])
-      expect(npmrc).not.toContain("rimraf")
-      expect(npmrc).not.toContain("cross-env")
+      const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      expect(ws).toContain("publicHoistPattern:")
+      expect(ws).toContain(`  - "*eslint*"`)
+      expect(ws).toContain(`  - "*prettier*"`)
+      expect(ws).toContain(`  - "*vitest*"`)
+      expect(ws).toContain(`  - "typescript"`)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
   })
 
-  it("is idempotent — running init twice does not duplicate hoist lines", () => {
+  it("is idempotent — running init twice does not duplicate the block", () => {
     const dir = makeTempDir()
     try {
       runCli([], dir)
-      const firstRun = readFileSync(join(dir, ".npmrc"), "utf-8")
+      const firstRun = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
       runCli([], dir)
-      const secondRun = readFileSync(join(dir, ".npmrc"), "utf-8")
-      // Each hoist line should appear exactly once after either run.
-      const patterns = ["*eslint*", "*prettier*", "*vitest*", "typescript"]
-      for (const pat of patterns) {
-        const needle = `public-hoist-pattern[]=${pat}`
-        expect(firstRun.split(needle).length - 1, `first run: ${needle}`).toBe(1)
-        expect(secondRun.split(needle).length - 1, `second run: ${needle}`).toBe(1)
-      }
-      // Content must not have grown unboundedly.
-      expect(secondRun.length).toBe(firstRun.length)
+      const secondRun = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      expect(secondRun).toBe(firstRun)
+      expect(secondRun.split("publicHoistPattern:").length - 1).toBe(1)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
   })
 
-  it("preserves pre-existing non-hoist lines in .npmrc", () => {
+  it("preserves pre-existing pnpm-workspace.yaml content", () => {
     const dir = makeTempDir()
     try {
-      const userLine = "registry=https://my-private-registry.example.com/"
-      writeFileSync(join(dir, ".npmrc"), userLine + "\n")
+      const existing = 'packages:\n  - "packages/*"\n'
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), existing)
       runCli([], dir)
-      const npmrc = readFileSync(join(dir, ".npmrc"), "utf-8")
-      expect(npmrc).toContain(userLine)
-      expect(npmrc).toContain("public-hoist-pattern[]=*eslint*")
+      const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      expect(ws).toContain(`packages:`)
+      expect(ws).toContain(`  - "packages/*"`)
+      expect(ws).toContain("publicHoistPattern:")
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("appends valid YAML when the existing file has no trailing newline", () => {
+    const dir = makeTempDir()
+    try {
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), `packages:\n  - "packages/*"`)
+      runCli([], dir)
+      const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      // The pre-existing key and the appended key must be on separate lines.
+      expect(ws).toMatch(/- "packages\/\*"\npublicHoistPattern:/)
+      expect(ws).toContain(`  - "*eslint*"`)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("does not create a .npmrc", () => {
+    const dir = makeTempDir()
+    try {
+      runCli([], dir)
+      expect(existsSync(join(dir, ".npmrc"))).toBe(false)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }

@@ -1,0 +1,14 @@
+overrides:
+  unrun: "0.2.37"
+
+peerDependencyRules:
+  allowedVersions:
+    eslint: "10"
+
+publicHoistPattern:
+  - "*eslint*"
+  - "*prettier*"
+  - "*vitest*"
+  - "typescript"
+  - "*rimraf*"
+  - "*cross-env*"

@@ -114,7 +114,7 @@ This package includes a CLI for initializing projects and managing dependencies.
 ### Commands
 
 ```bash
-npx ts-builds          # init (default) - create .npmrc
+npx ts-builds          # init (default) - create pnpm-workspace.yaml
 npx ts-builds help     # show help and usage
 npx ts-builds info     # list bundled packages
 npx ts-builds cleanup  # remove redundant deps from package.json
@@ -205,7 +205,7 @@ Requires `vite` as a peer dependency instead of `tsdown`.
 
 ### Build internals
 
-`ts-builds build` cleans `dist/` via Node's `fs.rm` (with retry on transient Windows errors `EBUSY`/`EPERM`/`ENOTEMPTY`/`EMFILE`) and passes `NODE_ENV=production` through `spawn`'s `env` option — the parent process's env is never mutated, so the helpers are safe to import into long-lived runners. No shelled-out `rimraf` or `cross-env`; consumers do not need to hoist those binaries in `.npmrc`.
+`ts-builds build` cleans `dist/` via Node's `fs.rm` (with retry on transient Windows errors `EBUSY`/`EPERM`/`ENOTEMPTY`/`EMFILE`) and passes `NODE_ENV=production` through `spawn`'s `env` option — the parent process's env is never mutated, so the helpers are safe to import into long-lived runners. No shelled-out `rimraf` or `cross-env`; consumers do not need to hoist those binaries in `pnpm-workspace.yaml`.
 
 The `cleanDir` helper lives in `src/cli/commands/build.ts` and is exported for tests. Retry delays: `[100, 250, 500, 1000]` ms.
 
@@ -218,6 +218,24 @@ The `cleanDir` helper lives in `src/cli/commands/build.ts` and is exported for t
 ### Bootstrap script
 
 `package.json` `scripts.bootstrap` is `rimraf dist && tsdown`. This is the only spot in the repo that still shell-outs to `rimraf` — and it must, because it runs _before_ the CLI exists to clean `dist/` via `fs.rm`. `rimraf` is kept in `devDependencies` (not runtime `dependencies`) so it does not propagate to consumers' install graphs.
+
+### pnpm 11
+
+This repo is pinned to pnpm 11 via the `packageManager` field. Settings live in
+`pnpm-workspace.yaml`, NOT `.npmrc` (auth/registry only under pnpm 11) or the
+`package.json` `pnpm` field (no longer read by pnpm 11). The relocated settings
+are `overrides`, `peerDependencyRules`, and `publicHoistPattern`.
+
+pnpm 11 secure defaults are intentionally left ON:
+
+- `minimumReleaseAge` (1 day) — pnpm refuses dependency versions published less
+  than 24h ago. CI installs from the committed `pnpm-lock.yaml`, so pinned
+  versions are unaffected; this only bites a fresh `pnpm add` or a lockfile
+  re-resolution of a just-published package. One-off override:
+  `pnpm install --config.minimumReleaseAge=0`.
+- `strictDepBuilds` (true) — installs fail on un-approved dependency build
+  scripts. Approve specific packages via an `allowBuilds` map in
+  `pnpm-workspace.yaml`; do not disable the protection globally.
 
 ### Deprecation (since 2.8.0)
 
