@@ -47,7 +47,7 @@ SCRIPT COMMANDS:
 
 ANALYSIS COMMANDS:
   size          Report bundle sizes (use --save to update baseline)
-  doctor        Check package health (exports, files, types)
+  doctor        Check package health + pnpm 11 readiness (--fix migrates to pnpm-workspace.yaml)
   changelog     Generate changelog from conventional commits
 
 CONFIGURATION:
