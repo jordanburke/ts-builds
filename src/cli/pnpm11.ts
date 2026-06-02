@@ -146,7 +146,10 @@ export function migratePnpm11(dir: string = targetDir): MigrationReport {
       } else {
         ws = appendBlock(ws, renderPublicHoistPattern(patterns))
         wsChanged = true
-        actions.push({ kind: "migrated", message: `Migrated ${patterns.length} hoist pattern(s) to pnpm-workspace.yaml` })
+        actions.push({
+          kind: "migrated",
+          message: `Migrated ${patterns.length} hoist pattern(s) to pnpm-workspace.yaml`,
+        })
 
         const remaining = npmrc
           .split("\n")
@@ -163,11 +166,17 @@ export function migratePnpm11(dir: string = targetDir): MigrationReport {
               actions.push({ kind: "removed", message: "Removed empty .npmrc" })
             } catch {
               errors++
-              actions.push({ kind: "manual", message: "Could not remove .npmrc — delete the migrated hoist lines manually" })
+              actions.push({
+                kind: "manual",
+                message: "Could not remove .npmrc — delete the migrated hoist lines manually",
+              })
             }
           } else if (!safeWrite(npmrcPath, remaining.endsWith("\n") ? remaining : remaining + "\n")) {
             errors++
-            actions.push({ kind: "manual", message: "Could not rewrite .npmrc — delete the migrated hoist lines manually" })
+            actions.push({
+              kind: "manual",
+              message: "Could not rewrite .npmrc — delete the migrated hoist lines manually",
+            })
           }
         })
       }
@@ -224,7 +233,10 @@ export function migratePnpm11(dir: string = targetDir): MigrationReport {
         sourceMutations.push(() => {
           if (!safeWrite(pkgPath, JSON.stringify(pkg, null, 2) + "\n")) {
             errors++
-            actions.push({ kind: "manual", message: "Could not rewrite package.json — remove the migrated pnpm field keys manually" })
+            actions.push({
+              kind: "manual",
+              message: "Could not rewrite package.json — remove the migrated pnpm field keys manually",
+            })
           }
         })
       }
@@ -234,7 +246,10 @@ export function migratePnpm11(dir: string = targetDir): MigrationReport {
   // Write the destination FIRST. If it fails, leave the source files untouched.
   if (wsChanged && !safeWrite(wsPath, ws)) {
     errors++
-    actions.push({ kind: "manual", message: "Could not write pnpm-workspace.yaml — no changes made to .npmrc or package.json" })
+    actions.push({
+      kind: "manual",
+      message: "Could not write pnpm-workspace.yaml — no changes made to .npmrc or package.json",
+    })
     return { actions, errors }
   }
 

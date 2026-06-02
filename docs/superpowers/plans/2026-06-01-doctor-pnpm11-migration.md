@@ -11,6 +11,7 @@
 **Spec:** `docs/superpowers/specs/2026-06-01-doctor-pnpm11-migration-design.md`
 
 **Conventions observed:**
+
 - Tests import source directly: `import { x } from "../src/cli/..."` and use `mkdtempSync` temp dirs (see `test/config.spec.ts`).
 - CLI integration tests run the **built** `dist/cli.js` in a temp cwd (see `test/cli.spec.ts`) → those tests require `pnpm build` first.
 - `detect`/`migrate` take an optional `dir = targetDir` (mirrors `cwdEscapesPackageRoot(cwd, baseDir)` in `config.ts`) so they're unit-testable without spawning the CLI.
@@ -21,22 +22,23 @@
 
 ## File Structure
 
-| File | Responsibility | Action |
-|---|---|---|
-| `package.json` | Add `engines.node` | Modify |
-| `src/cli/pnpm11.ts` | Detection + migration logic, YAML serializers, types | Create |
+| File                         | Responsibility                                                 | Action |
+| ---------------------------- | -------------------------------------------------------------- | ------ |
+| `package.json`               | Add `engines.node`                                             | Modify |
+| `src/cli/pnpm11.ts`          | Detection + migration logic, YAML serializers, types           | Create |
 | `src/cli/commands/doctor.ts` | Export `Severity`/`CheckResult`; add section; `runDoctor(fix)` | Modify |
-| `src/cli.ts` | Pass `--fix` to `runDoctor` | Modify |
-| `src/cli/commands/info.ts` | Help text for `doctor` / `doctor --fix` | Modify |
-| `CLAUDE.md` | Document `doctor --fix` | Modify |
-| `test/pnpm11.spec.ts` | Unit tests for detect + migrate | Create |
-| `test/cli.spec.ts` | CLI integration test for `doctor --fix` | Modify |
+| `src/cli.ts`                 | Pass `--fix` to `runDoctor`                                    | Modify |
+| `src/cli/commands/info.ts`   | Help text for `doctor` / `doctor --fix`                        | Modify |
+| `CLAUDE.md`                  | Document `doctor --fix`                                        | Modify |
+| `test/pnpm11.spec.ts`        | Unit tests for detect + migrate                                | Create |
+| `test/cli.spec.ts`           | CLI integration test for `doctor --fix`                        | Modify |
 
 ---
 
 ## Task 1: Add `engines.node`
 
 **Files:**
+
 - Modify: `package.json`
 
 - [ ] **Step 1: Add the engines field**
@@ -68,6 +70,7 @@ git commit -m "chore: declare engines.node >=22"
 ## Task 2: `pnpm11.ts` — types + `detectPnpm11Issues` (TDD)
 
 **Files:**
+
 - Create: `src/cli/pnpm11.ts`
 - Modify: `src/cli/commands/doctor.ts` (export the two types so `pnpm11.ts` can import them)
 - Test: `test/pnpm11.spec.ts`
@@ -237,6 +240,7 @@ git commit -m "feat(doctor): detect pnpm 11 readiness issues"
 ## Task 3: `pnpm11.ts` — `migratePnpm11` + serializers (TDD)
 
 **Files:**
+
 - Modify: `src/cli/pnpm11.ts`
 - Test: `test/pnpm11.spec.ts`
 
@@ -470,7 +474,10 @@ export function migratePnpm11(dir: string = targetDir): MigrationReport {
       } else {
         ws = appendBlock(ws, renderPublicHoistPattern(patterns))
         wsChanged = true
-        actions.push({ kind: "migrated", message: `Migrated ${patterns.length} hoist pattern(s) to pnpm-workspace.yaml` })
+        actions.push({
+          kind: "migrated",
+          message: `Migrated ${patterns.length} hoist pattern(s) to pnpm-workspace.yaml`,
+        })
 
         const remaining = npmrc
           .split("\n")
@@ -571,6 +578,7 @@ git commit -m "feat(doctor): migrate .npmrc + pnpm field to pnpm-workspace.yaml"
 ## Task 4: Wire into `doctor` and `cli` (TDD integration)
 
 **Files:**
+
 - Modify: `src/cli/commands/doctor.ts`
 - Modify: `src/cli.ts`
 - Test: `test/cli.spec.ts`
@@ -638,26 +646,26 @@ Add the detection section to the `sections` list (append after `Peer dependencie
         { name: "pnpm 11 readiness", results: detectPnpm11Issues() },
 ```
 
-After the `console.log(\`Summary: ...\`)` line and before the final `return`, insert the fix handling and fold migration errors into the exit code:
+After the `console.log(\`Summary: ...\`)`line and before the final`return`, insert the fix handling and fold migration errors into the exit code:
 
 ```typescript
-      let migrationErrors = 0
-      if (fix) {
-        const migration = migratePnpm11()
-        console.log("\nApplying pnpm 11 migration...")
-        if (migration.actions.length === 0) {
-          console.log("  + Nothing to migrate")
-        } else {
-          for (const action of migration.actions) {
-            const glyph = action.kind === "migrated" || action.kind === "removed" ? "+" : "!"
-            console.log(`  ${glyph} ${action.message}`)
-          }
-        }
-        migrationErrors = migration.errors
-        console.log()
-      }
+let migrationErrors = 0
+if (fix) {
+  const migration = migratePnpm11()
+  console.log("\nApplying pnpm 11 migration...")
+  if (migration.actions.length === 0) {
+    console.log("  + Nothing to migrate")
+  } else {
+    for (const action of migration.actions) {
+      const glyph = action.kind === "migrated" || action.kind === "removed" ? "+" : "!"
+      console.log(`  ${glyph} ${action.message}`)
+    }
+  }
+  migrationErrors = migration.errors
+  console.log()
+}
 
-      return errors + migrationErrors > 0 ? 1 : 0
+return errors + migrationErrors > 0 ? 1 : 0
 ```
 
 (Replace the existing final `return errors > 0 ? 1 : 0` with the block above.)
@@ -689,6 +697,7 @@ git commit -m "feat(doctor): wire pnpm 11 readiness + --fix into doctor and CLI"
 ## Task 5: Documentation
 
 **Files:**
+
 - Modify: `src/cli/commands/info.ts:50`
 - Modify: `CLAUDE.md`
 
@@ -754,6 +763,7 @@ Expected: all CLI tests pass, including the prior `init`/`help`/`info`/bundle te
 ## Self-Review
 
 **Spec coverage:**
+
 - `engines.node: ">=22"` → Task 1. ✓
 - `src/cli/pnpm11.ts` with `detectPnpm11Issues` + `migratePnpm11` → Tasks 2, 3. ✓
 - Detection of `.npmrc` hoist + `package.json` pnpm field, info when ready → Task 2 tests + impl. ✓

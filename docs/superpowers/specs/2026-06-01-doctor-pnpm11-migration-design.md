@@ -6,7 +6,7 @@
 
 ## Goal
 
-Give ts-builds consumers a first-class path through the pnpm 11 transition: `doctor` *detects* the two config surfaces pnpm 11 silently ignores, and `doctor --fix` *migrates* them to `pnpm-workspace.yaml`. Also declare ts-builds' Node floor via `engines`.
+Give ts-builds consumers a first-class path through the pnpm 11 transition: `doctor` _detects_ the two config surfaces pnpm 11 silently ignores, and `doctor --fix` _migrates_ them to `pnpm-workspace.yaml`. Also declare ts-builds' Node floor via `engines`.
 
 ## Background
 
@@ -47,7 +47,10 @@ Keeps the already-large `doctor.ts` (244 lines) focused, and makes the logic uni
 import { List } from "functype"
 
 export type Severity = "error" | "warning" | "info"
-export interface CheckResult { severity: Severity; message: string }
+export interface CheckResult {
+  severity: Severity
+  message: string
+}
 
 export interface MigrationAction {
   kind: "migrated" | "removed" | "skipped" | "manual"
@@ -55,7 +58,7 @@ export interface MigrationAction {
 }
 export interface MigrationReport {
   actions: List<MigrationAction>
-  errors: number   // count of failed writes / hard errors
+  errors: number // count of failed writes / hard errors
 }
 
 // Read-only detection — consumed by doctor's report
@@ -78,11 +81,11 @@ Anything else under the `pnpm` field is treated as "exotic" (manual migration).
 
 Inspects `targetDir`:
 
-| Condition | Result |
-|---|---|
-| `.npmrc` exists and contains a line matching `/^public-hoist-pattern\[\]=/m` | `warning`: `"N hoist pattern(s) in .npmrc are ignored by pnpm 11 — run 'ts-builds doctor --fix' to migrate to pnpm-workspace.yaml"` |
-| `package.json` has a `pnpm` field (non-empty object) | `warning`: `"package.json 'pnpm' field is no longer read by pnpm 11 — run 'ts-builds doctor --fix' to migrate to pnpm-workspace.yaml"` |
-| neither | `info`: `"pnpm 11 ready"` |
+| Condition                                                                    | Result                                                                                                                                 |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `.npmrc` exists and contains a line matching `/^public-hoist-pattern\[\]=/m` | `warning`: `"N hoist pattern(s) in .npmrc are ignored by pnpm 11 — run 'ts-builds doctor --fix' to migrate to pnpm-workspace.yaml"`    |
+| `package.json` has a `pnpm` field (non-empty object)                         | `warning`: `"package.json 'pnpm' field is no longer read by pnpm 11 — run 'ts-builds doctor --fix' to migrate to pnpm-workspace.yaml"` |
+| neither                                                                      | `info`: `"pnpm 11 ready"`                                                                                                              |
 
 `N` is the count of `public-hoist-pattern[]=` lines. Severity is `warning`, so plain `doctor` still exits 0 (warnings never fail; only `error` results do, per existing `runDoctor` logic).
 
@@ -179,12 +182,14 @@ doctor [--fix]
 ## Testing (TDD)
 
 **Unit — `detectPnpm11Issues` (new `test/pnpm11.spec.ts`, temp dirs):**
+
 - `.npmrc` with patterns only → one warning, correct count.
 - `package.json` `pnpm` field only → one warning.
 - both → two warnings.
 - neither → one info ("pnpm 11 ready").
 
 **Integration — `doctor --fix` (extend `test/cli.spec.ts`, temp dirs, run built `dist/cli.js`):**
+
 - temp dir with old `.npmrc` (hoist patterns) + `package.json` having `pnpm.overrides` + `pnpm.peerDependencyRules`:
   - after `doctor --fix`: `pnpm-workspace.yaml` contains `publicHoistPattern`, `overrides`, `peerDependencyRules`; `.npmrc` hoist lines gone (file removed if empty); `package.json` `pnpm` field removed.
 - exotic key (`pnpm.packageExtensions`) → `manual` action reported, key retained in `package.json`, `pnpm` field NOT removed.
