@@ -28,13 +28,13 @@ importers:
         version: 10.4.1
       eslint-config-functype:
         specifier: ^2.102.0
-        version: 2.102.0(@typescript-eslint/eslint-plugin@8.60.0(@typescript-eslint/parser@8.60.0(eslint@10.4.1)(typescript@6.0.3))(eslint@10.4.1)(typescript@6.0.3))(@typescript-eslint/parser@8.60.0(eslint@10.4.1)(typescript@6.0.3))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.4.1))(eslint@10.4.1)(prettier@3.8.3))(eslint-plugin-simple-import-sort@13.0.0(eslint@10.4.1))(eslint@10.4.1)(prettier@3.8.3)
+        version: 2.102.2(@typescript-eslint/eslint-plugin@8.60.0(@typescript-eslint/parser@8.60.0(eslint@10.4.1)(typescript@6.0.3))(eslint@10.4.1)(typescript@6.0.3))(@typescript-eslint/parser@8.60.0(eslint@10.4.1)(typescript@6.0.3))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.4.1))(eslint@10.4.1)(prettier@3.8.3))(eslint-plugin-simple-import-sort@13.0.0(eslint@10.4.1))(eslint@10.4.1)(prettier@3.8.3)
       eslint-config-prettier:
         specifier: ^10.1.8
         version: 10.1.8(eslint@10.4.1)
       eslint-plugin-functype:
         specifier: ^2.102.0
-        version: 2.102.0(eslint@10.4.1)
+        version: 2.102.2(eslint@10.4.1)
       eslint-plugin-prettier:
         specifier: ^5.5.6
         version: 5.5.6(eslint-config-prettier@10.1.8(eslint@10.4.1))(eslint@10.4.1)(prettier@3.8.3)
@@ -691,8 +691,8 @@ packages:
     resolution: {integrity: sha512-TtpcNJ3XAzx3Gq8sWRzJaVajRs0uVxA2YAkdb1jm2YkPz4G6egUFAyA3n5vtEIZefPk5Wa4UXbKuS5fKkJWdgA==}
     engines: {node: '>=10'}
 
-  eslint-config-functype@2.102.0:
-    resolution: {integrity: sha512-qihWFepDk5H0ttgR12hfFwnKeUo2Vva/O34KAkzkwJGU1PM7jbTbfevcCdazwWu768Pgkw/mdPjpmwMuKAeitA==}
+  eslint-config-functype@2.102.2:
+    resolution: {integrity: sha512-YqqDjV5yEfx5BHKjdJDk3okLj7u9BtlzP9vzkRj9bGxLz3TIhG1n4JT7iXdqhnW/l2iVnNvAaH/O927cGm3d1A==}
     engines: {node: '>=20.20.0'}
     hasBin: true
     peerDependencies:
@@ -709,8 +709,8 @@ packages:
     peerDependencies:
       eslint: '>=7.0.0'
 
-  eslint-plugin-functype@2.102.0:
-    resolution: {integrity: sha512-Tdad7Q7eMm7ipJB2+6PfkVhw8bZf2t7woXl8nxHJ7ibwikHlU9MDvAr9RuyrPqUpkI7sLZYju9ygJIxRRxbXtA==}
+  eslint-plugin-functype@2.102.2:
+    resolution: {integrity: sha512-+occXe0pJg2Tqbj+9Ofi2C9SJcYnLTbGUphOwgxMdcG8Ayiy6/R4i/iu+3YN+OqySdun2IMLcur/Lv1cGR+Grg==}
     engines: {node: '>=20.20.0'}
     hasBin: true
     peerDependencies:
@@ -922,8 +922,8 @@ packages:
   js-tokens@10.0.0:
     resolution: {integrity: sha512-lM/UBzQmfJRo9ABXbPWemivdCW8V2G8FHaHdypQaIy523snUjog0W71ayWXTjiR+ixeMyVHN2XcpnTd/liPg/Q==}
 
-  js-yaml@4.1.1:
-    resolution: {integrity: sha512-qQKT4zQxXl8lLwBtHMWwaTcGfFOZviOJet3Oy/xmGk2gZH677CJM9EvtfdSkgWcATZhj/55JZ0rmy3myCT5lsA==}
+  js-yaml@4.2.0:
+    resolution: {integrity: sha512-ePWsvanv0DWuDRsW8dnt+R4jQ31SCRCQ7hhNcPXZPsoBZiemuZNYGf7adZdqX2D86j6rvKp3RpCxVTSb8WQlOw==}
     hasBin: true
 
   jsesc@3.1.0:
@@ -1523,7 +1523,7 @@ snapshots:
       globals: 14.0.0
       ignore: 5.3.2
       import-fresh: 3.3.1
-      js-yaml: 4.1.1
+      js-yaml: 4.2.0
       minimatch: 3.1.5
       strip-json-comments: 3.1.1
     transitivePeerDependencies:
@@ -1975,7 +1975,7 @@ snapshots:
 
   escape-string-regexp@4.0.0: {}
 
-  eslint-config-functype@2.102.0(@typescript-eslint/eslint-plugin@8.60.0(@typescript-eslint/parser@8.60.0(eslint@10.4.1)(typescript@6.0.3))(eslint@10.4.1)(typescript@6.0.3))(@typescript-eslint/parser@8.60.0(eslint@10.4.1)(typescript@6.0.3))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.4.1))(eslint@10.4.1)(prettier@3.8.3))(eslint-plugin-simple-import-sort@13.0.0(eslint@10.4.1))(eslint@10.4.1)(prettier@3.8.3):
+  eslint-config-functype@2.102.2(@typescript-eslint/eslint-plugin@8.60.0(@typescript-eslint/parser@8.60.0(eslint@10.4.1)(typescript@6.0.3))(eslint@10.4.1)(typescript@6.0.3))(@typescript-eslint/parser@8.60.0(eslint@10.4.1)(typescript@6.0.3))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.4.1))(eslint@10.4.1)(prettier@3.8.3))(eslint-plugin-simple-import-sort@13.0.0(eslint@10.4.1))(eslint@10.4.1)(prettier@3.8.3):
     dependencies:
       '@eslint/eslintrc': 3.3.5
       '@eslint/js': 10.0.1(eslint@10.4.1)
@@ -1992,7 +1992,7 @@ snapshots:
     dependencies:
       eslint: 10.4.1
 
-  eslint-plugin-functype@2.102.0(eslint@10.4.1):
+  eslint-plugin-functype@2.102.2(eslint@10.4.1):
     dependencies:
       eslint: 10.4.1
 
@@ -2186,7 +2186,7 @@ snapshots:
 
   js-tokens@10.0.0: {}
 
-  js-yaml@4.1.1:
+  js-yaml@4.2.0:
     dependencies:
       argparse: 2.0.1
 
