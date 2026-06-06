@@ -327,7 +327,7 @@ pnpm 11 enables supply-chain protection by default. Do not disable these globall
 ```yaml
 # pnpm-workspace.yaml
 allowBuilds:
-  esbuild: false        # correct default — binary ships via @esbuild/<platform> optional deps
+  esbuild: false # correct default — binary ships via @esbuild/<platform> optional deps
   some-native-pkg: true # approve a package that genuinely needs its build script
 ```
 

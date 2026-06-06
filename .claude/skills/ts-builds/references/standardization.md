@@ -830,10 +830,10 @@ Two forms are accepted:
 ```yaml
 # pnpm-workspace.yaml
 minimumReleaseAgeExclude:
-  - "@types/node@24.13.1"   # pinned: only this exact version excluded
-  - ts-builds               # bare: all versions — first-party, trusted
-  - functype                # bare: first-party
-  - functype-os             # bare: first-party (example functype sub-package)
+  - "@types/node@24.13.1" # pinned: only this exact version excluded
+  - ts-builds # bare: all versions — first-party, trusted
+  - functype # bare: first-party
+  - functype-os # bare: first-party (example functype sub-package)
 ```
 
 Documented default set of bare (first-party) excludes: `ts-builds`, `functype`, and any `functype-*` packages you publish.
@@ -855,7 +855,7 @@ Real-world example: `esbuild` triggers this error, but its build script is NOT n
 ```yaml
 # pnpm-workspace.yaml
 allowBuilds:
-  esbuild: false        # build script not needed; binary via @esbuild/<platform> optional deps
+  esbuild: false # build script not needed; binary via @esbuild/<platform> optional deps
   some-native-pkg: true # approve a package that genuinely needs its build script
 ```
 
