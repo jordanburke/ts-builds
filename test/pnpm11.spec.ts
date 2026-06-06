@@ -152,9 +152,10 @@ describe("parseReleaseAgeViolations", () => {
     expect(parseReleaseAgeViolations("", stderr)).toEqual(["@eslint/js@9.0.0"])
   })
 
-  it("also recognizes the ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION marker", () => {
-    const stderr =
-      "[ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION] foo@2.1.0 was published within the minimumReleaseAge cutoff\n"
+  it("matches on the per-violation line, independent of the header error code", () => {
+    // Robustness: we key off the line wording ("... was published ... minimumReleaseAge"),
+    // not the header code, so a future pnpm code/format tweak still parses.
+    const stderr = "[ERR_PNPM_SOME_FUTURE_CODE] foo@2.1.0 was published within the minimumReleaseAge cutoff\n"
     expect(parseReleaseAgeViolations("", stderr)).toEqual(["foo@2.1.0"])
   })
 

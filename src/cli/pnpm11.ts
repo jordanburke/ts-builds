@@ -18,10 +18,11 @@ export type PnpmReleaseAgeProbe = (dir: string) => { stdout: string; stderr: str
 
 // Each per-violation line pnpm prints looks like:
 //   left-pad@1.3.0 was published at 2018-04-09T01:10:45.796Z, within the minimumReleaseAge cutoff (...)
-// Matching the line directly (rather than the header error code) keeps us robust
-// across pnpm's two known marker codes: ERR_PNPM_NO_MATURE_MATCHING_VERSION (11.5.x)
-// and ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION. The package token is `name@version`,
-// where name may be scoped (`@scope/name`).
+// Verified against pnpm 11.5.2: the failure surfaces under the error code
+// ERR_PNPM_NO_MATURE_MATCHING_VERSION. We match the per-violation LINE rather than
+// the header code so we stay robust to message-format/code changes across pnpm
+// releases. The package token is `name@version`, where name may be scoped
+// (`@scope/name`).
 const RELEASE_AGE_LINE = /(@?[^\s@/]+(?:\/[^\s@]+)?@[^\s]+)\s+was published.*minimumReleaseAge/
 
 /**
