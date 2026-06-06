@@ -51,20 +51,39 @@ export function buildReleaseAgeExcludeLine(pkgVersion: string): string {
 
 /**
  * Default probe: runs `pnpm install --resolution-only`, which re-runs resolution
- * (re-applying minimumReleaseAge) WITHOUT writing a lockfile or node_modules — it
- * aborts before any mutation on a violation. If pnpm is not on PATH the spawn
- * errors and we return status -1 so detection degrades quietly.
+ * (re-applying minimumReleaseAge) and captures its output. If pnpm is not on PATH
+ * the spawn errors and we return status -1 so detection degrades quietly.
+ *
+ * SNAPSHOT/RESTORE: `--resolution-only` is NOT non-mutating in general. When the
+ * committed `pnpm-lock.yaml` is stale or doesn't match resolution, pnpm REWRITES
+ * it to match (it only avoids writing when it ABORTS on a violation). A read-only
+ * diagnostic must never touch a consumer's lockfile, so we snapshot the exact
+ * bytes before spawning and restore them in a `finally` — putting the file back
+ * exactly as found (or removing one the probe created where none existed).
+ * `--resolution-only` does not install packages, so node_modules is not a concern.
  */
 export const defaultReleaseAgeProbe: PnpmReleaseAgeProbe = (dir) => {
-  const result = spawnSync("pnpm", ["install", "--resolution-only"], {
-    cwd: dir,
-    encoding: "utf-8",
-    env: process.env,
-  })
-  if (result.error) {
-    return { stdout: "", stderr: "", status: -1 }
+  const lockPath = join(dir, "pnpm-lock.yaml")
+  const lockExisted = existsSync(lockPath)
+  // readFileSync without an encoding yields a Buffer, preserving bytes exactly.
+  const originalLock = lockExisted ? readFileSync(lockPath) : undefined
+  try {
+    const result = spawnSync("pnpm", ["install", "--resolution-only"], {
+      cwd: dir,
+      encoding: "utf-8",
+      env: process.env,
+    })
+    if (result.error) {
+      return { stdout: "", stderr: "", status: -1 }
+    }
+    return { stdout: result.stdout ?? "", stderr: result.stderr ?? "", status: result.status ?? 1 }
+  } finally {
+    if (lockExisted && originalLock !== undefined) {
+      writeFileSync(lockPath, originalLock)
+    } else if (!lockExisted && existsSync(lockPath)) {
+      rmSync(lockPath, { force: true })
+    }
   }
-  return { stdout: result.stdout ?? "", stderr: result.stderr ?? "", status: result.status ?? 1 }
 }
 
 // ─── B2: allowBuilds / esbuild detection ────────────────────────────────────
@@ -399,6 +418,12 @@ export function migratePnpm11(
   let ws = wsExists ? readFileSync(wsPath, "utf-8") : ""
   let wsChanged = false
 
+  // Read pnpm-lock.yaml ONCE, up front — BEFORE block (c)'s probe runs. The probe
+  // can rewrite the consumer lockfile (see defaultReleaseAgeProbe), so block (d)
+  // below must decide allowBuilds from this snapshot, not a re-read after the probe.
+  const lockPath = join(dir, "pnpm-lock.yaml")
+  const lockfile = existsSync(lockPath) ? readFileSync(lockPath, "utf-8") : undefined
+
   // (a) .npmrc hoist patterns -> pnpm-workspace.yaml
   const npmrcPath = join(dir, ".npmrc")
   if (existsSync(npmrcPath)) {
@@ -545,9 +570,9 @@ export function migratePnpm11(
 
   // (d) allowBuilds — write `<pkg>: false` for curated packages present in the
   // lockfile and not already decided. Same additive, single-write discipline.
-  const lockPath = join(dir, "pnpm-lock.yaml")
-  if (existsSync(lockPath)) {
-    const lockfile = readFileSync(lockPath, "utf-8")
+  // Uses the lockfile snapshot read at the top (before block c's probe ran), so
+  // it is unaffected by any probe-time lockfile rewrite.
+  if (lockfile !== undefined) {
     const decided = readAllowBuildsKeys(ws)
     const toAdd: Array<[string, string]> = []
     for (const pkg of CURATED_ALLOW_BUILDS_FALSE.keys()) {

@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest"
 import type { PnpmReleaseAgeProbe } from "../src/cli/pnpm11"
 import {
   buildReleaseAgeExcludeLine,
+  defaultReleaseAgeProbe,
   detectPnpm11Issues,
   migratePnpm11,
   parseReleaseAgeViolations,
@@ -613,6 +614,59 @@ describe("migratePnpm11 — B3 allowBuilds", () => {
       migratePnpm11(dir, noReleaseAgeProbe)
       const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
       expect(ws).not.toContain("allowBuilds")
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("migratePnpm11 — block (d) reads the lockfile before the probe runs (Bug 2)", () => {
+  it("writes allowBuilds.esbuild:false even when the probe mutates the lockfile away", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(join(dir, "pnpm-lock.yaml"), LOCKFILE_WITH_ESBUILD)
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - '**'\n")
+
+      // Simulate the real Bug 2: the probe clobbers the consumer lockfile (as a
+      // mutating `pnpm install --resolution-only` would) and reports no
+      // release-age violations. Block (d) must NOT depend on the post-probe
+      // lockfile — it must use the contents read before the probe ran.
+      const mutatingProbe: PnpmReleaseAgeProbe = () => {
+        writeFileSync(join(dir, "pnpm-lock.yaml"), LOCKFILE_WITHOUT_ESBUILD)
+        return { stdout: "", stderr: "", status: 0 }
+      }
+
+      const report = migratePnpm11(dir, mutatingProbe)
+      const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      expect(ws).toContain("allowBuilds:")
+      expect(ws).toContain("  esbuild: false")
+      expect(report.actions.some((a) => a.kind === "migrated" && a.message.includes("allowBuilds"))).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("defaultReleaseAgeProbe — side-effect-free (Bug 1)", () => {
+  it("leaves an existing pnpm-lock.yaml byte-for-byte unchanged after probing", () => {
+    const dir = tmp()
+    try {
+      // Trivial manifest so pnpm (if present) has something to resolve, and a
+      // lockfile with sentinel bytes the real probe could otherwise rewrite.
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "probe-fixture", version: "0.0.0" }))
+      const lockPath = join(dir, "pnpm-lock.yaml")
+      const sentinel = "lockfileVersion: '9.0'\n\n# sentinel-do-not-rewrite\nsettings:\n  autoInstallPeers: true\n"
+      writeFileSync(lockPath, sentinel)
+      const before = readFileSync(lockPath)
+
+      // Real probe — shells out to pnpm. If pnpm is missing it returns status -1
+      // and never mutated anything; if present it may try to rewrite, and the
+      // snapshot/restore must put the bytes back. The invariant holds either way.
+      defaultReleaseAgeProbe(dir)
+
+      const after = readFileSync(lockPath)
+      expect(after.equals(before)).toBe(true)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
