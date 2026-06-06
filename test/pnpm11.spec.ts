@@ -10,6 +10,7 @@ import {
   detectPnpm11Issues,
   migratePnpm11,
   parseReleaseAgeViolations,
+  readAllowBuildsKeys,
 } from "../src/cli/pnpm11"
 
 function tmp(): string {
@@ -175,6 +176,152 @@ describe("buildReleaseAgeExcludeLine", () => {
     const line = buildReleaseAgeExcludeLine("left-pad@1.3.0")
     expect(line).toContain("minimumReleaseAgeExclude")
     expect(line).toContain("left-pad@1.3.0")
+  })
+})
+
+// ─── B2: allowBuilds / esbuild detection ────────────────────────────────────
+
+describe("readAllowBuildsKeys", () => {
+  it("returns empty set when allowBuilds block is absent", () => {
+    const yaml = "packages:\n  - '**'\n"
+    expect(readAllowBuildsKeys(yaml).size).toBe(0)
+  })
+
+  it("parses a single key", () => {
+    const yaml = "allowBuilds:\n  esbuild: false\n"
+    const keys = readAllowBuildsKeys(yaml)
+    expect(keys.has("esbuild")).toBe(true)
+    expect(keys.size).toBe(1)
+  })
+
+  it("parses multiple keys (true and false values)", () => {
+    const yaml = "allowBuilds:\n  esbuild: false\n  some-other: true\n"
+    const keys = readAllowBuildsKeys(yaml)
+    expect(keys.has("esbuild")).toBe(true)
+    expect(keys.has("some-other")).toBe(true)
+    expect(keys.size).toBe(2)
+  })
+
+  it("stops parsing allowBuilds block at the next top-level key", () => {
+    const yaml = "allowBuilds:\n  esbuild: false\noverrides:\n  foo: '1'\n"
+    const keys = readAllowBuildsKeys(yaml)
+    expect(keys.has("esbuild")).toBe(true)
+    expect(keys.has("overrides")).toBe(false)
+    expect(keys.size).toBe(1)
+  })
+
+  it("returns empty set for empty string", () => {
+    expect(readAllowBuildsKeys("").size).toBe(0)
+  })
+})
+
+// Minimal pnpm-lock.yaml v9 snippet that places esbuild under packages:
+const LOCKFILE_WITH_ESBUILD = `lockfileVersion: '9.0'
+
+packages:
+  esbuild@0.25.4:
+    resolution: {integrity: sha512-xxx}
+
+  typescript@5.8.3:
+    resolution: {integrity: sha512-yyy}
+
+snapshots:
+  esbuild@0.25.4:
+    dependencies: {}
+`
+
+const LOCKFILE_WITHOUT_ESBUILD = `lockfileVersion: '9.0'
+
+packages:
+  typescript@5.8.3:
+    resolution: {integrity: sha512-yyy}
+`
+
+describe("detectPnpm11Issues — B2 esbuild allowBuilds detection", () => {
+  it("warns and proposes allowBuilds.esbuild:false when esbuild in lockfile but no allowBuilds declared", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(join(dir, "pnpm-lock.yaml"), LOCKFILE_WITH_ESBUILD)
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - '**'\n")
+      const results = detectPnpm11Issues(dir, noReleaseAgeProbe).toArray()
+      const warning = results.find((r) => r.message.includes("esbuild"))
+      expect(warning).toBeDefined()
+      expect(warning?.severity).toBe("warning")
+      expect(warning?.message).toContain("ERR_PNPM_IGNORED_BUILDS")
+      expect(warning?.message).toContain("allowBuilds:")
+      expect(warning?.message).toContain("esbuild: false")
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("does NOT warn when esbuild is already declared under allowBuilds (false)", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(join(dir, "pnpm-lock.yaml"), LOCKFILE_WITH_ESBUILD)
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - '**'\nallowBuilds:\n  esbuild: false\n")
+      const results = detectPnpm11Issues(dir, noReleaseAgeProbe).toArray()
+      expect(results.some((r) => r.message.includes("esbuild"))).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("does NOT warn when esbuild is declared under allowBuilds (true)", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(join(dir, "pnpm-lock.yaml"), LOCKFILE_WITH_ESBUILD)
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - '**'\nallowBuilds:\n  esbuild: true\n")
+      const results = detectPnpm11Issues(dir, noReleaseAgeProbe).toArray()
+      expect(results.some((r) => r.message.includes("esbuild"))).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("does NOT warn when no lockfile is present", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      // no pnpm-lock.yaml
+      const results = detectPnpm11Issues(dir, noReleaseAgeProbe).toArray()
+      expect(results.some((r) => r.message.includes("esbuild"))).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("does NOT warn when lockfile exists but esbuild is not present in it", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(join(dir, "pnpm-lock.yaml"), LOCKFILE_WITHOUT_ESBUILD)
+      const results = detectPnpm11Issues(dir, noReleaseAgeProbe).toArray()
+      expect(results.some((r) => r.message.includes("esbuild"))).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("does NOT warn when no pnpm-workspace.yaml exists but allowBuilds is also absent (no workspace = no strictDepBuilds context)", () => {
+    // When there's no workspace file at all, esbuild in the lockfile is still
+    // un-decided. We DO warn because strictDepBuilds defaults to true in pnpm 11
+    // even without a workspace file — the user needs to add allowBuilds somewhere.
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(join(dir, "pnpm-lock.yaml"), LOCKFILE_WITH_ESBUILD)
+      // no pnpm-workspace.yaml at all
+      const results = detectPnpm11Issues(dir, noReleaseAgeProbe).toArray()
+      const warning = results.find((r) => r.message.includes("esbuild"))
+      expect(warning).toBeDefined()
+      expect(warning?.severity).toBe("warning")
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
 

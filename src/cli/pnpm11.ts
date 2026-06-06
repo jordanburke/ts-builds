@@ -67,6 +67,88 @@ export const defaultReleaseAgeProbe: PnpmReleaseAgeProbe = (dir) => {
   return { stdout: result.stdout ?? "", stderr: result.stderr ?? "", status: result.status ?? 1 }
 }
 
+// ─── B2: allowBuilds / esbuild detection ────────────────────────────────────
+
+/**
+ * Curated set of packages whose build scripts are known to be unnecessary under
+ * pnpm 11's strictDepBuilds. Extend ONLY after verification — this list drives
+ * automatic suggestions; wrong entries generate misleading doctor output.
+ *
+ * esbuild: binary ships via @esbuild/<platform> optional deps; build script not needed.
+ */
+const CURATED_ALLOW_BUILDS_FALSE: ReadonlyMap<string, string> = new Map([
+  ["esbuild", "binary ships via @esbuild/<platform> optional deps; build script not needed"],
+])
+
+/** Presence signal: the package appears as a resolved key in the lockfile. */
+const LOCKFILE_PKG_PRESENCE = (name: string): RegExp => new RegExp(`(^|[/'"\\s])${name}@`, "m")
+
+/**
+ * Pure parser: returns the set of package names already keyed under the
+ * `allowBuilds:` block in a `pnpm-workspace.yaml` string. Uses the same
+ * manual line-by-line style as the rest of this file — no yaml library.
+ *
+ * Stops collecting when it hits the next top-level key (line that starts with
+ * a non-whitespace char and ends with `:`).
+ */
+export function readAllowBuildsKeys(yaml: string): Set<string> {
+  const keys = new Set<string>()
+  let inBlock = false
+  for (const raw of yaml.split("\n")) {
+    const line = raw.trimEnd()
+    if (!inBlock) {
+      if (/^allowBuilds:/.test(line)) {
+        inBlock = true
+      }
+      continue
+    }
+    // A new top-level key ends the block (non-space start, ends with colon)
+    if (/^[^\s#]/.test(line)) {
+      break
+    }
+    // Indented entry: "  <name>: <bool>"
+    const m = /^\s{1,}([^\s:]+)\s*:/.exec(line)
+    if (m) {
+      keys.add(m[1])
+    }
+  }
+  return keys
+}
+
+function detectAllowBuildsIssues(dir: string): CheckResult[] {
+  const lockPath = join(dir, "pnpm-lock.yaml")
+  if (!existsSync(lockPath)) {
+    return []
+  }
+  const lockfile = readFileSync(lockPath, "utf-8")
+
+  const wsPath = join(dir, "pnpm-workspace.yaml")
+  const wsContent = existsSync(wsPath) ? readFileSync(wsPath, "utf-8") : ""
+  const decided = readAllowBuildsKeys(wsContent)
+
+  const results: CheckResult[] = []
+  for (const [pkg, rationale] of CURATED_ALLOW_BUILDS_FALSE) {
+    if (decided.has(pkg)) {
+      // Already decided (true or false) — nothing to report.
+      continue
+    }
+    if (!LOCKFILE_PKG_PRESENCE(pkg).test(lockfile)) {
+      // Not present in the lockfile — not applicable.
+      continue
+    }
+    results.push({
+      severity: "warning",
+      message:
+        `${pkg} has an un-decided build script under pnpm 11 strictDepBuilds — ` +
+        `this will hard-error (ERR_PNPM_IGNORED_BUILDS) on install.\n` +
+        `      Suggested addition to pnpm-workspace.yaml:\n` +
+        `        allowBuilds:\n` +
+        `          ${pkg}: false   # ${rationale}`,
+    })
+  }
+  return results
+}
+
 function detectReleaseAgeIssues(dir: string, probe: PnpmReleaseAgeProbe): CheckResult[] {
   // Only meaningful where pnpm has something to resolve. A bare tmpdir with no
   // lockfile/manifest context yields nothing to flag; the probe degrades to empty.
@@ -113,6 +195,10 @@ export function detectPnpm11Issues(
         message: `package.json 'pnpm' field is no longer read by pnpm 11 — run 'ts-builds doctor --fix' to migrate to pnpm-workspace.yaml`,
       })
     }
+  }
+
+  for (const allowBuildsIssue of detectAllowBuildsIssues(dir)) {
+    results.push(allowBuildsIssue)
   }
 
   for (const releaseAgeIssue of detectReleaseAgeIssues(dir, releaseAgeProbe)) {
