@@ -275,6 +275,105 @@ function renderPeerDependencyRules(rules: NonNullable<PnpmField["peerDependencyR
   return lines.join("\n") + "\n"
 }
 
+/**
+ * Packages we own and publish frequently; a release-age violation on these is
+ * almost always "I just published it" rather than a supply-chain concern, so we
+ * exclude by BARE name (all versions). Everything else is pinned to the exact
+ * flagged version. Match by NAME only — `ts-builds`, `functype`, `functype-*`.
+ */
+function isFirstParty(name: string): boolean {
+  return name === "ts-builds" || name === "functype" || name.startsWith("functype-")
+}
+
+/** Strip the trailing `@version` from a `pkg@version` token, scope-aware. */
+function packageNameOf(token: string): string {
+  const at = token.lastIndexOf("@")
+  // Scoped names start with "@" at position 0; that leading "@" is not a separator.
+  return at > 0 ? token.slice(0, at) : token
+}
+
+/** The target exclude entry for a flagged token: bare name (first-party) or pinned token. */
+function releaseAgeExcludeEntry(token: string): string {
+  return isFirstParty(packageNameOf(token)) ? packageNameOf(token) : token
+}
+
+/** Render a list entry, quoting pinned `pkg@version` forms, leaving bare names unquoted. */
+function renderExcludeEntry(entry: string): string {
+  return entry.includes("@") ? `  - "${entry}"` : `  - ${entry}`
+}
+
+/**
+ * Pure parser: returns the set of entries already listed under
+ * `minimumReleaseAgeExclude:`, normalized (quotes stripped). Same manual
+ * line-by-line style as readAllowBuildsKeys — stops at the next top-level key.
+ */
+export function readReleaseAgeExcludeEntries(yaml: string): Set<string> {
+  const entries = new Set<string>()
+  let inBlock = false
+  for (const raw of yaml.split("\n")) {
+    const line = raw.trimEnd()
+    if (!inBlock) {
+      if (/^minimumReleaseAgeExclude:/.test(line)) {
+        inBlock = true
+      }
+      continue
+    }
+    if (/^[^\s#]/.test(line)) {
+      break
+    }
+    const m = /^\s*-\s*"?([^"]+?)"?\s*$/.exec(line)
+    if (m) {
+      entries.add(m[1])
+    }
+  }
+  return entries
+}
+
+/**
+ * Insert YAML list entries (already rendered as `  - x` lines) into an existing
+ * top-level block, after its last list item and before the next top-level key.
+ * Assumes the block exists; de-dup is the caller's responsibility.
+ */
+function insertListEntries(yaml: string, blockKey: string, renderedLines: string[]): string {
+  if (renderedLines.length === 0) return yaml
+  const lines = yaml.split("\n")
+  const startRe = new RegExp(`^${blockKey}:`)
+  let start = -1
+  for (let i = 0; i < lines.length; i++) {
+    if (startRe.test(lines[i])) {
+      start = i
+      break
+    }
+  }
+  if (start === -1) return yaml
+  // The block runs until the next top-level key (non-space, non-comment start).
+  let end = lines.length
+  for (let i = start + 1; i < lines.length; i++) {
+    if (/^[^\s#]/.test(lines[i])) {
+      end = i
+      break
+    }
+  }
+  // Insert after the last non-empty line within the block.
+  let insertAt = start + 1
+  for (let i = start + 1; i < end; i++) {
+    if (lines[i].trim() !== "") {
+      insertAt = i + 1
+    }
+  }
+  lines.splice(insertAt, 0, ...renderedLines)
+  return lines.join("\n")
+}
+
+/** Insert `  <key>: <value>` map entries into an existing top-level block. */
+function insertMapEntries(yaml: string, blockKey: string, entries: Array<[string, string]>): string {
+  return insertListEntries(
+    yaml,
+    blockKey,
+    entries.map(([k, v]) => `  ${k}: ${v}`),
+  )
+}
+
 function safeWrite(path: string, content: string): boolean {
   try {
     writeFileSync(path, content)
@@ -284,7 +383,10 @@ function safeWrite(path: string, content: string): boolean {
   }
 }
 
-export function migratePnpm11(dir: string = targetDir): MigrationReport {
+export function migratePnpm11(
+  dir: string = targetDir,
+  releaseAgeProbe: PnpmReleaseAgeProbe = defaultReleaseAgeProbe,
+): MigrationReport {
   const actions: MigrationAction[] = []
   let errors = 0
   // Destructive edits to the SOURCE files are deferred until the destination
@@ -405,6 +507,65 @@ export function migratePnpm11(dir: string = targetDir): MigrationReport {
           }
         })
       }
+    }
+  }
+
+  // (c) minimumReleaseAgeExclude — append/merge flagged release-age violations.
+  // Pure additive: only ever ADDS to ws (never strips source), so no deferred
+  // sourceMutation is needed — it joins the same single ws write below.
+  const { stdout, stderr } = releaseAgeProbe(dir)
+  const violations = parseReleaseAgeViolations(stdout, stderr)
+  if (violations.length > 0) {
+    const existing = readReleaseAgeExcludeEntries(ws)
+    const newEntries: string[] = []
+    const seen = new Set<string>()
+    for (const token of violations) {
+      const entry = releaseAgeExcludeEntry(token)
+      // A bare first-party name already present suppresses a pinned form too,
+      // because readReleaseAgeExcludeEntries stores the normalized entry and
+      // releaseAgeExcludeEntry maps first-party tokens to that same bare name.
+      if (existing.has(entry) || seen.has(entry)) continue
+      seen.add(entry)
+      newEntries.push(entry)
+    }
+    if (newEntries.length > 0) {
+      const rendered = newEntries.map(renderExcludeEntry)
+      if (hasTopLevelKey(ws, "minimumReleaseAgeExclude")) {
+        ws = insertListEntries(ws, "minimumReleaseAgeExclude", rendered)
+      } else {
+        ws = appendBlock(ws, "minimumReleaseAgeExclude:\n" + rendered.join("\n") + "\n")
+      }
+      wsChanged = true
+      actions.push({
+        kind: "migrated",
+        message: `Added ${newEntries.length} minimumReleaseAgeExclude entr${newEntries.length === 1 ? "y" : "ies"}`,
+      })
+    }
+  }
+
+  // (d) allowBuilds — write `<pkg>: false` for curated packages present in the
+  // lockfile and not already decided. Same additive, single-write discipline.
+  const lockPath = join(dir, "pnpm-lock.yaml")
+  if (existsSync(lockPath)) {
+    const lockfile = readFileSync(lockPath, "utf-8")
+    const decided = readAllowBuildsKeys(ws)
+    const toAdd: Array<[string, string]> = []
+    for (const pkg of CURATED_ALLOW_BUILDS_FALSE.keys()) {
+      if (decided.has(pkg)) continue
+      if (!LOCKFILE_PKG_PRESENCE(pkg).test(lockfile)) continue
+      toAdd.push([pkg, "false"])
+    }
+    if (toAdd.length > 0) {
+      if (hasTopLevelKey(ws, "allowBuilds")) {
+        ws = insertMapEntries(ws, "allowBuilds", toAdd)
+      } else {
+        ws = appendBlock(ws, "allowBuilds:\n" + toAdd.map(([k, v]) => `  ${k}: ${v}`).join("\n") + "\n")
+      }
+      wsChanged = true
+      actions.push({
+        kind: "migrated",
+        message: `Added ${toAdd.length} allowBuilds entr${toAdd.length === 1 ? "y" : "ies"}`,
+      })
     }
   }
 

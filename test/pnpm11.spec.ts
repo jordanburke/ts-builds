@@ -449,3 +449,211 @@ describe("migratePnpm11", () => {
     }
   })
 })
+
+// ─── B3: --fix writes minimumReleaseAgeExclude + allowBuilds entries ─────────
+
+// Count occurrences of a top-level key (anchored line start, ends with colon).
+function topLevelKeyCount(yaml: string, key: string): number {
+  return (yaml.match(new RegExp(`^${key}:`, "gm")) ?? []).length
+}
+
+function probeReporting(...tokens: string[]): PnpmReleaseAgeProbe {
+  return () => ({
+    stdout: "",
+    stderr: tokens
+      .map((t) => `  ${t} was published at 2026-06-05T00:00:00.000Z, within the minimumReleaseAge cutoff (X)`)
+      .join("\n"),
+    status: tokens.length > 0 ? 1 : 0,
+  })
+}
+
+describe("migratePnpm11 — B3 minimumReleaseAgeExclude", () => {
+  it("appends a new block with a PINNED entry for a non-first-party violation", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - '**'\n")
+      const report = migratePnpm11(dir, probeReporting("@types/node@24.13.1"))
+      const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      expect(ws).toContain("minimumReleaseAgeExclude:")
+      expect(ws).toContain(`  - "@types/node@24.13.1"`)
+      expect(report.actions.some((a) => a.kind === "migrated" && a.message.includes("minimumReleaseAgeExclude"))).toBe(
+        true,
+      )
+      expect(report.errors).toBe(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("uses a BARE entry for a first-party violation (functype-os)", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - '**'\n")
+      migratePnpm11(dir, probeReporting("functype-os@1.2.3"))
+      const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      expect(ws).toContain("minimumReleaseAgeExclude:")
+      expect(ws).toContain("  - functype-os")
+      expect(ws).not.toContain("functype-os@1.2.3")
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("inserts into an EXISTING block, preserving entries and not duplicating the top-level key", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(
+        join(dir, "pnpm-workspace.yaml"),
+        `packages:\n  - '**'\nminimumReleaseAgeExclude:\n  - "already@1.0.0"\n  - functype\n`,
+      )
+      migratePnpm11(dir, probeReporting("@types/node@24.13.1"))
+      const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      expect(topLevelKeyCount(ws, "minimumReleaseAgeExclude")).toBe(1)
+      expect(ws).toContain(`  - "already@1.0.0"`)
+      expect(ws).toContain("  - functype")
+      expect(ws).toContain(`  - "@types/node@24.13.1"`)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("does not add a pinned entry when its bare name is already excluded", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(
+        join(dir, "pnpm-workspace.yaml"),
+        `packages:\n  - '**'\nminimumReleaseAgeExclude:\n  - functype-os\n`,
+      )
+      // functype-os is first-party → maps to bare "functype-os", already present.
+      const report = migratePnpm11(dir, probeReporting("functype-os@9.9.9"))
+      const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      expect(ws).not.toContain("functype-os@9.9.9")
+      // Nothing new to add for the release-age dimension.
+      expect(report.actions.some((a) => a.message.includes("minimumReleaseAgeExclude") && a.kind === "migrated")).toBe(
+        false,
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("adds no release-age entries when the probe reports nothing", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - '**'\n")
+      const report = migratePnpm11(dir, noReleaseAgeProbe)
+      const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      expect(ws).not.toContain("minimumReleaseAgeExclude")
+      expect(report.actions.length).toBe(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("migratePnpm11 — B3 allowBuilds", () => {
+  it("appends allowBuilds.esbuild:false when esbuild is in the lockfile and undecided", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(join(dir, "pnpm-lock.yaml"), LOCKFILE_WITH_ESBUILD)
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - '**'\n")
+      const report = migratePnpm11(dir, noReleaseAgeProbe)
+      const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      expect(ws).toContain("allowBuilds:")
+      expect(ws).toContain("  esbuild: false")
+      expect(report.actions.some((a) => a.kind === "migrated" && a.message.includes("allowBuilds"))).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("makes no allowBuilds change when esbuild is already decided", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(join(dir, "pnpm-lock.yaml"), LOCKFILE_WITH_ESBUILD)
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - '**'\nallowBuilds:\n  esbuild: false\n")
+      const report = migratePnpm11(dir, noReleaseAgeProbe)
+      const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      expect(topLevelKeyCount(ws, "allowBuilds")).toBe(1)
+      expect((ws.match(/esbuild: false/g) ?? []).length).toBe(1)
+      expect(report.actions.some((a) => a.message.includes("allowBuilds"))).toBe(false)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("inserts into an EXISTING allowBuilds block without duplicating the top-level key", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(join(dir, "pnpm-lock.yaml"), LOCKFILE_WITH_ESBUILD)
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - '**'\nallowBuilds:\n  some-other: true\n")
+      migratePnpm11(dir, noReleaseAgeProbe)
+      const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      expect(topLevelKeyCount(ws, "allowBuilds")).toBe(1)
+      expect(ws).toContain("  some-other: true")
+      expect(ws).toContain("  esbuild: false")
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("adds no allowBuilds entries when there is no lockfile", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - '**'\n")
+      migratePnpm11(dir, noReleaseAgeProbe)
+      const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      expect(ws).not.toContain("allowBuilds")
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("migratePnpm11 — B3 integration & idempotence (acceptance proxy)", () => {
+  // The real `pnpm install` clean-run verification is done manually in B4.
+  // Here the deterministic stand-in for "clean" is: each top-level key appears
+  // at most once, and a second migrate with the same probe is a no-op.
+  it("produces single top-level keys and is idempotent across all surfaces", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x", pnpm: { overrides: { foo: "1.0.0" } } }))
+      writeFileSync(join(dir, ".npmrc"), "public-hoist-pattern[]=*eslint*\n")
+      writeFileSync(join(dir, "pnpm-lock.yaml"), LOCKFILE_WITH_ESBUILD)
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - '**'\n")
+
+      const probe = probeReporting("@types/node@24.13.1", "functype@1.5.0")
+      const report1 = migratePnpm11(dir, probe)
+      const ws1 = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+
+      // Each top-level key at most once.
+      for (const key of ["publicHoistPattern", "overrides", "minimumReleaseAgeExclude", "allowBuilds"]) {
+        expect(topLevelKeyCount(ws1, key)).toBe(1)
+      }
+      // Pinned vs bare per first-party rule.
+      expect(ws1).toContain(`  - "@types/node@24.13.1"`)
+      expect(ws1).toContain("  - functype")
+      expect(ws1).not.toContain("functype@1.5.0")
+      expect(ws1).toContain("  esbuild: false")
+      expect(report1.errors).toBe(0)
+
+      // Idempotence: a second run with the same probe is a no-op.
+      const report2 = migratePnpm11(dir, probe)
+      const ws2 = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      expect(ws2).toBe(ws1)
+      expect(report2.actions.length).toBe(0)
+      expect(report2.errors).toBe(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
