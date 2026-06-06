@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make ts-builds the single source of truth for the pnpm 11 migration story. Two surfaces are out of sync with the 3.0.0 reality: (A) the **agent-facing skill** (`SKILL.md` + `references/`) still teaches pre-3.0.0 `.npmrc` behavior and says nothing about pnpm 11's on-by-default supply-chain settings; (B) `doctor` automates only the *mechanical* part of the migration (hoist patterns + `pnpm` field) and gives no guidance on the two parts that actually require judgment — `minimumReleaseAge` violations and the `allowBuilds` / ignored-builds decision.
+**Goal:** Make ts-builds the single source of truth for the pnpm 11 migration story. Two surfaces are out of sync with the 3.0.0 reality: (A) the **agent-facing skill** (`SKILL.md` + `references/`) still teaches pre-3.0.0 `.npmrc` behavior and says nothing about pnpm 11's on-by-default supply-chain settings; (B) `doctor` automates only the _mechanical_ part of the migration (hoist patterns + `pnpm` field) and gives no guidance on the two parts that actually require judgment — `minimumReleaseAge` violations and the `allowBuilds` / ignored-builds decision.
 
 **Why now:** A real envpkt migration (2026-06-06) exercised the full 2.8.2→3.0.0 / pnpm 10→11 path. The mechanical relocation (`doctor --fix`) worked perfectly, but the agent began the session with **stale skill guidance** (believed `init` writes `.npmrc`) and had to hand-resolve the `minimumReleaseAge` exclude (`@types/node@24.13.1`, no aged alternative in range) and the `allowBuilds.esbuild: false` decision with no tool support. Those gaps are reproducible for every consumer.
 
@@ -11,7 +11,7 @@
 ## Verified facts (sources)
 
 - pnpm 11 enables **supply-chain protection by default**: `minimumReleaseAge` defaults to **1440** (1 day), `blockExoticSubdeps: true`, `strictDepBuilds: true`, `optimisticRepeatInstall: true`, `verifyDepsBeforeRun: install`. (pnpm.io blog releases/11.0 — "Supply-chain protection on by default" + "Breaking changes > Security & build defaults")
-- `pnpm config get minimumReleaseAge` returns `undefined` even though the policy is active — it is a **built-in default, not an explicit setting**. (observed in envpkt migration; install failed `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`)
+- `pnpm config get minimumReleaseAge` returns `undefined` even though the policy is active — it is a **built-in default, not an explicit setting**. (observed in envpkt migration; install failed `ERR_PNPM_NO_MATURE_MATCHING_VERSION`)
 - `allowBuilds` (added v10.26.0) **replaces** `onlyBuiltDependencies` / `onlyBuiltDependenciesFile` / `neverBuiltDependencies` / `ignoredBuiltDependencies` / `ignoreDepScripts` in v11. It is a map of package matcher → boolean in `pnpm-workspace.yaml`. (pnpm.io settings + releases/11.0)
 - Ignored build scripts are a **hard error** (`ERR_PNPM_IGNORED_BUILDS`) under `strictDepBuilds: true`, not pnpm 10's soft warning. (observed)
 - `esbuild`'s build script is **not needed** — its binary ships via `@esbuild/<platform>` optional deps; `allowBuilds.esbuild: false` is correct (verified by a green build). (observed)
@@ -49,7 +49,7 @@
 
 ### Task A3: Add a "Migrating 2.x → 3.0.0 / pnpm 10 → 11" runbook to `references/standardization.md`
 
-- [ ] Step-by-step capturing the verified gotchas: bump ts-builds → `^3.0.0`; `doctor --fix` (relocates hoist patterns); `corepack use pnpm@11` then `CI=true pnpm install`; resolve `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` by adding the flagged `pkg@version` (+ first-party libs) to `minimumReleaseAgeExclude`; resolve `ERR_PNPM_IGNORED_BUILDS` via `allowBuilds`; validate.
+- [ ] Step-by-step capturing the verified gotchas: bump ts-builds → `^3.0.0`; `doctor --fix` (relocates hoist patterns); `corepack use pnpm@11` then `CI=true pnpm install`; resolve `ERR_PNPM_NO_MATURE_MATCHING_VERSION` by adding the flagged `pkg@version` (+ first-party libs) to `minimumReleaseAgeExclude`; resolve `ERR_PNPM_IGNORED_BUILDS` via `allowBuilds`; validate.
 - [ ] Cross-reference from `SKILL.md` so an agent loading the skill finds the runbook.
 
 ### Task A4: Release so the skill cache refreshes
@@ -62,7 +62,7 @@
 
 ### Task B1: Detect `minimumReleaseAge` violations in `detectPnpm11Issues()`
 
-- [ ] Run a non-mutating policy check (shell `pnpm install --frozen-lockfile`/equivalent, capture `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION` entries) and surface each flagged `pkg@version` as a `CheckResult` warning with the suggested `minimumReleaseAgeExclude` line. (Design decision to lock in the plan: shell-out vs. parse lockfile timestamps against a 1440 default.)
+- [ ] Run a non-mutating policy check (shell `pnpm install --frozen-lockfile`/equivalent, capture `ERR_PNPM_NO_MATURE_MATCHING_VERSION` entries) and surface each flagged `pkg@version` as a `CheckResult` warning with the suggested `minimumReleaseAgeExclude` line. (Design decision to lock in the plan: shell-out vs. parse lockfile timestamps against a 1440 default.)
 - [ ] Tests: fixture with a too-fresh lockfile entry → warning lists the exact `pkg@version`.
 
 ### Task B2: Detect ignored builds / `allowBuilds` gaps

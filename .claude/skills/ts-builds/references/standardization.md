@@ -810,14 +810,14 @@ CI=true pnpm install
 
 The lockfile remains at `lockfileVersion: 9.0` — this is expected.
 
-### Step 4: Resolve ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION
+### Step 4: Resolve ERR_PNPM_NO_MATURE_MATCHING_VERSION
 
 pnpm 11's `minimumReleaseAge` default (1440 minutes / 1 day) refuses dependency versions published less than 24 hours ago. This only affects fresh `pnpm add` calls and lockfile re-resolutions — CI installs from a committed `pnpm-lock.yaml` are unaffected.
 
-**Error pattern:**
+**Error pattern** (verified against pnpm 11.5.2 — each flagged package is named with its `pkg@version`):
 
 ```
-ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION
+ ERR_PNPM_NO_MATURE_MATCHING_VERSION  <pkg>@<version> was published within the minimumReleaseAge cutoff
 ```
 
 **Fix:** Add an `minimumReleaseAgeExclude` list to `pnpm-workspace.yaml`.
