@@ -1,6 +1,3 @@
-import { loadConfig } from "./cli/config"
-import { runCommand, runShellCommand } from "./cli/process"
-import { runValidate } from "./cli/runner"
 import { runBuild, runDev, runFormat, runLint, runTest, runTypecheck } from "./cli/commands/build"
 import { runChangelog } from "./cli/commands/changelog"
 import { cleanup } from "./cli/commands/cleanup"
@@ -8,6 +5,9 @@ import { runDoctor } from "./cli/commands/doctor"
 import { showHelp, showInfo } from "./cli/commands/info"
 import { createConfig, init } from "./cli/commands/init"
 import { runSize } from "./cli/commands/size"
+import { loadConfig } from "./cli/config"
+import { runCommand, runShellCommand } from "./cli/process"
+import { runValidate } from "./cli/runner"
 
 const command = process.argv[2] || "init"
 const subCommand = process.argv[3]

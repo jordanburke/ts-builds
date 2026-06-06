@@ -178,7 +178,7 @@ function formatMarkdown(grouped: GroupedChangelog, repoUrl: Option<string>, vers
   )
   lines.push("")
 
-  if (grouped.breaking.nonEmpty) {
+  if (!grouped.breaking.isEmpty) {
     lines.push("### BREAKING CHANGES")
     lines.push("")
     for (const commit of grouped.breaking) {
