@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
@@ -8,6 +9,76 @@ import { targetDir } from "./config"
 
 const HOIST_LINE = /^public-hoist-pattern\[\]=(.+)$/
 
+/**
+ * The impure edge of release-age detection: runs a non-mutating pnpm resolution
+ * pass and captures its output. Injectable so tests can feed canned pnpm stderr
+ * without shelling out. Returns -1 status when pnpm cannot be spawned at all.
+ */
+export type PnpmReleaseAgeProbe = (dir: string) => { stdout: string; stderr: string; status: number }
+
+// Each per-violation line pnpm prints looks like:
+//   left-pad@1.3.0 was published at 2018-04-09T01:10:45.796Z, within the minimumReleaseAge cutoff (...)
+// Matching the line directly (rather than the header error code) keeps us robust
+// across pnpm's two known marker codes: ERR_PNPM_NO_MATURE_MATCHING_VERSION (11.5.x)
+// and ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION. The package token is `name@version`,
+// where name may be scoped (`@scope/name`).
+const RELEASE_AGE_LINE = /(@?[^\s@/]+(?:\/[^\s@]+)?@[^\s]+)\s+was published.*minimumReleaseAge/
+
+/**
+ * Pure parser (no I/O): extracts the flagged `pkg@version` tokens from captured
+ * pnpm output. Order-preserving and de-duplicated. Returns [] for unrelated or
+ * empty output so callers never emit false warnings.
+ */
+export function parseReleaseAgeViolations(stdout: string, stderr: string): string[] {
+  const combined = `${stdout}\n${stderr}`
+  const seen = new Set<string>()
+  const tokens: string[] = []
+  for (const line of combined.split("\n")) {
+    const m = RELEASE_AGE_LINE.exec(line.trim())
+    if (m && !seen.has(m[1])) {
+      seen.add(m[1])
+      tokens.push(m[1])
+    }
+  }
+  return tokens
+}
+
+/** Pure helper: the suggested pnpm-workspace.yaml exclude line for a flagged token. */
+export function buildReleaseAgeExcludeLine(pkgVersion: string): string {
+  return `minimumReleaseAgeExclude:\n  - "${pkgVersion}"`
+}
+
+/**
+ * Default probe: runs `pnpm install --resolution-only`, which re-runs resolution
+ * (re-applying minimumReleaseAge) WITHOUT writing a lockfile or node_modules — it
+ * aborts before any mutation on a violation. If pnpm is not on PATH the spawn
+ * errors and we return status -1 so detection degrades quietly.
+ */
+export const defaultReleaseAgeProbe: PnpmReleaseAgeProbe = (dir) => {
+  const result = spawnSync("pnpm", ["install", "--resolution-only"], {
+    cwd: dir,
+    encoding: "utf-8",
+    env: process.env,
+  })
+  if (result.error) {
+    return { stdout: "", stderr: "", status: -1 }
+  }
+  return { stdout: result.stdout ?? "", stderr: result.stderr ?? "", status: result.status ?? 1 }
+}
+
+function detectReleaseAgeIssues(dir: string, probe: PnpmReleaseAgeProbe): CheckResult[] {
+  // Only meaningful where pnpm has something to resolve. A bare tmpdir with no
+  // lockfile/manifest context yields nothing to flag; the probe degrades to empty.
+  const { stdout, stderr } = probe(dir)
+  const violations = parseReleaseAgeViolations(stdout, stderr)
+  return violations.map((pkgVersion) => ({
+    severity: "warning" as const,
+    message:
+      `${pkgVersion} is newer than the pnpm minimumReleaseAge cutoff — ` +
+      `add to pnpm-workspace.yaml to allow it:\n      ${buildReleaseAgeExcludeLine(pkgVersion)}`,
+  }))
+}
+
 function readHoistPatterns(npmrc: string): string[] {
   return npmrc
     .split("\n")
@@ -16,7 +87,10 @@ function readHoistPatterns(npmrc: string): string[] {
     .map((m) => m[1])
 }
 
-export function detectPnpm11Issues(dir: string = targetDir): List<CheckResult> {
+export function detectPnpm11Issues(
+  dir: string = targetDir,
+  releaseAgeProbe: PnpmReleaseAgeProbe = defaultReleaseAgeProbe,
+): List<CheckResult> {
   const results: CheckResult[] = []
 
   const npmrcPath = join(dir, ".npmrc")
@@ -38,6 +112,10 @@ export function detectPnpm11Issues(dir: string = targetDir): List<CheckResult> {
         message: `package.json 'pnpm' field is no longer read by pnpm 11 — run 'ts-builds doctor --fix' to migrate to pnpm-workspace.yaml`,
       })
     }
+  }
+
+  for (const releaseAgeIssue of detectReleaseAgeIssues(dir, releaseAgeProbe)) {
+    results.push(releaseAgeIssue)
   }
 
   if (results.length === 0) {
