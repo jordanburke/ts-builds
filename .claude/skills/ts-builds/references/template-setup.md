@@ -32,7 +32,7 @@ pnpm init
 # Install ts-builds (bundles all tooling)
 pnpm add -D ts-builds tsdown
 
-# Initialize (creates .npmrc with hoist patterns)
+# Initialize (creates pnpm-workspace.yaml with hoist patterns)
 npx ts-builds init
 
 # Create source directory

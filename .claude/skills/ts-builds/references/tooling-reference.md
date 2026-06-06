@@ -10,7 +10,7 @@ ts-builds provides a CLI that runs standardized commands across all projects.
 
 ```bash
 npx ts-builds            # Default: runs init
-npx ts-builds init       # Initialize .npmrc with hoist patterns (run first)
+npx ts-builds init       # Initialize pnpm-workspace.yaml with hoist patterns (run first)
 npx ts-builds config     # Create ts-builds.config.json
 npx ts-builds config --force  # Overwrite existing config (or -f)
 npx ts-builds info       # Show bundled packages you don't need to install
