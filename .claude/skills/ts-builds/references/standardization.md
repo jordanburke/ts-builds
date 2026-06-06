@@ -760,3 +760,114 @@ After successful migration:
 - **tsdown Documentation**: https://tsdown.egoist.dev/
 - **Vitest Migration**: https://vitest.dev/guide/migration.html
 - **ESLint Flat Config**: https://eslint.org/docs/latest/use/configure/configuration-files
+
+## Migrating 2.x → 3.0.0 (pnpm 10 → 11)
+
+Runbook for upgrading a consumer project from ts-builds 2.x + pnpm 10 to ts-builds 3.x + pnpm 11. Each step lists the command and the specific error or condition it resolves. Work through them in order.
+
+### Step 1: Bump ts-builds
+
+In the consumer project's `package.json`, update the devDependency:
+
+```json
+"ts-builds": "^3.0.0"
+```
+
+### Step 2: Run the doctor fix
+
+```bash
+pnpm exec ts-builds doctor --fix
+```
+
+This performs the mechanical config migration automatically:
+
+- Relocates `public-hoist-pattern[]` from `.npmrc` into `pnpm-workspace.yaml` as `publicHoistPattern`
+- Relocates `overrides` and `peerDependencyRules` from the `package.json` `pnpm` field into `pnpm-workspace.yaml`
+- Strips the inert `.npmrc` lines
+- Prunes the `package.json` `pnpm` field
+
+Exotic `pnpm` keys (e.g. `packageExtensions`) and pre-existing target keys are reported for manual migration rather than altered.
+
+### Step 3: Switch pnpm to version 11
+
+```bash
+corepack use pnpm@11
+```
+
+**Known gotcha — non-interactive shell abort:**
+
+In a non-interactive shell (CI, subprocess), this command may abort with:
+
+```
+ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY
+```
+
+This happens because the pnpm 11 store migration purges `node_modules` and requires a TTY confirmation prompt. Recover by re-running the install with `CI=true`:
+
+```bash
+CI=true pnpm install
+```
+
+The lockfile remains at `lockfileVersion: 9.0` — this is expected.
+
+### Step 4: Resolve ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION
+
+pnpm 11's `minimumReleaseAge` default (1440 minutes / 1 day) refuses dependency versions published less than 24 hours ago. This only affects fresh `pnpm add` calls and lockfile re-resolutions — CI installs from a committed `pnpm-lock.yaml` are unaffected.
+
+**Error pattern:**
+
+```
+ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION
+```
+
+**Fix:** Add an `minimumReleaseAgeExclude` list to `pnpm-workspace.yaml`.
+
+Two forms are accepted:
+
+- **Pinned `pkg@version`** — exclude a specific just-published version. Use when the semver range resolves to a version that has no aged-enough alternative. Do NOT downgrade instead — a pinned exclude is the correct response. Example: if `@types/node@^24.13.1` resolves only to `@types/node@24.13.1` (just published), add the pinned form.
+- **Bare `pkg`** — exclude all versions of a package (all versions). Use for first-party libraries you control and trust, so you can install your own just-published packages without waiting 24 hours.
+
+```yaml
+# pnpm-workspace.yaml
+minimumReleaseAgeExclude:
+  - "@types/node@24.13.1"   # pinned: only this exact version excluded
+  - ts-builds               # bare: all versions — first-party, trusted
+  - functype                # bare: first-party
+  - functype-os             # bare: first-party (example functype sub-package)
+```
+
+Documented default set of bare (first-party) excludes: `ts-builds`, `functype`, and any `functype-*` packages you publish.
+
+### Step 5: Resolve ERR_PNPM_IGNORED_BUILDS
+
+pnpm 11's `strictDepBuilds: true` makes an un-approved dependency build script a **hard error** (pnpm 10 only warned).
+
+**Error pattern:**
+
+```
+ERR_PNPM_IGNORED_BUILDS
+```
+
+**Fix:** Add an `allowBuilds` map to `pnpm-workspace.yaml`. The map accepts package name → boolean: `true` approves the build script; `false` explicitly declines it (still suppresses the error).
+
+Real-world example: `esbuild` triggers this error, but its build script is NOT needed — its binary ships via `@esbuild/<platform>` optional dependencies. Setting `false` is correct and produces a green build:
+
+```yaml
+# pnpm-workspace.yaml
+allowBuilds:
+  esbuild: false        # build script not needed; binary via @esbuild/<platform> optional deps
+  some-native-pkg: true # approve a package that genuinely needs its build script
+```
+
+`esbuild: false` is the ts-builds default. Only set `true` for packages that genuinely require their build script to function.
+
+### Step 6: Validate
+
+Run a clean install followed by the full validate chain:
+
+```bash
+pnpm install
+pnpm validate
+```
+
+Both must pass with no errors. If `pnpm validate` invokes the ts-builds validate chain, it runs format, lint, typecheck, test, and build in sequence.

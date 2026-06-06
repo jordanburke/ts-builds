@@ -337,6 +337,8 @@ Use `allowBuilds.<pkg>: true` to approve a package's build script; `false` to ex
 
 `ts-builds doctor` reports pnpm 11 readiness: it flags `public-hoist-pattern[]` lines in `.npmrc` and a `package.json` `pnpm` field (both ignored by pnpm 11). `ts-builds doctor --fix` migrates them to `pnpm-workspace.yaml`, strips inert `.npmrc` lines, and prunes the `pnpm` field. Exotic keys (e.g. `packageExtensions`) and pre-existing target keys are reported for manual migration rather than altered.
 
+For a complete step-by-step runbook covering the full 2.x → 3.0.0 / pnpm 10 → 11 upgrade — including the `ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY`, `ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`, and `ERR_PNPM_IGNORED_BUILDS` gotchas with exact fixes — see **references/standardization.md § "Migrating 2.x → 3.0.0 (pnpm 10 → 11)"**.
+
 ## Common Workflows
 
 ### Creating a New Library
@@ -493,7 +495,7 @@ When applying these standards to an existing project:
 ### Reference Documents
 
 - **references/template-setup.md** - Complete guide for using the template
-- **references/standardization.md** - Detailed migration guide for existing projects
+- **references/standardization.md** - Detailed migration guide for existing projects; includes the **"Migrating 2.x → 3.0.0 (pnpm 10 → 11)"** runbook at the end of the file
 - **references/tooling-reference.md** - Configuration examples and patterns
 
 ### External Links
