@@ -306,6 +306,37 @@ Configuration highlights:
 - ESNext target
 - Declaration files only (tsdown handles transpilation)
 
+## pnpm 11 Defaults
+
+Projects using ts-builds are pinned to pnpm 11 via the `packageManager` field. Settings live in `pnpm-workspace.yaml`, NOT `.npmrc` (auth/registry only under pnpm 11) or the `package.json` `pnpm` field (no longer read by pnpm 11).
+
+**Settings relocated to `pnpm-workspace.yaml`:** `publicHoistPattern`, `overrides`, `peerDependencyRules`, `minimumReleaseAgeExclude`, `allowBuilds`.
+
+### Supply-chain protections (intentionally left ON)
+
+pnpm 11 enables supply-chain protection by default. Do not disable these globally — approve specific packages instead.
+
+- **`minimumReleaseAge`** (default: 1440, i.e. 1 day) — pnpm refuses dependency versions published less than 24h ago. CI installs from the committed `pnpm-lock.yaml`, so pinned versions are unaffected; this only bites a fresh `pnpm add` or a lockfile re-resolution of a just-published package. One-off override: `pnpm install --config.minimumReleaseAge=0`. When a dep's semver range has no aged-enough version (e.g. `@types/node@^24.13.1`), add a pinned `minimumReleaseAgeExclude` entry — do not downgrade.
+- **`strictDepBuilds: true`** — installs fail hard (`ERR_PNPM_IGNORED_BUILDS`) on un-approved dependency build scripts. pnpm 10 only warned; pnpm 11 errors.
+- **`blockExoticSubdeps: true`** — blocks exotic sub-dependency resolutions.
+
+### `allowBuilds` (replaces legacy build-allow family)
+
+`allowBuilds` (added in pnpm v10.26.0) replaces the entire legacy family: `onlyBuiltDependencies`, `onlyBuiltDependenciesFile`, `neverBuiltDependencies`, `ignoredBuiltDependencies`, and `ignoreDepScripts`. It is a map of package matcher → boolean in `pnpm-workspace.yaml`.
+
+```yaml
+# pnpm-workspace.yaml
+allowBuilds:
+  esbuild: false        # correct default — binary ships via @esbuild/<platform> optional deps
+  some-native-pkg: true # approve a package that genuinely needs its build script
+```
+
+Use `allowBuilds.<pkg>: true` to approve a package's build script; `false` to explicitly decline. `esbuild: false` is correct and is the ts-builds default — esbuild's build script is NOT needed because its binary ships via `@esbuild/<platform>` optional dependencies.
+
+### Doctor and migration
+
+`ts-builds doctor` reports pnpm 11 readiness: it flags `public-hoist-pattern[]` lines in `.npmrc` and a `package.json` `pnpm` field (both ignored by pnpm 11). `ts-builds doctor --fix` migrates them to `pnpm-workspace.yaml`, strips inert `.npmrc` lines, and prunes the `pnpm` field. Exotic keys (e.g. `packageExtensions`) and pre-existing target keys are reported for manual migration rather than altered.
+
 ## Common Workflows
 
 ### Creating a New Library
