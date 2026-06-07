@@ -244,6 +244,27 @@ lines in `.npmrc` and a `package.json` `pnpm` field (both ignored by pnpm 11).
 `pnpm` field. Exotic `pnpm` keys (e.g. `packageExtensions`) and pre-existing target
 keys are reported for manual migration rather than altered.
 
+`doctor` also surfaces the two pnpm 11 supply-chain settings that need judgment:
+
+- **`minimumReleaseAge` violations** — a `minimumReleaseAge` check shells out to a
+  side-effect-free `pnpm install --resolution-only` probe (the lockfile is
+  snapshotted and restored, so `doctor` never rewrites it; if pnpm is absent the
+  probe degrades quietly) and reports the real error `ERR_PNPM_NO_MATURE_MATCHING_VERSION`.
+  Each flagged `pkg@version` is surfaced with a suggested `minimumReleaseAgeExclude`
+  line. `--fix` appends/merges those entries into `pnpm-workspace.yaml` — pinned
+  `pkg@version` for third-party deps with no aged-enough alternative, bare names for
+  first-party libs (`ts-builds`, `functype`, `functype-*`).
+- **`allowBuilds` gaps** — a static check (no install) compares a curated known-safe
+  set (`esbuild`) present in `pnpm-lock.yaml` against the `allowBuilds` keys already
+  in `pnpm-workspace.yaml`; an undecided build script (hard-errors as
+  `ERR_PNPM_IGNORED_BUILDS` under `strictDepBuilds`) is flagged with a suggested
+  `allowBuilds.esbuild: false` (esbuild's binary ships via `@esbuild/<platform>`
+  optional deps; its build script is not needed). `--fix` writes/merges that map.
+
+Both `--fix` additions preserve existing `pnpm-workspace.yaml` content, never
+duplicate a top-level key, and are idempotent. The release-age detection lives
+behind an injectable probe (`PnpmReleaseAgeProbe`) for testability.
+
 ### Deprecation (since 2.8.0)
 
 `commands["validate:X"]` entries with a `cwd:` that escapes the package root emit a deprecation warning at config load (deduplicated per `name × cwd` pair) and are targeted for removal in **ts-builds 4.0**. Use a workspace orchestrator (Turbo, nx, `pnpm -r`) for cross-package validation instead. See issue #72.
