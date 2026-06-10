@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises"
+import { readdir, rm, stat } from "node:fs/promises"
 import { join } from "node:path"
 
 import { loadConfig, targetDir } from "../config"
@@ -71,16 +71,72 @@ export async function runTest(mode: "run" | "watch" | "coverage" | "ui" = "run")
 }
 
 /**
+ * Recursively map every file under `dir` to its mtime (ms). Returns an empty
+ * map when `dir` doesn't exist. Best-effort: unreadable entries are skipped.
+ */
+export async function snapshotMtimes(dir: string): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
+  for (const entry of entries) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      for (const [p, m] of await snapshotMtimes(path)) out.set(p, m)
+    } else {
+      const mtime = await stat(path)
+        .then((s) => s.mtimeMs)
+        .catch(() => undefined)
+      if (mtime !== undefined) out.set(path, mtime)
+    }
+  }
+  return out
+}
+
+/**
+ * Non-destructive clean: remove only the build outputs left *untouched* by the
+ * latest build — orphans from a previous build whose source entry no longer
+ * exists (including old content-hashed chunk files).
+ *
+ * A file is an orphan iff it was present in `before` AND its mtime is unchanged
+ * afterwards: tsdown rewrites every current output, so anything it produced has
+ * a newer mtime, and anything still bearing its pre-build mtime is stale. This
+ * yields the same orphan-free result as `rm -rf dist` without ever unlinking a
+ * file mid-build — see {@link runBuild}.
+ *
+ * Best-effort: a failed unlink leaves a (harmless) orphan rather than failing
+ * the build.
+ */
+export async function pruneOrphans(distDir: string, before: Map<string, number>): Promise<void> {
+  for (const [path, mtimeBefore] of before) {
+    const mtimeNow = await stat(path)
+      .then((s) => s.mtimeMs)
+      .catch(() => undefined)
+    if (mtimeNow === mtimeBefore) {
+      await rm(path, { force: true }).catch(() => undefined)
+    }
+  }
+}
+
+/**
  * Production build (or watch build, when `watch === true`).
  *
- * Two design choices worth knowing about before editing:
+ * Three design choices worth knowing about before editing:
  *
- * 1. **Clean is done via Node's `fs.rm`, not a shelled-out `rimraf`.**
+ * 1. **Non-destructive clean (tsdown path).** Rather than `rm -rf dist` before
+ *    building — which leaves a window where `dist/` is empty and a concurrent
+ *    reader (e.g. a sibling package's tests executing this package's built
+ *    output under a monorepo task runner) hits "Cannot find module" — we build
+ *    over the existing `dist` with `--no-clean` (overriding `clean: true` in
+ *    the shared tsdown base config, so outputs are overwritten in place and
+ *    `dist` is never momentarily empty), then {@link pruneOrphans} removes
+ *    files the build didn't touch. Same orphan-free result, no missing-file
+ *    window. (Vite mode keeps the clean-before-build path for now.)
+ *
+ * 2. **Clean is done via Node's `fs.rm`, not a shelled-out `rimraf`.**
  *    See {@link cleanDir} — it handles the Windows transient-error cases
  *    that `rimraf` previously papered over, without dragging `rimraf` into
  *    consumers' install graphs.
  *
- * 2. **`NODE_ENV=production` is passed through `spawn`'s `env` option, not
+ * 3. **`NODE_ENV=production` is passed through `spawn`'s `env` option, not
  *    by assigning `process.env.NODE_ENV` in the parent process.** Mutating
  *    `process.env` would leak production semantics into any later code in
  *    the same process — fine for the one-shot CLI binary, dangerous when
@@ -100,9 +156,13 @@ export async function runBuild(watch = false): Promise<number> {
   }
 
   if (watch) return runCommand("tsdown", ["--watch"])
-  const cleanCode = await cleanDist()
-  if (cleanCode !== 0) return cleanCode
-  return runCommand("tsdown", [], { env: { NODE_ENV: "production" } })
+
+  const distDir = join(targetDir, "dist")
+  const before = await snapshotMtimes(distDir)
+  const buildCode = await runCommand("tsdown", ["--no-clean"], { env: { NODE_ENV: "production" } })
+  if (buildCode !== 0) return buildCode
+  await pruneOrphans(distDir, before)
+  return 0
 }
 
 export async function runDev(): Promise<number> {
