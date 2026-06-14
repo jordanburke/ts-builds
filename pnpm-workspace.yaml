@@ -4,8 +4,9 @@ minimumReleaseAgeExclude:
   # A name glob covers functype, functype-os, eslint-{config,plugin}-functype
   # at all current and future versions.
   - "*functype*"
-  # Third-party deps stay subject to the cooldown (no entries) — pin a specific
+  # Third-party deps stay subject to the cooldown — pin a specific
   # pkg@version here only if a fresh release blocks a needed lockfile resolution.
+  - "@vitest/*"
 
 overrides:
   unrun: "0.2.37"
