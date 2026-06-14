@@ -46,7 +46,7 @@ export function parseReleaseAgeViolations(stdout: string, stderr: string): strin
 
 /** Pure helper: the suggested pnpm-workspace.yaml exclude line for a flagged token. */
 export function buildReleaseAgeExcludeLine(pkgVersion: string): string {
-  return `minimumReleaseAgeExclude:\n  - "${pkgVersion}"`
+  return `minimumReleaseAgeExclude:\n${renderExcludeEntry(releaseAgeExcludeEntry(pkgVersion))}`
 }
 
 /**
@@ -295,13 +295,18 @@ function renderPeerDependencyRules(rules: NonNullable<PnpmField["peerDependencyR
 }
 
 /**
- * Packages we own and publish frequently; a release-age violation on these is
+ * First-party packages we publish ourselves — a release-age violation on these is
  * almost always "I just published it" rather than a supply-chain concern, so we
- * exclude by BARE name (all versions). Everything else is pinned to the exact
- * flagged version. Match by NAME only — `ts-builds`, `functype`, `functype-*`.
+ * exclude them at ALL versions instead of pinning (pins re-trip on every release).
+ *
+ * The functype family is open-ended (functype, functype-os, eslint-config-functype,
+ * eslint-plugin-functype, and future functype-*), so it collapses to a single
+ * `*functype*` name glob. `ts-builds` is a lone package excluded by bare name.
  */
-function isFirstParty(name: string): boolean {
-  return name === "ts-builds" || name === "functype" || name.startsWith("functype-")
+const FIRST_PARTY_FUNCTYPE_GLOB = "*functype*"
+
+function isFirstPartyFunctype(name: string): boolean {
+  return name.includes("functype")
 }
 
 /** Strip the trailing `@version` from a `pkg@version` token, scope-aware. */
@@ -311,14 +316,26 @@ function packageNameOf(token: string): string {
   return at > 0 ? token.slice(0, at) : token
 }
 
-/** The target exclude entry for a flagged token: bare name (first-party) or pinned token. */
-function releaseAgeExcludeEntry(token: string): string {
-  return isFirstParty(packageNameOf(token)) ? packageNameOf(token) : token
+/**
+ * Canonical exclude entry for a flagged `pkg@version` token — or for an existing
+ * entry being re-checked. First-party functype family → the `*functype*` glob,
+ * `ts-builds` → bare `ts-builds`, an entry that is already a glob/pattern is left
+ * untouched, and everything else (third-party) stays pinned to its exact version.
+ */
+function releaseAgeExcludeEntry(entry: string): string {
+  if (entry.includes("*")) return entry
+  const name = packageNameOf(entry)
+  if (isFirstPartyFunctype(name)) return FIRST_PARTY_FUNCTYPE_GLOB
+  if (name === "ts-builds") return "ts-builds"
+  return entry
 }
 
-/** Render a list entry, quoting pinned `pkg@version` forms, leaving bare names unquoted. */
+/**
+ * Render a list entry. Quote pinned (`@`), scoped, or glob (`*`) forms — a bare
+ * `*functype*` would otherwise be parsed as a YAML alias. Plain names stay unquoted.
+ */
 function renderExcludeEntry(entry: string): string {
-  return entry.includes("@") ? `  - "${entry}"` : `  - ${entry}`
+  return /[@*]/.test(entry) ? `  - "${entry}"` : `  - ${entry}`
 }
 
 /**
@@ -541,16 +558,18 @@ export function migratePnpm11(
   const { stdout, stderr } = releaseAgeProbe(dir)
   const violations = parseReleaseAgeViolations(stdout, stderr)
   if (violations.length > 0) {
-    const existing = readReleaseAgeExcludeEntries(ws)
+    // Canonicalize existing entries so any first-party form already present —
+    // a `functype@x` pin pnpm auto-added, a bare `functype-os`, or the `*functype*`
+    // glob itself — counts as covering a fresh functype-family violation, and we
+    // never pile on a redundant glob. Additive only: existing entries are read,
+    // never rewritten.
+    const covered = new Set<string>()
+    for (const e of readReleaseAgeExcludeEntries(ws)) covered.add(releaseAgeExcludeEntry(e))
     const newEntries: string[] = []
-    const seen = new Set<string>()
     for (const token of violations) {
       const entry = releaseAgeExcludeEntry(token)
-      // A bare first-party name already present suppresses a pinned form too,
-      // because readReleaseAgeExcludeEntries stores the normalized entry and
-      // releaseAgeExcludeEntry maps first-party tokens to that same bare name.
-      if (existing.has(entry) || seen.has(entry)) continue
-      seen.add(entry)
+      if (covered.has(entry)) continue
+      covered.add(entry)
       newEntries.push(entry)
     }
     if (newEntries.length > 0) {

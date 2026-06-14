@@ -487,7 +487,7 @@ describe("migratePnpm11 — B3 minimumReleaseAgeExclude", () => {
     }
   })
 
-  it("uses a BARE entry for a first-party violation (functype-os)", () => {
+  it("uses the *functype* glob for a first-party functype-family violation", () => {
     const dir = tmp()
     try {
       writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
@@ -495,8 +495,34 @@ describe("migratePnpm11 — B3 minimumReleaseAgeExclude", () => {
       migratePnpm11(dir, probeReporting("functype-os@1.2.3"))
       const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
       expect(ws).toContain("minimumReleaseAgeExclude:")
-      expect(ws).toContain("  - functype-os")
+      expect(ws).toContain(`  - "*functype*"`)
       expect(ws).not.toContain("functype-os@1.2.3")
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("collapses the whole functype family (incl. eslint-config/plugin-functype) to one *functype* glob and uses bare ts-builds", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - '**'\n")
+      migratePnpm11(
+        dir,
+        probeReporting(
+          "functype@1.4.1",
+          "functype-os@1.4.1",
+          "eslint-config-functype@2.104.1",
+          "eslint-plugin-functype@2.104.1",
+          "ts-builds@3.1.1",
+        ),
+      )
+      const ws = readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")
+      // All four functype-family packages collapse to a single glob entry.
+      expect(ws.match(/- "\*functype\*"/g)?.length).toBe(1)
+      expect(ws).toContain("  - ts-builds")
+      // None of the first-party packages are pinned to a version.
+      expect(ws).not.toMatch(/functype@|functype-os@|eslint-(config|plugin)-functype@|ts-builds@/)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -693,9 +719,9 @@ describe("migratePnpm11 — B3 integration & idempotence (acceptance proxy)", ()
       for (const key of ["publicHoistPattern", "overrides", "minimumReleaseAgeExclude", "allowBuilds"]) {
         expect(topLevelKeyCount(ws1, key)).toBe(1)
       }
-      // Pinned vs bare per first-party rule.
+      // Pinned (third-party) vs *functype* glob (first-party) per the exclude rule.
       expect(ws1).toContain(`  - "@types/node@24.13.1"`)
-      expect(ws1).toContain("  - functype")
+      expect(ws1).toContain(`  - "*functype*"`)
       expect(ws1).not.toContain("functype@1.5.0")
       expect(ws1).toContain("  esbuild: false")
       expect(report1.errors).toBe(0)

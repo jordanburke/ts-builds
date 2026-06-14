@@ -83,6 +83,7 @@ describe("init pnpm-workspace.yaml generation", () => {
       expect(ws).toContain(`  - "*prettier*"`)
       expect(ws).toContain(`  - "*vitest*"`)
       expect(ws).toContain(`  - "typescript"`)
+      expect(ws).toContain(`  - "globals"`)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
