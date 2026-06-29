@@ -46,7 +46,7 @@ importers:
         version: 1.5.0
       functype-os:
         specifier: ^1.4.4
-        version: 1.4.4(functype@1.5.0)
+        version: 1.5.0(functype@1.5.0)
       globals:
         specifier: ^17.6.0
         version: 17.7.0
@@ -845,8 +845,8 @@ packages:
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
 
-  functype-os@1.4.4:
-    resolution: {integrity: sha512-10aVBbzEhbRfSdtuTHDLcIqIYeaIpJfCrlFMYGjCrlQL0TnQy30nX8p/Uxfxs0NDpt/1w6Gt9KC5nmGCPQAOhw==}
+  functype-os@1.5.0:
+    resolution: {integrity: sha512-vtrvyVgEeO7slpk5qjyMQQPyL2wHv9//bQoSZ758U2CxmJRgU4qqtXjlZJyXFHWAlMZd+0dR+aMkJY7E/Nx1xg==}
     engines: {node: '>=18.17.0'}
     peerDependencies:
       functype: '>=0.60.0'
@@ -2153,7 +2153,7 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
-  functype-os@1.4.4(functype@1.5.0):
+  functype-os@1.5.0(functype@1.5.0):
     dependencies:
       functype: 1.5.0
 
