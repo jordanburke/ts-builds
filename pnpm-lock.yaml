@@ -43,10 +43,10 @@ importers:
         version: 13.0.0(eslint@10.6.0)
       functype:
         specifier: ^1.4.4
-        version: 1.5.0
+        version: 1.6.2
       functype-os:
         specifier: ^1.4.4
-        version: 1.5.0(functype@1.5.0)
+        version: 1.5.0(functype@1.6.2)
       globals:
         specifier: ^17.6.0
         version: 17.7.0
@@ -851,8 +851,8 @@ packages:
     peerDependencies:
       functype: '>=0.60.0'
 
-  functype@1.5.0:
-    resolution: {integrity: sha512-LGdQjV22JMZYWsIMuq+sLVfJp57q+5SPj1c1X0MYhzFurFbyOuh/4ELV9u2aLfxgEarRaQqvv7jJaS3qT/xe9g==}
+  functype@1.6.2:
+    resolution: {integrity: sha512-S8COUG1sjif0+9Br95+hzRdMhMpdFguTFK2pwlsB6OO25gR8FZP8+YbdBVUdkrwlVzfLDx2Xpl+466HnVOcrAA==}
     hasBin: true
 
   get-tsconfig@5.0.0-beta.5:
@@ -2157,11 +2157,11 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
-  functype-os@1.5.0(functype@1.5.0):
+  functype-os@1.5.0(functype@1.6.2):
     dependencies:
-      functype: 1.5.0
+      functype: 1.6.2
 
-  functype@1.5.0: {}
+  functype@1.6.2: {}
 
   get-tsconfig@5.0.0-beta.5:
     dependencies:
