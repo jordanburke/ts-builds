@@ -1,6 +1,6 @@
 # TypeScript Project Script Standardization Guide
 
-This guide helps you standardize npm/pnpm scripts across TypeScript projects using the established pattern from [typescript-library-template](https://github.com/jordanburke/typescript-library-template).
+This guide helps you standardize npm/pnpm scripts across TypeScript projects using the established pattern from [ts-builds-template](https://github.com/jordanburke/ts-builds-template).
 
 ## Quick Copy-Paste Prompt for Claude Code
 
