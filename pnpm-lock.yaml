@@ -46,7 +46,7 @@ importers:
         version: 1.6.2
       functype-os:
         specifier: ^1.4.4
-        version: 1.5.0(functype@1.6.2)
+        version: 1.6.3(functype@1.6.2)
       globals:
         specifier: ^17.6.0
         version: 17.7.0
@@ -845,8 +845,8 @@ packages:
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
 
-  functype-os@1.5.0:
-    resolution: {integrity: sha512-vtrvyVgEeO7slpk5qjyMQQPyL2wHv9//bQoSZ758U2CxmJRgU4qqtXjlZJyXFHWAlMZd+0dR+aMkJY7E/Nx1xg==}
+  functype-os@1.6.3:
+    resolution: {integrity: sha512-p1LeurWbRnr4Qak9TXzbooFnn43ICubrU2FB50AYXmzLFC5ytvRDasWFDc7zF5O2aioggsetnQ5a7/nTYThULA==}
     engines: {node: '>=18.17.0'}
     peerDependencies:
       functype: '>=0.60.0'
@@ -889,8 +889,8 @@ packages:
     resolution: {integrity: sha512-hsBTNUqQTDwkWtcdYI2i06Y/nUBEsNEDJKjWdigLvegy8kDuJAS8uRlpkkcQpyEXL0Z/pjDy5HBmMjRCJ2gq+g==}
     engines: {node: '>= 4'}
 
-  ignore@7.0.5:
-    resolution: {integrity: sha512-Hs59xBNfUIunMFgWAbGX5cq6893IbWg4KnrjbYwX3tx0ztorVgTDA6B2sxf8ejHJ4wz8BqGUMYlnzNBer5NvGg==}
+  ignore@7.0.6:
+    resolution: {integrity: sha512-BAg6QkE8W+TuQLrrw0Ugr7HegXduRuuj8/ti2kSOc+jz1dmx8/WNcjr6XGnq5YpDWxFwwaavqD0+jIUOKelTsw==}
     engines: {node: '>= 4'}
 
   import-fresh@3.3.1:
@@ -1774,7 +1774,7 @@ snapshots:
       '@typescript-eslint/utils': 8.62.1(eslint@10.6.0)(typescript@6.0.3)
       '@typescript-eslint/visitor-keys': 8.62.1
       eslint: 10.6.0
-      ignore: 7.0.5
+      ignore: 7.0.6
       natural-compare: 1.4.0
       ts-api-utils: 2.5.0(typescript@6.0.3)
       typescript: 6.0.3
@@ -2157,7 +2157,7 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
-  functype-os@1.5.0(functype@1.6.2):
+  functype-os@1.6.3(functype@1.6.2):
     dependencies:
       functype: 1.6.2
 
@@ -2189,7 +2189,7 @@ snapshots:
 
   ignore@5.3.2: {}
 
-  ignore@7.0.5: {}
+  ignore@7.0.6: {}
 
   import-fresh@3.3.1:
     dependencies:
