@@ -1,4 +1,4 @@
-import { runBuild } from "./commands/build"
+import { runBuild, runFormat } from "./commands/build"
 import type { CommandDef, ResolvedConfig } from "./config"
 import { loadConfig } from "./config"
 import { runShellCommand } from "./process"
@@ -42,8 +42,8 @@ export function getBuiltinCommands(config: ResolvedConfig): Record<string, Built
   const devCmd: BuiltinCommand = config.buildMode === "vite" ? { run: "vite" } : { run: "tsdown --watch" }
 
   return {
-    format: { run: "prettier --write ." },
-    "format:check": { run: "prettier --check ." },
+    format: { runFn: () => runFormat(false) },
+    "format:check": { runFn: () => runFormat(true) },
     lint: { run: `${eslintCmd} --fix ${config.srcDir}` },
     "lint:check": { run: `${eslintCmd} ${config.srcDir}` },
     typecheck: { run: "tsc --noEmit" },

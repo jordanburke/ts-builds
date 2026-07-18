@@ -1,5 +1,7 @@
+import { existsSync } from "node:fs"
 import { readdir, rm, stat } from "node:fs/promises"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 
 import { loadConfig, targetDir } from "../config"
 import { runCommand } from "../process"
@@ -41,9 +43,43 @@ async function cleanDist(): Promise<number> {
   return cleanDir(join(targetDir, "dist"))
 }
 
+/**
+ * Absolute path to ts-builds' own bundled `.prettierignore` (lockfiles, dist, coverage, …), or
+ * null if it can't be located. Resolved relative to this module — which tsdown bundles into
+ * `dist/cli.js` — so `../.prettierignore` is the installed package root regardless of the
+ * consumer's cwd. Exported so a unit test pins the resolution (a future build layout change that
+ * broke it would otherwise silently degrade to bare formatting). The `existsSync` guard makes a
+ * missing asset fall back to bare discovery rather than break `format` outright.
+ */
+export function bundledPrettierIgnorePath(): string | null {
+  const p = fileURLToPath(new URL("../.prettierignore", import.meta.url))
+  return existsSync(p) ? p : null
+}
+
+/**
+ * prettier CLI args for `format` / `format:check`.
+ *
+ * prettier only auto-discovers the CONSUMER's `./.prettierignore` — never ours — so a bare
+ * `prettier .` still walks into `pnpm-lock.yaml` (and dist/coverage) in every consuming repo. We
+ * pass our bundled ignore explicitly. An explicit `--ignore-path` OVERRIDES prettier's default
+ * discovery (verified, prettier 3.9), so we ALSO pass the consumer's `./.prettierignore`: the two
+ * compose additively, and a missing consumer file is tolerated silently. Net — lockfiles/build
+ * output are ignored for every consumer with no per-repo `.prettierignore` needed, while the
+ * consumer's own entries still apply.
+ *
+ * The bundled path is quoted because `runCommand` spawns with `shell: true` (the shell strips the
+ * quotes), keeping it correct when the install path contains spaces.
+ */
+export function prettierFormatArgs(
+  check: boolean,
+  bundledIgnore: string | null = bundledPrettierIgnorePath(),
+): string[] {
+  const base = [check ? "--check" : "--write", "."]
+  return bundledIgnore ? [...base, "--ignore-path", `"${bundledIgnore}"`, "--ignore-path", ".prettierignore"] : base
+}
+
 export async function runFormat(check = false): Promise<number> {
-  const args = check ? ["--check", "."] : ["--write", "."]
-  return runCommand("prettier", args)
+  return runCommand("prettier", prettierFormatArgs(check))
 }
 
 export async function runLint(check = false): Promise<number> {

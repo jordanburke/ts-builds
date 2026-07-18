@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
-import { cleanDir, pruneOrphans, snapshotMtimes } from "../../src/cli/commands/build"
+import { cleanDir, prettierFormatArgs, pruneOrphans, snapshotMtimes } from "../../src/cli/commands/build"
 
 function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "ts-builds-clean-"))
@@ -124,5 +124,33 @@ describe("pruneOrphans", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe("prettierFormatArgs", () => {
+  const ignore = "/pkg/ts-builds/.prettierignore"
+
+  it("check mode targets the whole tree", () => {
+    expect(prettierFormatArgs(true, null)[0]).toBe("--check")
+    expect(prettierFormatArgs(false, null)[0]).toBe("--write")
+    expect(prettierFormatArgs(true, null)).toContain(".")
+  })
+
+  it("passes BOTH the bundled ignore and the consumer's ./.prettierignore (additive, quoted)", () => {
+    // Explicit --ignore-path overrides prettier's default discovery, so the consumer's own
+    // ./.prettierignore must be passed too or their entries would be silently dropped. The
+    // bundled path is quoted so a spaced install path survives shell:true.
+    expect(prettierFormatArgs(true, ignore)).toEqual([
+      "--check",
+      ".",
+      "--ignore-path",
+      `"${ignore}"`,
+      "--ignore-path",
+      ".prettierignore",
+    ])
+  })
+
+  it("falls back to bare args when the bundled ignore can't be located", () => {
+    expect(prettierFormatArgs(false, null)).toEqual(["--write", "."])
   })
 })
