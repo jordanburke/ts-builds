@@ -58,7 +58,12 @@ Releases are automated via GitHub Actions. To publish a new version:
 **Workflows**:
 
 - `publish.yml` - Triggers on `v*` tags, publishes to npm
-- `auto-release.yml` - Auto-bumps patch version for dependency updates
+
+Releases are **manual, tag-based only**. Dependency-update PRs (Dependabot) merge
+to `main` without publishing; cut a release yourself by bumping the version and
+pushing a `v*` tag when you want one. Push tags from a local/PAT credential — a tag
+pushed by GitHub Actions' `GITHUB_TOKEN` will **not** trigger `publish.yml` (GitHub's
+recursion guard), so it would bump-and-tag without ever publishing.
 
 ### Type Checking
 
