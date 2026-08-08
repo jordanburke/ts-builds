@@ -1,7 +1,10 @@
 import { existsSync } from "node:fs"
 import { readdir, rm, stat } from "node:fs/promises"
-import { join } from "node:path"
+import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
+
+import { List, Option } from "functype"
+import { Fs } from "functype-os"
 
 import { loadConfig, targetDir } from "../config"
 import { runCommand } from "../process"
@@ -57,6 +60,96 @@ export function bundledPrettierIgnorePath(): string | null {
 }
 
 /**
+ * Absolute path to ts-builds' own shareable `prettier-config.cjs` — the same file exported as
+ * `ts-builds/prettier`. Resolved the same way as the bundled ignore, with the same existence guard
+ * so a missing asset degrades to prettier's own defaults rather than breaking `format`.
+ */
+export function bundledPrettierConfigPath(): Option<string> {
+  const p = fileURLToPath(new URL("../prettier-config.cjs", import.meta.url))
+  return Fs.existsSync(p) ? Option(p) : Option.none<string>()
+}
+
+/**
+ * Config filenames prettier discovers, in its own precedence order (prettier 3.9). Kept in sync
+ * with https://prettier.io/docs/configuration — a name missing here makes us wrongly conclude the
+ * consumer has no config and override it with `--config`.
+ */
+const PRETTIER_CONFIG_FILES = List([
+  ".prettierrc",
+  ".prettierrc.json",
+  ".prettierrc.yml",
+  ".prettierrc.yaml",
+  ".prettierrc.json5",
+  ".prettierrc.js",
+  ".prettierrc.mjs",
+  ".prettierrc.cjs",
+  ".prettierrc.ts",
+  ".prettierrc.mts",
+  ".prettierrc.cts",
+  "prettier.config.js",
+  "prettier.config.mjs",
+  "prettier.config.cjs",
+  "prettier.config.ts",
+  "prettier.config.mts",
+  "prettier.config.cts",
+  ".prettierrc.toml",
+])
+
+/** True when `dir` holds any file prettier would load as a config. */
+function hasPrettierConfigFile(dir: string): boolean {
+  return !PRETTIER_CONFIG_FILES.filter((f) => Fs.existsSync(join(dir, f))).isEmpty
+}
+
+/** True when `dir`'s package.json declares a `prettier` key (a path, a package name, or inline options). */
+function packageJsonDeclaresPrettier(dir: string): boolean {
+  return Fs.readFileSync(join(dir, "package.json"))
+    .toOption()
+    .flatMap((content) => {
+      try {
+        return Option((JSON.parse(content) as { prettier?: unknown }).prettier)
+      } catch {
+        // An unparseable package.json is the consumer's problem, not ours — treat it as no config
+        // and let prettier surface its own error.
+        return Option.none<unknown>()
+      }
+    })
+    .fold(
+      () => false,
+      () => true,
+    )
+}
+
+/** `dir` and every ancestor up to the filesystem root, nearest first. */
+function ancestorDirs(dir: string): List<string> {
+  const parent = dirname(dir)
+  return parent === dir ? List([dir]) : List([dir]).concat(ancestorDirs(parent))
+}
+
+/**
+ * True when the consumer already has a prettier config that prettier would discover on its own.
+ *
+ * Searches `startDir` and every ancestor, mirroring prettier's own upward walk. The ancestor walk
+ * is what makes this safe in a monorepo: a package with no local `.prettierrc` still inherits the
+ * workspace root's, and we must not clobber that with `--config`. Exported for testing.
+ */
+export function consumerHasPrettierConfig(startDir: string = targetDir): boolean {
+  return !ancestorDirs(startDir).filter((dir) => hasPrettierConfigFile(dir) || packageJsonDeclaresPrettier(dir)).isEmpty
+}
+
+/**
+ * The `--config` value for `format`, or None to leave prettier's discovery alone.
+ *
+ * ts-builds ships a prettier config but `format` used to spawn a bare `prettier .`, so a consumer
+ * with no config of their own silently got prettier's stock defaults (80 columns, semicolons,
+ * single-quote handling) instead of ts-builds' house style. We now fall back to the bundled config
+ * — but ONLY when the consumer has none, because an explicit `--config` disables discovery
+ * entirely and would otherwise override a config they deliberately wrote.
+ */
+export function prettierConfigArg(): Option<string> {
+  return consumerHasPrettierConfig() ? Option.none<string>() : bundledPrettierConfigPath()
+}
+
+/**
  * prettier CLI args for `format` / `format:check`.
  *
  * prettier only auto-discovers the CONSUMER's `./.prettierignore` — never ours — so a bare
@@ -67,15 +160,27 @@ export function bundledPrettierIgnorePath(): string | null {
  * output are ignored for every consumer with no per-repo `.prettierignore` needed, while the
  * consumer's own entries still apply.
  *
- * The bundled path is quoted because `runCommand` spawns with `shell: true` (the shell strips the
- * quotes), keeping it correct when the install path contains spaces.
+ * `bundledConfig` is the same idea for style rather than ignores: Some only when the consumer has
+ * no prettier config of their own (see `prettierConfigArg`), so we fill the gap without ever
+ * overriding a config they wrote.
+ *
+ * Bundled paths are quoted because `runCommand` spawns with `shell: true` (the shell strips the
+ * quotes), keeping them correct when the install path contains spaces.
  */
 export function prettierFormatArgs(
   check: boolean,
   bundledIgnore: string | null = bundledPrettierIgnorePath(),
+  bundledConfig: Option<string> = prettierConfigArg(),
 ): string[] {
-  const base = [check ? "--check" : "--write", "."]
-  return bundledIgnore ? [...base, "--ignore-path", `"${bundledIgnore}"`, "--ignore-path", ".prettierignore"] : base
+  const base = List([check ? "--check" : "--write", "."])
+  const ignoreArgs = bundledIgnore
+    ? List(["--ignore-path", `"${bundledIgnore}"`, "--ignore-path", ".prettierignore"])
+    : List.empty<string>()
+  const configArgs = bundledConfig.fold(
+    () => List.empty<string>(),
+    (path) => List(["--config", `"${path}"`]),
+  )
+  return base.concat(ignoreArgs).concat(configArgs).toArray()
 }
 
 export async function runFormat(check = false): Promise<number> {

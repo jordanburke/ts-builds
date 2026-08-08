@@ -252,6 +252,11 @@ export default baseConfig
 }
 ```
 
+Opting in explicitly is still worth doing — it makes the style visible to your editor and to a
+bare `prettier` run. But it is no longer required for `ts-builds format`: if the CLI finds no
+prettier config in your project or any parent directory, it passes its own bundled config. A
+config you do have always wins, including one inherited from a monorepo root.
+
 ### Vite (for SPAs)
 
 ```typescript

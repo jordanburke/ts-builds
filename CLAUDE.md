@@ -208,6 +208,20 @@ With Vite mode:
 
 Requires `vite` as a peer dependency instead of `tsdown`.
 
+### Format internals
+
+`ts-builds format` passes its own bundled `prettier-config.cjs` via `--config`, but **only** when
+the consumer has no prettier config of their own. `consumerHasPrettierConfig` walks from the cwd to
+the filesystem root checking every filename prettier discovers plus a `package.json` `prettier`
+key; the ancestor walk is what keeps a monorepo package inheriting the workspace root's config
+instead of being overridden. An explicit `--config` disables prettier's discovery entirely, which
+is why the guard has to be there. Helpers live in `src/cli/commands/build.ts` and are exported for
+tests.
+
+This closes a gap where a consumer with no config silently got prettier's stock defaults (80
+columns, semicolons) rather than ts-builds' house style. Note it does not change array wrapping —
+prettier fill-packs arrays at any width, and `objectWrap: "preserve"` has no array equivalent.
+
 ### Build internals
 
 `ts-builds build` cleans `dist/` via Node's `fs.rm` (with retry on transient Windows errors `EBUSY`/`EPERM`/`ENOTEMPTY`/`EMFILE`) and passes `NODE_ENV=production` through `spawn`'s `env` option — the parent process's env is never mutated, so the helpers are safe to import into long-lived runners. No shelled-out `rimraf` or `cross-env`; consumers do not need to hoist those binaries in `pnpm-workspace.yaml`.

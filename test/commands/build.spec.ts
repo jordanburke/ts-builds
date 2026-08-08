@@ -1,10 +1,18 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { mkdir } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
-import { cleanDir, prettierFormatArgs, pruneOrphans, snapshotMtimes } from "../../src/cli/commands/build"
+import { Option } from "functype"
+
+import {
+  cleanDir,
+  consumerHasPrettierConfig,
+  prettierFormatArgs,
+  pruneOrphans,
+  snapshotMtimes,
+} from "../../src/cli/commands/build"
 
 function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "ts-builds-clean-"))
@@ -129,18 +137,20 @@ describe("pruneOrphans", () => {
 
 describe("prettierFormatArgs", () => {
   const ignore = "/pkg/ts-builds/.prettierignore"
+  const config = "/pkg/ts-builds/prettier-config.cjs"
+  const noConfig = Option.none<string>()
 
   it("check mode targets the whole tree", () => {
-    expect(prettierFormatArgs(true, null)[0]).toBe("--check")
-    expect(prettierFormatArgs(false, null)[0]).toBe("--write")
-    expect(prettierFormatArgs(true, null)).toContain(".")
+    expect(prettierFormatArgs(true, null, noConfig)[0]).toBe("--check")
+    expect(prettierFormatArgs(false, null, noConfig)[0]).toBe("--write")
+    expect(prettierFormatArgs(true, null, noConfig)).toContain(".")
   })
 
   it("passes BOTH the bundled ignore and the consumer's ./.prettierignore (additive, quoted)", () => {
     // Explicit --ignore-path overrides prettier's default discovery, so the consumer's own
     // ./.prettierignore must be passed too or their entries would be silently dropped. The
     // bundled path is quoted so a spaced install path survives shell:true.
-    expect(prettierFormatArgs(true, ignore)).toEqual([
+    expect(prettierFormatArgs(true, ignore, noConfig)).toEqual([
       "--check",
       ".",
       "--ignore-path",
@@ -151,6 +161,77 @@ describe("prettierFormatArgs", () => {
   })
 
   it("falls back to bare args when the bundled ignore can't be located", () => {
-    expect(prettierFormatArgs(false, null)).toEqual(["--write", "."])
+    expect(prettierFormatArgs(false, null, noConfig)).toEqual(["--write", "."])
+  })
+
+  it("appends the quoted bundled --config when the consumer has none", () => {
+    expect(prettierFormatArgs(false, null, Option(config))).toEqual(["--write", ".", "--config", `"${config}"`])
+  })
+
+  it("omits --config entirely when the consumer has their own", () => {
+    // An explicit --config disables prettier's discovery, so passing ours would silently override
+    // a config the consumer deliberately wrote.
+    expect(prettierFormatArgs(false, null, noConfig)).not.toContain("--config")
+  })
+})
+
+describe("consumerHasPrettierConfig", () => {
+  it("finds a config file in the starting directory", () => {
+    const dir = makeTempDir()
+    try {
+      writeFileSync(join(dir, ".prettierrc"), "{}")
+      expect(consumerHasPrettierConfig(dir)).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("finds a package.json prettier key", () => {
+    const dir = makeTempDir()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x", prettier: "ts-builds/prettier" }))
+      expect(consumerHasPrettierConfig(dir)).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("inherits a config from an ancestor directory (monorepo package)", () => {
+    // A workspace package with no local config still resolves the root's — overriding it with
+    // --config would break the monorepo's shared style.
+    const root = makeTempDir()
+    try {
+      const pkg = join(root, "packages", "app")
+      mkdirSync(pkg, { recursive: true })
+      writeFileSync(join(root, ".prettierrc"), "{}")
+      expect(consumerHasPrettierConfig(pkg)).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("ignores a package.json with no prettier key", () => {
+    // The walk runs to the real filesystem root, so a bare `toBe(false)` would depend on the
+    // machine's /tmp ancestry. Compare against an empty sibling instead: adding a keyless
+    // package.json must not change the verdict.
+    const withPkg = makeTempDir()
+    const control = makeTempDir()
+    try {
+      writeFileSync(join(withPkg, "package.json"), JSON.stringify({ name: "x" }))
+      expect(consumerHasPrettierConfig(withPkg)).toBe(consumerHasPrettierConfig(control))
+    } finally {
+      rmSync(withPkg, { recursive: true, force: true })
+      rmSync(control, { recursive: true, force: true })
+    }
+  })
+
+  it("tolerates an unparseable package.json", () => {
+    const dir = makeTempDir()
+    try {
+      writeFileSync(join(dir, "package.json"), "{ not json")
+      expect(() => consumerHasPrettierConfig(dir)).not.toThrow()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
