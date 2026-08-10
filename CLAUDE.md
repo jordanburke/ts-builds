@@ -217,8 +217,19 @@ The `cleanDir` helper lives in `src/cli/commands/build.ts` and is exported for t
 **Module layout (no circular imports):**
 
 - `src/cli/process.ts` — spawn primitives (`runCommand`, `runShellCommand`, `runSequence`) with `cwd` + `env` options.
-- `src/cli/commands/build.ts` — single-command handlers (`runFormat`, `runLint`, `runBuild`, …) + `cleanDir`. Imports `process.ts` only.
-- `src/cli/runner.ts` — chain orchestration (`getBuiltinCommands`, `runChain`, `runValidate`). Imports `runBuild` statically and dispatches the `build` builtin through it via an internal `runFn` shape (not exposed in user config).
+- `src/cli/commands/build.ts` — single-command handlers (`runFormat`, `runLint`, `runBuild`, …) + `cleanDir`. Imports `process.ts` + `lint-report.ts`.
+- `src/cli/runner.ts` — chain orchestration (`getBuiltinCommands`, `runChain`, `runValidate`). Imports `runBuild`/`runFormat`/`runLint` statically and dispatches the `build`/`format`/`lint`/`lint:check` builtins through them via an internal `runFn` shape (not exposed in user config).
+
+### Lint reporting & aggregation
+
+`runLint` (`src/cli/commands/build.ts`) has two paths:
+
+- **Bundled (default, `useProjectEslint: false`)** — runs ESLint via its **Node API** (`import("eslint")` resolves ts-builds' own bundled eslint, because tsdown externalizes deps). One pass yields the stylish human output (via `loadFormatter`) **and** exact counts, which are written to a per-package sidecar `.ts-builds/lint-report.json`. `--fix` calls `ESLint.outputFixes`. stdout is drained (`writeAll`) before returning so the tail isn't truncated on a pipe under a task runner. Exit codes are **returned, never `process.exit`ed** (it runs in-process inside the `validate` chain): `1` iff `errorCount>0`, `0` on warnings-only/clean, `2` on a thrown config/no-files error — and a `fatal:true` sidecar is written so a stale prior report can't green-light CI.
+- **Project (`useProjectEslint: true`)** — keeps the `npx eslint` spawn; writes **no** sidecar and prints no warning (those packages just don't appear in the summary).
+
+`src/cli/lint-report.ts` owns the `LintReport` type + write/build helpers (imports `config.ts` only — no cycle). `src/cli/commands/lint-summary.ts` owns `ts-builds lint:summary`: a hand-rolled recursive walk (not experimental `fs.glob`) finds every `.ts-builds/lint-report.json` (skips `node_modules`/`dist`/`lib`/`coverage`/hidden dirs, no symlinks), aggregates, prints a padded table + grand total, and exits nonzero iff aggregate errors > 0, any package is `fatal`, **or zero sidecars were found** (an empty sweep must not pass CI). It re-runs nothing — pure reads. The pure functions (`findLintReports`, `aggregateLintReports`, `formatLintSummaryTable`, `lintSummaryExitCode`) are exported for tests.
+
+The sidecar dir `.ts-builds/` is in the bundled `.prettierignore` (else `format:check` reformats the machine JSON, which has no trailing-newline contract) and the repo `.gitignore`. Consumers declare `outputs: [".ts-builds/**"]` in `turbo.json` so cache hits restore the report, and run `turbo run lint --continue` for a full sweep (Turbo's default `--continue=never` cancels remaining tasks on first failure).
 
 ### Bootstrap script
 

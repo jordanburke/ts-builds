@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { loadConfig, targetDir } from "../config"
+import { buildLintReport, fatalLintReport, readPackageName, writeLintReport } from "../lint-report"
 import { runCommand } from "../process"
 
 const TRANSIENT_RM_ERRORS = new Set(["EBUSY", "EPERM", "ENOTEMPTY", "EMFILE"])
@@ -82,11 +83,75 @@ export async function runFormat(check = false): Promise<number> {
   return runCommand("prettier", prettierFormatArgs(check))
 }
 
+/**
+ * Await a full write to a stream before resolving.
+ *
+ * Under a task runner (Turbo, nx) stdout is a pipe. Writing a large buffer with
+ * `stream.write(data)` and then letting the process exit can truncate the tail
+ * on a pipe — a documented case, and this repo already treats Windows pipe/handle
+ * quirks as real (see {@link cleanDir}). The write callback fires once the chunk
+ * has been flushed to the underlying resource, so awaiting it before the CLI calls
+ * `process.exit` guarantees the stylish output lands intact.
+ */
+function writeAll(stream: NodeJS.WritableStream, data: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    stream.write(data, (err) => (err ? reject(err) : resolve()))
+  })
+}
+
+/**
+ * Lint `srcDir`.
+ *
+ * Bundled path (default, `useProjectEslint: false`): runs ESLint through its Node
+ * API in a single pass, so we get the familiar stylish output AND exact issue
+ * counts for the `.ts-builds/lint-report.json` sidecar that `lint:summary`
+ * aggregates. `import("eslint")` resolves ts-builds' OWN bundled eslint — the same
+ * package the spawned PATH binary resolved to before — because tsdown externalizes
+ * dependencies rather than inlining them.
+ *
+ * Project path (`useProjectEslint: true`): keeps the spawn to the consumer's eslint
+ * (which may be a different major with a different Node API). That path writes NO
+ * sidecar and prints no warning; those packages simply don't appear in `lint:summary`
+ * (documented). Returns 0/1 iff there are lint errors.
+ *
+ * Exit codes are RETURNED, never `process.exit`ed: `runLint` runs in-process inside
+ * the `validate` chain (see runner.ts), so exiting here would kill the chain with no
+ * `✗ lint failed` line. `cli.ts` owns process exit. Bundled path: 1 iff errorCount>0,
+ * 0 on warnings-only/clean, 2 on a thrown config/no-files error (and a `fatal` sidecar
+ * is written so a stale prior report can't green-light CI).
+ */
 export async function runLint(check = false): Promise<number> {
   const config = loadConfig()
-  const eslintCmd = config.lint.useProjectEslint ? "npx eslint" : "eslint"
-  const args = check ? [config.srcDir] : ["--fix", config.srcDir]
-  return runCommand(eslintCmd, args)
+
+  if (config.lint.useProjectEslint) {
+    const args = check ? [config.srcDir] : ["--fix", config.srcDir]
+    return runCommand("npx eslint", args)
+  }
+
+  const fix = !check
+  const pkg = readPackageName(targetDir)
+  const { ESLint } = await import("eslint")
+  const eslint = new ESLint({ fix, cwd: targetDir })
+
+  let results
+  try {
+    results = await eslint.lintFiles([config.srcDir])
+  } catch (err) {
+    console.error((err as Error).message)
+    await writeLintReport(fatalLintReport(fix, pkg), targetDir)
+    return 2
+  }
+
+  if (fix) await ESLint.outputFixes(results)
+
+  const formatter = await eslint.loadFormatter("stylish")
+  const output = await formatter.format(results)
+  if (output) await writeAll(process.stdout, output)
+
+  await writeLintReport(buildLintReport(results, fix, pkg), targetDir)
+
+  const errorCount = results.reduce((n, r) => n + r.errorCount, 0)
+  return errorCount > 0 ? 1 : 0
 }
 
 export async function runTypecheck(): Promise<number> {

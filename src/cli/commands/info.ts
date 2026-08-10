@@ -35,6 +35,7 @@ SCRIPT COMMANDS:
   format:check  Check formatting without writing
   lint          Lint and fix with ESLint
   lint:check    Check lint without fixing
+  lint:summary  Aggregate per-package lint totals (monorepo) [dir]
   typecheck     Run TypeScript type checking (tsc --noEmit)
   test          Run tests once (vitest run)
   test:watch    Run tests in watch mode
