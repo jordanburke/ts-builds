@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs"
-import { mkdir, writeFile } from "node:fs/promises"
+import { mkdir, rename, rm, writeFile } from "node:fs/promises"
 import { basename, join } from "node:path"
 
 import type { ESLint } from "eslint"
@@ -25,10 +25,10 @@ export interface LintReportFile {
  * Machine-readable per-package lint result written to `.ts-builds/lint-report.json`.
  *
  * `fix` records the mode: the default `validate` chain runs lint in FIX mode, so
- * its counts are POST-fix remaining issues; a bare `lint:check` records all. Mixing
- * the two in one aggregate without knowing the mode would be misleading, so it's
- * recorded here. `fatal` marks a run that threw (bad config, no matching files) —
- * the counts are zero but the package must still count as failed, never as clean.
+ * its counts are POST-fix remaining issues; a bare `lint:check` records all. It is
+ * recorded for diagnostics; `lint:summary` does not currently split totals by mode.
+ * `fatal` marks a run that threw (bad config, no matching files) — the counts are
+ * zero but the package must still count as failed, never as clean.
  */
 export interface LintReport {
   version: number
@@ -104,14 +104,21 @@ export function fatalLintReport(fix: boolean, pkg: string): LintReport {
   }
 }
 
-/** Write the sidecar to `<dir>/.ts-builds/lint-report.json`. Best-effort:
- * a write failure warns but never fails the lint run itself. */
+/** Write the sidecar to `<dir>/.ts-builds/lint-report.json`.
+ *
+ * Written atomically (temp file + `rename`) so a run killed mid-write — e.g. Turbo's
+ * default `--continue=never` SIGTERMing sibling tasks on the first failure — never
+ * leaves truncated JSON that `lint:summary` would have to guess at. Best-effort: a
+ * write failure warns but never fails the lint run itself. */
 export async function writeLintReport(report: LintReport, dir: string = targetDir): Promise<void> {
   const path = lintReportPath(dir)
+  const tmp = `${path}.tmp`
   try {
     await mkdir(join(dir, ".ts-builds"), { recursive: true })
-    await writeFile(path, JSON.stringify(report, null, 2) + "\n")
+    await writeFile(tmp, JSON.stringify(report, null, 2) + "\n")
+    await rename(tmp, path)
   } catch (err) {
+    await rm(tmp, { force: true }).catch(() => undefined)
     console.warn(`⚠  Could not write lint report to ${path}: ${(err as Error).message}`)
   }
 }

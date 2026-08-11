@@ -9,6 +9,7 @@ import {
   findLintReports,
   formatLintSummaryTable,
   lintSummaryExitCode,
+  parseLintReport,
   runLintSummary,
 } from "../../src/cli/commands/lint-summary"
 import type { LintReport } from "../../src/cli/lint-report"
@@ -53,7 +54,7 @@ describe("findLintReports", () => {
 
       const found = await findLintReports(root)
       expect(found).toHaveLength(2)
-      expect(found.every((p) => p.includes("packages/a") || p.includes("packages/b"))).toBe(true)
+      expect(found.every((p) => p.includes(join("packages", "a")) || p.includes(join("packages", "b")))).toBe(true)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -107,6 +108,69 @@ describe("formatLintSummaryTable", () => {
     expect(table).toContain("Package")
     expect(table).toContain("b (fatal)")
     expect(table).toMatch(/Total\s+2\s+0/)
+  })
+
+  it("shows the date (not just time) so a stale report is visibly older", () => {
+    const table = formatLintSummaryTable(
+      aggregateLintReports([report({ package: "a", timestamp: "2026-08-11T21:05:00.000Z" })]),
+    )
+    expect(table).toContain("When (UTC)")
+    expect(table).toContain("2026-08-11 21:05")
+  })
+})
+
+describe("parseLintReport", () => {
+  it("accepts a well-formed report", () => {
+    expect(parseLintReport(JSON.stringify(report({ package: "a", errorCount: 1 })))?.package).toBe("a")
+  })
+  it("rejects invalid JSON", () => {
+    expect(parseLintReport("{not json")).toBeNull()
+  })
+  it("rejects a wrong version", () => {
+    expect(parseLintReport(JSON.stringify({ ...report({}), version: 999 }))).toBeNull()
+  })
+  it("rejects non-numeric counts (would poison the aggregate with NaN)", () => {
+    const bad = { ...report({}), errorCount: undefined }
+    expect(parseLintReport(JSON.stringify(bad))).toBeNull()
+  })
+})
+
+describe("invalid reports gate CI", () => {
+  it("counts invalid reports toward the exit code", () => {
+    expect(lintSummaryExitCode(aggregateLintReports([report({})], 1))).toBe(1)
+  })
+
+  it("runLintSummary exits nonzero when a sidecar is malformed even if the rest are clean", async () => {
+    const root = makeTempDir()
+    try {
+      seed(root, "clean", report({ package: "clean" }))
+      // A truncated/garbage sidecar, e.g. from a task killed mid-write.
+      const bad = join(root, "broken", ".ts-builds")
+      mkdirSync(bad, { recursive: true })
+      writeFileSync(join(bad, "lint-report.json"), '{"version":1,"package":"broken"')
+      expect(await runLintSummary([root])).toBe(1)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("findLintReports package-name collisions", () => {
+  it("includes a workspace package literally named 'lib' (has package.json)", async () => {
+    const root = makeTempDir()
+    try {
+      // a real package named lib/ — must be summarized despite the skip list
+      mkdirSync(join(root, "lib"), { recursive: true })
+      writeFileSync(join(root, "lib", "package.json"), "{}")
+      seed(root, "lib", report({ package: "lib" }))
+      // a plain build-output dir named dist/ (no package.json) — must be skipped
+      seed(root, "dist", report({ package: "dist-junk" }))
+      const found = await findLintReports(root)
+      expect(found.some((p) => p.includes(join("lib", ".ts-builds")))).toBe(true)
+      expect(found.some((p) => p.includes(join("dist", ".ts-builds")))).toBe(false)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
 

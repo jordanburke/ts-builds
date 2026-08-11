@@ -92,6 +92,10 @@ export async function runFormat(check = false): Promise<number> {
  * quirks as real (see {@link cleanDir}). The write callback fires once the chunk
  * has been flushed to the underlying resource, so awaiting it before the CLI calls
  * `process.exit` guarantees the stylish output lands intact.
+ *
+ * Tradeoff: if the reader stops reading WITHOUT closing the pipe, the callback never
+ * fires and this would hang. That's rare (a closed reader raises EPIPE, which rejects
+ * — the caller catches it); a wedged-open reader is not worth guarding against here.
  */
 function writeAll(stream: NodeJS.WritableStream, data: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -105,9 +109,11 @@ function writeAll(stream: NodeJS.WritableStream, data: string): Promise<void> {
  * Bundled path (default, `useProjectEslint: false`): runs ESLint through its Node
  * API in a single pass, so we get the familiar stylish output AND exact issue
  * counts for the `.ts-builds/lint-report.json` sidecar that `lint:summary`
- * aggregates. `import("eslint")` resolves ts-builds' OWN bundled eslint — the same
- * package the spawned PATH binary resolved to before — because tsdown externalizes
- * dependencies rather than inlining them.
+ * aggregates. `import("eslint")` loads ts-builds' OWN bundled eslint (tsdown
+ * externalizes deps rather than inlining them). NOTE: this is a behavior change for a
+ * consumer that directly depends on a different eslint major — the old spawn could
+ * resolve their hoisted binary from PATH, whereas this always uses the bundled eslint.
+ * Such consumers should set `useProjectEslint: true`.
  *
  * Project path (`useProjectEslint: true`): keeps the spawn to the consumer's eslint
  * (which may be a different major with a different Node API). That path writes NO
@@ -117,8 +123,11 @@ function writeAll(stream: NodeJS.WritableStream, data: string): Promise<void> {
  * Exit codes are RETURNED, never `process.exit`ed: `runLint` runs in-process inside
  * the `validate` chain (see runner.ts), so exiting here would kill the chain with no
  * `✗ lint failed` line. `cli.ts` owns process exit. Bundled path: 1 iff errorCount>0,
- * 0 on warnings-only/clean, 2 on a thrown config/no-files error (and a `fatal` sidecar
- * is written so a stale prior report can't green-light CI).
+ * 0 on warnings-only/clean, 2 on ANY thrown error in the ESLint pipeline (bad config,
+ * no matching files, formatter failure) — a `fatal` sidecar is written so a stale
+ * prior report can't green-light CI. The whole pipeline is guarded, not just
+ * `lintFiles`, so a throw in `outputFixes`/`loadFormatter`/`format` can't leak an
+ * unhandled rejection or leave the stale sidecar in place.
  */
 export async function runLint(check = false): Promise<number> {
   const config = loadConfig()
@@ -130,28 +139,29 @@ export async function runLint(check = false): Promise<number> {
 
   const fix = !check
   const pkg = readPackageName(targetDir)
-  const { ESLint } = await import("eslint")
-  const eslint = new ESLint({ fix, cwd: targetDir })
 
-  let results
   try {
-    results = await eslint.lintFiles([config.srcDir])
+    const { ESLint } = await import("eslint")
+    const eslint = new ESLint({ fix, cwd: targetDir })
+    const results = await eslint.lintFiles([config.srcDir])
+    if (fix) await ESLint.outputFixes(results)
+
+    // Persist the sidecar BEFORE printing: a broken pipe (`ts-builds lint | head`)
+    // must not lose an already-computed report or downgrade a real result to fatal.
+    const report = buildLintReport(results, fix, pkg)
+    await writeLintReport(report, targetDir)
+
+    const formatter = await eslint.loadFormatter("stylish")
+    const output = await formatter.format(results)
+    // EPIPE and friends are swallowed: the report is saved and the exit code is real.
+    if (output) await writeAll(process.stdout, output).catch(() => undefined)
+
+    return report.errorCount > 0 ? 1 : 0
   } catch (err) {
     console.error((err as Error).message)
     await writeLintReport(fatalLintReport(fix, pkg), targetDir)
     return 2
   }
-
-  if (fix) await ESLint.outputFixes(results)
-
-  const formatter = await eslint.loadFormatter("stylish")
-  const output = await formatter.format(results)
-  if (output) await writeAll(process.stdout, output)
-
-  await writeLintReport(buildLintReport(results, fix, pkg), targetDir)
-
-  const errorCount = results.reduce((n, r) => n + r.errorCount, 0)
-  return errorCount > 0 ? 1 : 0
 }
 
 export async function runTypecheck(): Promise<number> {

@@ -3,18 +3,22 @@ import { readdir } from "node:fs/promises"
 import { isAbsolute, join } from "node:path"
 
 import { targetDir } from "../config"
-import type { LintReport } from "../lint-report"
+import { LINT_REPORT_VERSION, type LintReport } from "../lint-report"
 
-/** Directories never worth descending into when hunting for sidecars. */
-const SKIP_DIRS = new Set(["node_modules", "dist", "lib", "coverage"])
+/** node_modules is always skipped: huge, and never a workspace package itself. */
+const ALWAYS_SKIP = new Set(["node_modules"])
+/** Skipped ONLY when the dir is not itself a package — a workspace package literally
+ * named `lib`/`dist`/`coverage` must still be summarized, so we check for package.json. */
+const SKIP_UNLESS_PACKAGE = new Set(["dist", "lib", "coverage"])
 
 /**
  * Recursively find every `.ts-builds/lint-report.json` under `root`.
  *
  * Hand-rolled walk rather than `fs.promises.glob`, which is still experimental on
  * Node 22 (this repo's `engines` floor) and would print an ExperimentalWarning in
- * consumers' CI logs. Skips heavy/irrelevant dirs, does not follow symlinks (avoids
- * cycles and escaping the tree), and does not recurse INTO `.ts-builds` itself.
+ * consumers' CI logs. Symlinked directories are never traversed: with `withFileTypes`,
+ * `readdir` does not resolve symlinks, so a symlink-to-dir reports `isDirectory() ===
+ * false` and is skipped by the guard below (no cycles, no escaping the tree).
  */
 export async function findLintReports(root: string): Promise<string[]> {
   const out: string[] = []
@@ -25,15 +29,18 @@ export async function findLintReports(root: string): Promise<string[]> {
 async function walk(dir: string, out: string[]): Promise<void> {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
   for (const entry of entries) {
-    if (!entry.isDirectory() || entry.isSymbolicLink()) continue
+    if (!entry.isDirectory()) continue // skips files AND symlinks (see findLintReports)
     if (entry.name === ".ts-builds") {
       const report = join(dir, entry.name, "lint-report.json")
       if (existsSync(report)) out.push(report)
       continue
     }
-    // Skip node_modules/dist/… and any other hidden dir (.git, .idea, .cache).
-    if (SKIP_DIRS.has(entry.name) || entry.name.startsWith(".")) continue
-    await walk(join(dir, entry.name), out)
+    // Hidden dirs (.git, .idea, .cache) and node_modules are always skipped.
+    if (entry.name.startsWith(".") || ALWAYS_SKIP.has(entry.name)) continue
+    const sub = join(dir, entry.name)
+    // dist/lib/coverage are skipped unless they're actually a package.
+    if (SKIP_UNLESS_PACKAGE.has(entry.name) && !existsSync(join(sub, "package.json"))) continue
+    await walk(sub, out)
   }
 }
 
@@ -50,10 +57,35 @@ export interface LintSummaryTotals {
   totalErrors: number
   totalWarnings: number
   fatalCount: number
+  /** Sidecars that existed but were unreadable/malformed/wrong-version. Counted
+   * toward the exit code — a report we can't trust must not read as "clean". */
+  invalidCount: number
+}
+
+/**
+ * Validate a parsed sidecar. A wrong-shape or wrong-version file must NOT flow into
+ * the aggregate: `undefined` counts would poison the reduce (`NaN > 0 === false`) and
+ * silently pass CI. Returns the typed report or null (caller counts nulls as invalid).
+ */
+export function parseLintReport(raw: string): LintReport | null {
+  let obj: unknown
+  try {
+    obj = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  if (typeof obj !== "object" || obj === null) return null
+  const r = obj as Record<string, unknown>
+  const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v)
+  if (r.version !== LINT_REPORT_VERSION) return null
+  if (typeof r.package !== "string" || typeof r.timestamp !== "string") return null
+  if (!isNum(r.errorCount) || !isNum(r.warningCount)) return null
+  if (r.fatal !== undefined && typeof r.fatal !== "boolean") return null
+  return obj as LintReport
 }
 
 /** Aggregate parsed reports into per-package rows and grand totals. */
-export function aggregateLintReports(reports: readonly LintReport[]): LintSummaryTotals {
+export function aggregateLintReports(reports: readonly LintReport[], invalidCount = 0): LintSummaryTotals {
   const rows = reports
     .map((r) => ({
       package: r.package,
@@ -69,18 +101,20 @@ export function aggregateLintReports(reports: readonly LintReport[]): LintSummar
     totalErrors: rows.reduce((n, r) => n + r.errorCount, 0),
     totalWarnings: rows.reduce((n, r) => n + r.warningCount, 0),
     fatalCount: rows.filter((r) => r.fatal).length,
+    invalidCount,
   }
 }
 
-/** Nonzero iff any package has errors or crashed — the CI gate. */
+/** Nonzero iff any package has errors, crashed, or produced an untrustworthy report. */
 export function lintSummaryExitCode(totals: LintSummaryTotals): number {
-  return totals.totalErrors > 0 || totals.fatalCount > 0 ? 1 : 0
+  return totals.totalErrors > 0 || totals.fatalCount > 0 || totals.invalidCount > 0 ? 1 : 0
 }
 
-/** Short `HH:MM:SS` slice of an ISO timestamp for the staleness column. */
-function shortTime(iso: string): string {
-  const t = iso.split("T")[1]
-  return t ? t.slice(0, 8) : iso
+/** `YYYY-MM-DD HH:MM` (UTC) from an ISO timestamp — keeps the DATE so a stale
+ * half-sweep is visibly older than a fresh one. */
+function shortTimestamp(iso: string): string {
+  const m = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/.exec(iso)
+  return m ? `${m[1]} ${m[2]}` : iso
 }
 
 /** Render the aggregate as a padded table with a `Total` footer (matches size.ts). */
@@ -88,15 +122,15 @@ export function formatLintSummaryTable(totals: LintSummaryTotals): string {
   const { rows } = totals
   const nameWidth = Math.max("Package".length, ...rows.map((r) => r.package.length + (r.fatal ? 8 : 0)))
   const numWidth = 8
-  const timeWidth = 8
+  const timeWidth = 16 // "YYYY-MM-DD HH:MM"
 
   const label = (r: LintSummaryRow): string => (r.fatal ? `${r.package} (fatal)` : r.package)
-  const header = `${"Package".padEnd(nameWidth)}  ${"Errors".padStart(numWidth)}  ${"Warnings".padStart(numWidth)}  ${"When".padStart(timeWidth)}`
+  const header = `${"Package".padEnd(nameWidth)}  ${"Errors".padStart(numWidth)}  ${"Warnings".padStart(numWidth)}  ${"When (UTC)".padStart(timeWidth)}`
   const lines = [header, "-".repeat(header.length)]
 
   for (const r of rows) {
     lines.push(
-      `${label(r).padEnd(nameWidth)}  ${String(r.errorCount).padStart(numWidth)}  ${String(r.warningCount).padStart(numWidth)}  ${shortTime(r.timestamp).padStart(timeWidth)}`,
+      `${label(r).padEnd(nameWidth)}  ${String(r.errorCount).padStart(numWidth)}  ${String(r.warningCount).padStart(numWidth)}  ${shortTimestamp(r.timestamp).padStart(timeWidth)}`,
     )
   }
 
@@ -111,9 +145,10 @@ export function formatLintSummaryTable(totals: LintSummaryTotals): string {
  * `ts-builds lint:summary [dir]` — aggregate per-package lint sidecars into one total.
  *
  * Read-only: it never re-runs ESLint, only reads the `.ts-builds/lint-report.json`
- * files that `ts-builds lint` (or a `turbo run lint`) already wrote. Finding ZERO
- * reports exits nonzero — an empty sweep (wrong dir, fresh clone, missing Turbo
- * `outputs` declaration) must not green-light CI on no evidence.
+ * files that `ts-builds lint` (or a `turbo run lint`) already wrote. The CI gate fails
+ * CLOSED: finding zero reports, or a report that is unreadable/malformed/wrong-version,
+ * exits nonzero. An empty sweep (wrong dir, fresh clone, missing Turbo `outputs`
+ * declaration) or a truncated sidecar must not green-light CI on absent evidence.
  */
 export async function runLintSummary(args: string[]): Promise<number> {
   const dirArg = args.find((a) => !a.startsWith("-"))
@@ -130,25 +165,26 @@ export async function runLintSummary(args: string[]): Promise<number> {
   }
 
   const reports: LintReport[] = []
+  let invalidCount = 0
   for (const path of paths) {
-    try {
-      reports.push(JSON.parse(readFileSync(path, "utf-8")) as LintReport)
-    } catch {
-      console.warn(`⚠  Skipping unreadable lint report: ${path}`)
+    const report = parseLintReport(readFileSync(path, "utf-8"))
+    if (report) {
+      reports.push(report)
+    } else {
+      invalidCount++
+      console.warn(`⚠  Unreadable or malformed lint report (counted as a failure): ${path}`)
     }
   }
 
-  if (reports.length === 0) {
-    console.error(`Found ${paths.length} lint report file(s) but none could be parsed.`)
-    return 1
+  const totals = aggregateLintReports(reports, invalidCount)
+  if (reports.length > 0) {
+    console.log(formatLintSummaryTable(totals))
+    console.log()
   }
-
-  const totals = aggregateLintReports(reports)
-  console.log(formatLintSummaryTable(totals))
-  console.log()
   console.log(
     `Summary: ${totals.totalErrors} error(s), ${totals.totalWarnings} warning(s) across ${reports.length} package(s)` +
-      (totals.fatalCount > 0 ? `, ${totals.fatalCount} crashed` : ""),
+      (totals.fatalCount > 0 ? `, ${totals.fatalCount} crashed` : "") +
+      (invalidCount > 0 ? `, ${invalidCount} unreadable` : ""),
   )
   return lintSummaryExitCode(totals)
 }
