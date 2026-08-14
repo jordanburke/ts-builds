@@ -96,9 +96,16 @@ export async function runFormat(check = false): Promise<number> {
  * Tradeoff: if the reader stops reading WITHOUT closing the pipe, the callback never
  * fires and this would hang. That's rare (a closed reader raises EPIPE, which rejects
  * — the caller catches it); a wedged-open reader is not worth guarding against here.
+ *
+ * A closed downstream pipe (`ts-builds lint | head`) delivers the failure on TWO
+ * channels: the write callback AND a stream `'error'` event. With no `'error'`
+ * listener Node treats the event as unhandled and throws, killing the process before
+ * the caller can react — so we attach a one-shot noop listener to absorb the event;
+ * the callback still rejects the promise, which the caller handles.
  */
 function writeAll(stream: NodeJS.WritableStream, data: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    stream.once("error", () => {})
     stream.write(data, (err) => (err ? reject(err) : resolve()))
   })
 }
@@ -123,11 +130,12 @@ function writeAll(stream: NodeJS.WritableStream, data: string): Promise<void> {
  * Exit codes are RETURNED, never `process.exit`ed: `runLint` runs in-process inside
  * the `validate` chain (see runner.ts), so exiting here would kill the chain with no
  * `✗ lint failed` line. `cli.ts` owns process exit. Bundled path: 1 iff errorCount>0,
- * 0 on warnings-only/clean, 2 on ANY thrown error in the ESLint pipeline (bad config,
- * no matching files, formatter failure) — a `fatal` sidecar is written so a stale
- * prior report can't green-light CI. The whole pipeline is guarded, not just
- * `lintFiles`, so a throw in `outputFixes`/`loadFormatter`/`format` can't leak an
- * unhandled rejection or leave the stale sidecar in place.
+ * 0 on warnings-only/clean, 2 on a thrown analysis error (bad config, no matching
+ * files) — the analysis phase is guarded, not just `lintFiles`, so a throw in the
+ * constructor/`outputFixes` writes a `fatal` sidecar (so a stale prior report can't
+ * green-light CI) rather than leaking an unhandled rejection. Once the report is
+ * written, PRINTING is best-effort: a formatter bug or closed pipe neither overwrites
+ * the report with a fatal one nor changes the returned code.
  */
 export async function runLint(check = false): Promise<number> {
   const config = loadConfig()
@@ -151,10 +159,15 @@ export async function runLint(check = false): Promise<number> {
     const report = buildLintReport(results, fix, pkg)
     await writeLintReport(report, targetDir)
 
-    const formatter = await eslint.loadFormatter("stylish")
-    const output = await formatter.format(results)
-    // EPIPE and friends are swallowed: the report is saved and the exit code is real.
-    if (output) await writeAll(process.stdout, output).catch(() => undefined)
+    // Printing is best-effort: a formatter bug or a closed pipe must not overwrite the
+    // saved report with a fatal one nor change the real exit code below.
+    try {
+      const formatter = await eslint.loadFormatter("stylish")
+      const output = await formatter.format(results)
+      if (output) await writeAll(process.stdout, output)
+    } catch {
+      // report is saved; the exit code below is authoritative
+    }
 
     return report.errorCount > 0 ? 1 : 0
   } catch (err) {

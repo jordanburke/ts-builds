@@ -8,7 +8,9 @@ import { LINT_REPORT_VERSION, type LintReport } from "../lint-report"
 /** node_modules is always skipped: huge, and never a workspace package itself. */
 const ALWAYS_SKIP = new Set(["node_modules"])
 /** Skipped ONLY when the dir is not itself a package — a workspace package literally
- * named `lib`/`dist`/`coverage` must still be summarized, so we check for package.json. */
+ * named `lib`/`dist`/`coverage` must still be summarized, so we check for package.json.
+ * (A publish-from-dist layout with a `package.json` inside `dist/` is therefore
+ * traversed — harmless: the walk still only matches `.ts-builds/lint-report.json`.) */
 const SKIP_UNLESS_PACKAGE = new Set(["dist", "lib", "coverage"])
 
 /**
@@ -167,7 +169,14 @@ export async function runLintSummary(args: string[]): Promise<number> {
   const reports: LintReport[] = []
   let invalidCount = 0
   for (const path of paths) {
-    const report = parseLintReport(readFileSync(path, "utf-8"))
+    // The read itself is in the invalid-counting path: a sidecar that vanished
+    // between the walk and here (or EACCES) counts as a failure, not a crash.
+    let report: LintReport | null
+    try {
+      report = parseLintReport(readFileSync(path, "utf-8"))
+    } catch {
+      report = null
+    }
     if (report) {
       reports.push(report)
     } else {
