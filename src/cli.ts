@@ -4,6 +4,7 @@ import { cleanup } from "./cli/commands/cleanup"
 import { runDoctor } from "./cli/commands/doctor"
 import { showHelp, showInfo } from "./cli/commands/info"
 import { createConfig, init } from "./cli/commands/init"
+import { runLintSummary } from "./cli/commands/lint-summary"
 import { runSize } from "./cli/commands/size"
 import { loadConfig } from "./cli/config"
 import { runCommand, runShellCommand } from "./cli/process"
@@ -39,6 +40,9 @@ switch (command) {
     break
   case "lint:check":
     process.exit(await runLint(true))
+    break
+  case "lint:summary":
+    process.exit(await runLintSummary(process.argv.slice(3)))
     break
   case "typecheck":
   case "ts-types":

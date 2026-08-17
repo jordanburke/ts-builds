@@ -1,4 +1,4 @@
-import { runBuild, runFormat } from "./commands/build"
+import { runBuild, runFormat, runLint } from "./commands/build"
 import type { CommandDef, ResolvedConfig } from "./config"
 import { loadConfig } from "./config"
 import { runShellCommand } from "./process"
@@ -30,8 +30,6 @@ function isRunFnCommand(cmd: CommandDef | RunFnCommand): cmd is RunFnCommand {
 }
 
 export function getBuiltinCommands(config: ResolvedConfig): Record<string, BuiltinCommand> {
-  const eslintCmd = config.lint.useProjectEslint ? "npx eslint" : "eslint"
-
   const buildCmd: BuiltinCommand = {
     runFn: () => runBuild(false),
   }
@@ -44,8 +42,8 @@ export function getBuiltinCommands(config: ResolvedConfig): Record<string, Built
   return {
     format: { runFn: () => runFormat(false) },
     "format:check": { runFn: () => runFormat(true) },
-    lint: { run: `${eslintCmd} --fix ${config.srcDir}` },
-    "lint:check": { run: `${eslintCmd} ${config.srcDir}` },
+    lint: { runFn: () => runLint(false) },
+    "lint:check": { runFn: () => runLint(true) },
     typecheck: { run: "tsc --noEmit" },
     "ts-types": { run: "tsc --noEmit" },
     test: { run: "vitest run" },

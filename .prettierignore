@@ -6,6 +6,9 @@ dist
 lib
 coverage
 
+# ts-builds lint sidecars (machine-generated JSON; no trailing-newline contract)
+.ts-builds
+
 # Lock files
 pnpm-lock.yaml
 package-lock.json

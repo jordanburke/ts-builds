@@ -7,6 +7,7 @@ import { List, Option } from "functype"
 import { Fs } from "functype-os"
 
 import { loadConfig, targetDir } from "../config"
+import { buildLintReport, fatalLintReport, readPackageName, writeLintReport } from "../lint-report"
 import { runCommand } from "../process"
 
 const TRANSIENT_RM_ERRORS = new Set(["EBUSY", "EPERM", "ENOTEMPTY", "EMFILE"])
@@ -187,11 +188,98 @@ export async function runFormat(check = false): Promise<number> {
   return runCommand("prettier", prettierFormatArgs(check))
 }
 
+/**
+ * Await a full write to a stream before resolving.
+ *
+ * Under a task runner (Turbo, nx) stdout is a pipe. Writing a large buffer with
+ * `stream.write(data)` and then letting the process exit can truncate the tail
+ * on a pipe — a documented case, and this repo already treats Windows pipe/handle
+ * quirks as real (see {@link cleanDir}). The write callback fires once the chunk
+ * has been flushed to the underlying resource, so awaiting it before the CLI calls
+ * `process.exit` guarantees the stylish output lands intact.
+ *
+ * Tradeoff: if the reader stops reading WITHOUT closing the pipe, the callback never
+ * fires and this would hang. That's rare (a closed reader raises EPIPE, which rejects
+ * — the caller catches it); a wedged-open reader is not worth guarding against here.
+ *
+ * A closed downstream pipe (`ts-builds lint | head`) delivers the failure on TWO
+ * channels: the write callback AND a stream `'error'` event. With no `'error'`
+ * listener Node treats the event as unhandled and throws, killing the process before
+ * the caller can react — so we attach a one-shot noop listener to absorb the event;
+ * the callback still rejects the promise, which the caller handles.
+ */
+function writeAll(stream: NodeJS.WritableStream, data: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    stream.once("error", () => {})
+    stream.write(data, (err) => (err ? reject(err) : resolve()))
+  })
+}
+
+/**
+ * Lint `srcDir`.
+ *
+ * Bundled path (default, `useProjectEslint: false`): runs ESLint through its Node
+ * API in a single pass, so we get the familiar stylish output AND exact issue
+ * counts for the `.ts-builds/lint-report.json` sidecar that `lint:summary`
+ * aggregates. `import("eslint")` loads ts-builds' OWN bundled eslint (tsdown
+ * externalizes deps rather than inlining them). NOTE: this is a behavior change for a
+ * consumer that directly depends on a different eslint major — the old spawn could
+ * resolve their hoisted binary from PATH, whereas this always uses the bundled eslint.
+ * Such consumers should set `useProjectEslint: true`.
+ *
+ * Project path (`useProjectEslint: true`): keeps the spawn to the consumer's eslint
+ * (which may be a different major with a different Node API). That path writes NO
+ * sidecar and prints no warning; those packages simply don't appear in `lint:summary`
+ * (documented). Returns 0/1 iff there are lint errors.
+ *
+ * Exit codes are RETURNED, never `process.exit`ed: `runLint` runs in-process inside
+ * the `validate` chain (see runner.ts), so exiting here would kill the chain with no
+ * `✗ lint failed` line. `cli.ts` owns process exit. Bundled path: 1 iff errorCount>0,
+ * 0 on warnings-only/clean, 2 on a thrown analysis error (bad config, no matching
+ * files) — the analysis phase is guarded, not just `lintFiles`, so a throw in the
+ * constructor/`outputFixes` writes a `fatal` sidecar (so a stale prior report can't
+ * green-light CI) rather than leaking an unhandled rejection. Once the report is
+ * written, PRINTING is best-effort: a formatter bug or closed pipe neither overwrites
+ * the report with a fatal one nor changes the returned code.
+ */
 export async function runLint(check = false): Promise<number> {
   const config = loadConfig()
-  const eslintCmd = config.lint.useProjectEslint ? "npx eslint" : "eslint"
-  const args = check ? [config.srcDir] : ["--fix", config.srcDir]
-  return runCommand(eslintCmd, args)
+
+  if (config.lint.useProjectEslint) {
+    const args = check ? [config.srcDir] : ["--fix", config.srcDir]
+    return runCommand("npx eslint", args)
+  }
+
+  const fix = !check
+  const pkg = readPackageName(targetDir)
+
+  try {
+    const { ESLint } = await import("eslint")
+    const eslint = new ESLint({ fix, cwd: targetDir })
+    const results = await eslint.lintFiles([config.srcDir])
+    if (fix) await ESLint.outputFixes(results)
+
+    // Persist the sidecar BEFORE printing: a broken pipe (`ts-builds lint | head`)
+    // must not lose an already-computed report or downgrade a real result to fatal.
+    const report = buildLintReport(results, fix, pkg)
+    await writeLintReport(report, targetDir)
+
+    // Printing is best-effort: a formatter bug or a closed pipe must not overwrite the
+    // saved report with a fatal one nor change the real exit code below.
+    try {
+      const formatter = await eslint.loadFormatter("stylish")
+      const output = await formatter.format(results)
+      if (output) await writeAll(process.stdout, output)
+    } catch {
+      // report is saved; the exit code below is authoritative
+    }
+
+    return report.errorCount > 0 ? 1 : 0
+  } catch (err) {
+    console.error((err as Error).message)
+    await writeLintReport(fatalLintReport(fix, pkg), targetDir)
+    return 2
+  }
 }
 
 export async function runTypecheck(): Promise<number> {

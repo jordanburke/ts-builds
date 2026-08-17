@@ -61,6 +61,7 @@ npx ts-builds format         # Format with Prettier
 npx ts-builds format:check   # Check formatting only
 npx ts-builds lint           # Lint with ESLint (--fix)
 npx ts-builds lint:check     # Check lint only
+npx ts-builds lint:summary   # Aggregate per-package lint totals (monorepo)
 npx ts-builds typecheck      # TypeScript type checking
 npx ts-builds test           # Run tests once
 npx ts-builds test:watch     # Watch mode
@@ -200,6 +201,39 @@ Run named chains:
 npx ts-builds validate:core
 npx ts-builds validate:landing
 ```
+
+### Aggregating lint results across a monorepo
+
+Under a task runner, `ts-builds` runs per-package, so each package's ESLint output
+scrolls past and the repo-wide total is lost. Every `ts-builds lint` / `lint:check`
+run writes a machine-readable sidecar at `.ts-builds/lint-report.json`;
+`ts-builds lint:summary` reads those sidecars and prints one grand total with a
+CI-gating exit code (nonzero if any package has errors or crashed). It **re-runs
+nothing** — pure file reads of the last lint.
+
+```bash
+turbo run lint --continue   # lint every package (see --continue note below)
+ts-builds lint:summary      # print the aggregate total at the repo root
+```
+
+Wire-up:
+
+- **Declare the sidecar as a Turbo output** so cache hits still restore it and totals
+  stay correct without re-linting:
+  ```jsonc
+  // turbo.json
+  { "tasks": { "lint": { "outputs": [".ts-builds/**"] } } }
+  ```
+- **Use `--continue`** for a full sweep. Turbo's default (`--continue=never`) cancels
+  all remaining tasks on the first failure, so without it a single failing package
+  hides every downstream package's issues. The exit code is still the max across tasks.
+- **Gitignore `.ts-builds/`** in consuming repos.
+- Packages configured with `lint.useProjectEslint: true` run through the consumer's
+  own ESLint and do **not** emit a sidecar, so they don't appear in the summary.
+
+`ts-builds lint:summary [dir]` defaults to the current directory; pass a path to
+aggregate a different root. Finding zero sidecars exits nonzero — an empty sweep
+must not silently pass CI.
 
 ## Extendable Configs
 
