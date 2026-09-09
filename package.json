@@ -78,7 +78,7 @@
   },
   "peerDependencies": {
     "tsdown": "^0.x",
-    "vite": "^8.x"
+    "vite": "^7.x || ^8.x"
   },
   "peerDependenciesMeta": {
     "tsdown": {
