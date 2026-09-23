@@ -32,10 +32,19 @@
     "./eslint": "./eslint.config.base.js",
     "./eslint-fp": "./eslint.config.fp.js",
     "./eslint-functype": "./eslint.config.functype.js",
-    "./vitest": "./dist/vitest.config.base.js",
+    "./vitest": {
+      "types": "./dist/vitest.config.base.d.ts",
+      "default": "./dist/vitest.config.base.js"
+    },
     "./tsconfig": "./tsconfig.base.json",
-    "./tsdown": "./dist/tsdown.config.base.js",
-    "./vite": "./dist/vite.config.base.js",
+    "./tsdown": {
+      "types": "./dist/tsdown.config.base.d.ts",
+      "default": "./dist/tsdown.config.base.js"
+    },
+    "./vite": {
+      "types": "./dist/vite.config.base.d.ts",
+      "default": "./dist/vite.config.base.js"
+    },
     "./scripts": "./package-scripts.json",
     "./package.json": "./package.json"
   },
