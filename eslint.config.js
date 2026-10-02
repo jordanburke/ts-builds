@@ -1,1 +1,1 @@
-export { default } from "./eslint.config.base.js"
+export { default } from "./eslint.config.functype.js"
