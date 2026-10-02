@@ -6,7 +6,7 @@ import { showHelp, showInfo } from "./cli/commands/info"
 import { createConfig, init } from "./cli/commands/init"
 import { runLintSummary } from "./cli/commands/lint-summary"
 import { runSize } from "./cli/commands/size"
-import { loadConfig } from "./cli/config"
+import { escapingValidateCwdError, loadConfig } from "./cli/config"
 import { runCommand, runShellCommand } from "./cli/process"
 import { runValidate } from "./cli/runner"
 
@@ -100,6 +100,11 @@ switch (command) {
       process.exit(await runValidate(command))
     } else if (config.commands[command]) {
       const cmdDef = config.commands[command]
+      const cwdError = escapingValidateCwdError(command, cmdDef)
+      if (cwdError) {
+        console.error(cwdError)
+        process.exit(1)
+      }
       const code = await runShellCommand(cmdDef.run, { cwd: cmdDef.cwd })
       process.exit(code)
     } else {

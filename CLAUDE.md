@@ -295,9 +295,9 @@ Both `--fix` additions preserve existing `pnpm-workspace.yaml` content, never
 duplicate a top-level key, and are idempotent. The release-age detection lives
 behind an injectable probe (`PnpmReleaseAgeProbe`) for testability.
 
-### Deprecation (since 2.8.0)
+### Cross-package `validate:*` commands (removed in 4.0)
 
-`commands["validate:X"]` entries with a `cwd:` that escapes the package root emit a deprecation warning at config load (deduplicated per `name × cwd` pair) and are targeted for removal in **ts-builds 4.0**. Use a workspace orchestrator (Turbo, nx, `pnpm -r`) for cross-package validation instead. See issue #72.
+A `commands["validate:X"]` entry whose `cwd:` escapes the package root (parent traversal or an absolute path outside it) fails with exit code 1 when it runs, either as a chain step or when invoked directly. It warned from 2.8.0 to 3.x. The check lives in `escapingValidateCwdError` (`src/cli/config.ts`) and is called from `runChain` and the CLI's direct-command dispatch, not from `loadConfig`, so unrelated commands such as `build` still work with a stale entry. Use a workspace orchestrator (Turbo, nx, `pnpm -r`) for cross-package validation instead. See issue #72.
 
 ## Key Files
 
