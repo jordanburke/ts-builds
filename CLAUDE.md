@@ -92,6 +92,7 @@ recursion guard), so it would bump-and-tag without ever publishing.
 ### Code Quality Tools
 
 - **ESLint**: Flat config setup in `eslint.config.base.js` with TypeScript support
+- **Own lint config**: this repo lints its own `src/` with the functype preset (`eslint.config.js` re-exports `eslint.config.functype.js`), and `ts-builds.config.json`'s validate chain runs `lint:check`, so a functype rule error fails `pnpm validate` and CI. `test/` is not linted by the chain.
 - **Prettier**: Integrated with ESLint for consistent formatting
 - **Import Sorting**: Automatic import organization via `simple-import-sort`
 
