@@ -1,3 +1,5 @@
+import { Set } from "functype"
+
 import { runBuild, runFormat, runLint } from "./commands/build"
 import type { CommandDef, ResolvedConfig } from "./config"
 import { escapingValidateCwdError, loadConfig } from "./config"
@@ -61,13 +63,12 @@ export function getBuiltinCommands(config: ResolvedConfig): Record<string, Built
 export async function runChain(
   chainName: string,
   config: ResolvedConfig,
-  visited = new Set<string>(),
+  path: Set<string> = Set.empty<string>(),
 ): Promise<number> {
-  if (visited.has(chainName)) {
+  if (path.has(chainName)) {
     console.error(`Circular chain reference detected: ${chainName}`)
     return 1
   }
-  visited.add(chainName)
 
   const chain = config.chains[chainName]
   if (!chain) {
@@ -75,40 +76,52 @@ export async function runChain(
     return 1
   }
 
-  const builtins = getBuiltinCommands(config)
-
   console.log(`\n📋 Running chain: ${chainName} [${chain.join(" → ")}]`)
 
-  for (const step of chain) {
-    if (config.chains[step]) {
-      const code = await runChain(step, config, visited)
-      if (code !== 0) return code
-      continue
-    }
+  return runSteps(chain, config, getBuiltinCommands(config), path.add(chainName))
+}
 
-    const cmdDef: CommandDef | BuiltinCommand | undefined = config.commands[step] ?? builtins[step]
-    if (!cmdDef) {
-      console.error(`Unknown command or chain: ${step}`)
-      return 1
-    }
+async function runSteps(
+  steps: string[],
+  config: ResolvedConfig,
+  builtins: Record<string, BuiltinCommand>,
+  path: Set<string>,
+): Promise<number> {
+  const [step, ...rest] = steps
+  if (step === undefined) return 0
+  const code = await runStep(step, config, builtins, path)
+  return code === 0 ? runSteps(rest, config, builtins, path) : code
+}
 
-    const cwdError = isRunFnCommand(cmdDef) ? undefined : escapingValidateCwdError(step, cmdDef)
-    if (cwdError) {
-      console.error(cwdError)
-      return 1
-    }
+async function runStep(
+  step: string,
+  config: ResolvedConfig,
+  builtins: Record<string, BuiltinCommand>,
+  path: Set<string>,
+): Promise<number> {
+  if (config.chains[step]) return runChain(step, config, path)
 
-    const cwdLabel = "cwd" in cmdDef && cmdDef.cwd ? ` (in ${cmdDef.cwd})` : ""
-    console.log(`\n▶ Running ${step}...${cwdLabel}`)
-
-    const code = isRunFnCommand(cmdDef) ? await cmdDef.runFn() : await runShellCommand(cmdDef.run, { cwd: cmdDef.cwd })
-    if (code !== 0) {
-      console.error(`\n✗ ${step} failed with exit code ${code}`)
-      return code
-    }
-    console.log(`✓ ${step} complete`)
+  const cmdDef: CommandDef | BuiltinCommand | undefined = config.commands[step] ?? builtins[step]
+  if (!cmdDef) {
+    console.error(`Unknown command or chain: ${step}`)
+    return 1
   }
 
+  const cwdError = isRunFnCommand(cmdDef) ? undefined : escapingValidateCwdError(step, cmdDef)
+  if (cwdError) {
+    console.error(cwdError)
+    return 1
+  }
+
+  const cwdLabel = "cwd" in cmdDef && cmdDef.cwd ? ` (in ${cmdDef.cwd})` : ""
+  console.log(`\n▶ Running ${step}...${cwdLabel}`)
+
+  const code = isRunFnCommand(cmdDef) ? await cmdDef.runFn() : await runShellCommand(cmdDef.run, { cwd: cmdDef.cwd })
+  if (code !== 0) {
+    console.error(`\n✗ ${step} failed with exit code ${code}`)
+    return code
+  }
+  console.log(`✓ ${step} complete`)
   return 0
 }
 
