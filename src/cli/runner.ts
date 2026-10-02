@@ -1,6 +1,6 @@
 import { runBuild, runFormat, runLint } from "./commands/build"
 import type { CommandDef, ResolvedConfig } from "./config"
-import { loadConfig } from "./config"
+import { escapingValidateCwdError, loadConfig } from "./config"
 import { runShellCommand } from "./process"
 
 export type { RunOptions } from "./process"
@@ -89,6 +89,12 @@ export async function runChain(
     const cmdDef: CommandDef | BuiltinCommand | undefined = config.commands[step] ?? builtins[step]
     if (!cmdDef) {
       console.error(`Unknown command or chain: ${step}`)
+      return 1
+    }
+
+    const cwdError = isRunFnCommand(cmdDef) ? undefined : escapingValidateCwdError(step, cmdDef)
+    if (cwdError) {
+      console.error(cwdError)
       return 1
     }
 

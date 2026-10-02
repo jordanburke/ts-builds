@@ -12,18 +12,27 @@ function makeTempDir(): string {
   return mkdtempSync(join(tmpdir(), "ts-builds-test-"))
 }
 
-function runCliCapture(args: string[], cwd: string): string {
+function runCli(args: string[], cwd: string): { status: number; out: string } {
   try {
-    return execFileSync("node", [cliPath, ...args], {
+    const out = execFileSync("node", [cliPath, ...args], {
       cwd,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
     })
+    return { status: 0, out }
   } catch (err) {
-    // ts-builds validate will exit non-zero when the configured command fails
-    // (e.g. echo in a nonexistent cwd). We still want stdout+stderr for assertions.
-    const e = err as { stdout?: string; stderr?: string }
-    return (e.stdout ?? "") + (e.stderr ?? "")
+    const e = err as { status?: number; stdout?: string; stderr?: string }
+    return { status: e.status ?? 1, out: (e.stdout ?? "") + (e.stderr ?? "") }
+  }
+}
+
+function withConfig(config: unknown, fn: (dir: string) => void): void {
+  const dir = makeTempDir()
+  try {
+    writeFileSync(join(dir, "ts-builds.config.json"), JSON.stringify(config))
+    fn(dir)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
   }
 }
 
@@ -65,86 +74,59 @@ describe("cwdEscapesPackageRoot", () => {
   })
 })
 
-describe("loadConfig deprecation warning (end-to-end)", () => {
-  it("emits warning for validate:* with parent-traversal cwd", () => {
-    const dir = makeTempDir()
-    try {
-      writeFileSync(
-        join(dir, "ts-builds.config.json"),
-        JSON.stringify({
-          commands: {
-            "validate:sibling": { run: "echo hi", cwd: "../other-pkg" },
-          },
-          chains: { validate: ["validate:sibling"] },
-        }),
-      )
-      const out = runCliCapture(["validate"], dir)
-      expect(out).toMatch(/Deprecation/)
-      expect(out).toMatch(/validate:sibling/)
+describe("validate:* cwd escaping the package root (end-to-end, #72)", () => {
+  // cwd ".." exists, so without the check these commands would run and pass.
+  it("fails a chain step whose validate:* cwd escapes, without running it", () => {
+    withConfig(
+      {
+        commands: { "validate:sibling": { run: "echo RAN-SIBLING", cwd: ".." } },
+        chains: { validate: ["validate:sibling"] },
+      },
+      (dir) => {
+        const { status, out } = runCli(["validate"], dir)
+        expect(status).toBe(1)
+        expect(out).toMatch(/validate:sibling/)
+        expect(out).toMatch(/escapes the package root/)
+        expect(out).toMatch(/issues\/72/)
+        expect(out).not.toMatch(/RAN-SIBLING/)
+      },
+    )
+  })
+
+  it("fails a validate:* command invoked directly when its cwd escapes", () => {
+    withConfig({ commands: { "validate:sibling": { run: "echo RAN-SIBLING", cwd: ".." } } }, (dir) => {
+      const { status, out } = runCli(["validate:sibling"], dir)
+      expect(status).toBe(1)
       expect(out).toMatch(/issues\/72/)
-      expect(out).toMatch(/ts-builds 4\.0/)
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+      expect(out).not.toMatch(/RAN-SIBLING/)
+    })
   })
 
-  it("does not warn for validate:* with in-root cwd", () => {
-    const dir = makeTempDir()
-    try {
-      writeFileSync(
-        join(dir, "ts-builds.config.json"),
-        JSON.stringify({
-          commands: {
-            "validate:inroot": { run: "echo hi", cwd: "./fixtures" },
-          },
-          chains: { validate: ["validate:inroot"] },
-        }),
-      )
-      const out = runCliCapture(["validate"], dir)
-      expect(out).not.toMatch(/Deprecation/)
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+  it("runs a validate:* command whose cwd stays inside the package", () => {
+    withConfig(
+      {
+        commands: { "validate:inroot": { run: "echo RAN-INROOT", cwd: "." } },
+        chains: { validate: ["validate:inroot"] },
+      },
+      (dir) => {
+        const { status, out } = runCli(["validate"], dir)
+        expect(status).toBe(0)
+        expect(out).toMatch(/RAN-INROOT/)
+      },
+    )
   })
 
-  it("does not warn for non-validate-prefixed commands even with escaping cwd", () => {
-    const dir = makeTempDir()
-    try {
-      writeFileSync(
-        join(dir, "ts-builds.config.json"),
-        JSON.stringify({
-          commands: {
-            other: { run: "echo hi", cwd: "../sibling" },
-          },
-          chains: { validate: ["other"] },
-        }),
-      )
-      const out = runCliCapture(["validate"], dir)
-      expect(out).not.toMatch(/Deprecation/)
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
-  })
-
-  it("deduplicates: same offending entry produces a single warning per load", () => {
-    const dir = makeTempDir()
-    try {
-      writeFileSync(
-        join(dir, "ts-builds.config.json"),
-        JSON.stringify({
-          commands: {
-            "validate:a": { run: "echo a", cwd: "../x" },
-            "validate:b": { run: "echo b", cwd: "../x" },
-          },
-          chains: { validate: ["validate:a", "validate:b"] },
-        }),
-      )
-      const out = runCliCapture(["validate"], dir)
-      const matches = out.match(/Deprecation/g) ?? []
-      // Two distinct names → two warnings; dedup is per (name, cwd) pair.
-      expect(matches.length).toBe(2)
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
+  it("runs a non-validate command even when its cwd escapes", () => {
+    withConfig(
+      {
+        commands: { other: { run: "echo RAN-OTHER", cwd: ".." } },
+        chains: { validate: ["other"] },
+      },
+      (dir) => {
+        const { status, out } = runCli(["validate"], dir)
+        expect(status).toBe(0)
+        expect(out).toMatch(/RAN-OTHER/)
+      },
+    )
   })
 })
