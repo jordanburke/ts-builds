@@ -81,7 +81,7 @@ function saveBaseline(baselinePath: string, files: List<FileSize>): void {
     files: Object.fromEntries(files.map((f) => [f.path, { raw: f.raw, gzip: f.gzip }] as const).toArray()),
   }
 
-  Fs.writeFileSync(absPath, JSON.stringify(baseline, null, 2) + "\n")
+  Fs.writeFileSync(absPath, `${JSON.stringify(baseline, null, 2)}\n`)
 }
 
 function formatBytes(bytes: number): string {

@@ -191,9 +191,9 @@ export async function runLintSummary(args: string[]): Promise<number> {
     console.log()
   }
   console.log(
-    `Summary: ${totals.totalErrors} error(s), ${totals.totalWarnings} warning(s) across ${reports.length} package(s)` +
-      (totals.fatalCount > 0 ? `, ${totals.fatalCount} crashed` : "") +
-      (invalidCount > 0 ? `, ${invalidCount} unreadable` : ""),
+    `Summary: ${totals.totalErrors} error(s), ${totals.totalWarnings} warning(s) across ${reports.length} package(s)${
+      totals.fatalCount > 0 ? `, ${totals.fatalCount} crashed` : ""
+    }${invalidCount > 0 ? `, ${invalidCount} unreadable` : ""}`,
   )
   return lintSummaryExitCode(totals)
 }

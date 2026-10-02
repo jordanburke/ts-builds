@@ -259,22 +259,18 @@ function hasTopLevelKey(yaml: string, key: string): boolean {
 
 function appendBlock(existing: string, block: string): string {
   if (existing.length === 0) return block
-  const base = existing.endsWith("\n") ? existing : existing + "\n"
-  return base + "\n" + block
+  const base = existing.endsWith("\n") ? existing : `${existing}\n`
+  return `${base}\n${block}`
 }
 
 function renderPublicHoistPattern(patterns: string[]): string {
-  return "publicHoistPattern:\n" + patterns.map((p) => `  - "${p}"`).join("\n") + "\n"
+  return `publicHoistPattern:\n${patterns.map((p) => `  - "${p}"`).join("\n")}\n`
 }
 
 function renderOverrides(overrides: Record<string, string>): string {
-  return (
-    "overrides:\n" +
-    Object.entries(overrides)
-      .map(([k, v]) => `  "${k}": "${v}"`)
-      .join("\n") +
-    "\n"
-  )
+  return `overrides:\n${Object.entries(overrides)
+    .map(([k, v]) => `  "${k}": "${v}"`)
+    .join("\n")}\n`
 }
 
 function renderPeerDependencyRules(rules: NonNullable<PnpmField["peerDependencyRules"]>): string {
@@ -291,7 +287,7 @@ function renderPeerDependencyRules(rules: NonNullable<PnpmField["peerDependencyR
       lines.push(`    - "${name}"`)
     }
   }
-  return lines.join("\n") + "\n"
+  return `${lines.join("\n")}\n`
 }
 
 /**
@@ -480,7 +476,7 @@ export function migratePnpm11(
                 message: "Could not remove .npmrc — delete the migrated hoist lines manually",
               })
             }
-          } else if (!safeWrite(npmrcPath, remaining.endsWith("\n") ? remaining : remaining + "\n")) {
+          } else if (!safeWrite(npmrcPath, remaining.endsWith("\n") ? remaining : `${remaining}\n`)) {
             errors++
             actions.push({
               kind: "manual",
@@ -496,7 +492,7 @@ export function migratePnpm11(
   const pkgPath = join(dir, "package.json")
   if (existsSync(pkgPath)) {
     const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { pnpm?: PnpmField; [k: string]: unknown }
-    const pnpm = pkg.pnpm
+    const { pnpm } = pkg
     if (pnpm && typeof pnpm === "object") {
       let pkgChanged = false
 
@@ -540,7 +536,7 @@ export function migratePnpm11(
 
       if (pkgChanged) {
         sourceMutations.push(() => {
-          if (!safeWrite(pkgPath, JSON.stringify(pkg, null, 2) + "\n")) {
+          if (!safeWrite(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`)) {
             errors++
             actions.push({
               kind: "manual",
@@ -577,7 +573,7 @@ export function migratePnpm11(
       if (hasTopLevelKey(ws, "minimumReleaseAgeExclude")) {
         ws = insertListEntries(ws, "minimumReleaseAgeExclude", rendered)
       } else {
-        ws = appendBlock(ws, "minimumReleaseAgeExclude:\n" + rendered.join("\n") + "\n")
+        ws = appendBlock(ws, `minimumReleaseAgeExclude:\n${rendered.join("\n")}\n`)
       }
       wsChanged = true
       actions.push({
@@ -603,7 +599,7 @@ export function migratePnpm11(
       if (hasTopLevelKey(ws, "allowBuilds")) {
         ws = insertMapEntries(ws, "allowBuilds", toAdd)
       } else {
-        ws = appendBlock(ws, "allowBuilds:\n" + toAdd.map(([k, v]) => `  ${k}: ${v}`).join("\n") + "\n")
+        ws = appendBlock(ws, `allowBuilds:\n${toAdd.map(([k, v]) => `  ${k}: ${v}`).join("\n")}\n`)
       }
       wsChanged = true
       actions.push({

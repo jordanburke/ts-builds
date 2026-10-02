@@ -54,7 +54,7 @@ export function readPackageName(dir: string = targetDir): string {
   const pkgPath = join(dir, "package.json")
   if (existsSync(pkgPath)) {
     try {
-      const name = (JSON.parse(readFileSync(pkgPath, "utf-8")) as { name?: string }).name
+      const { name } = JSON.parse(readFileSync(pkgPath, "utf-8")) as { name?: string }
       if (typeof name === "string" && name.length > 0) return name
     } catch {
       // fall through to basename
@@ -115,7 +115,7 @@ export async function writeLintReport(report: LintReport, dir: string = targetDi
   const tmp = `${path}.tmp`
   try {
     await mkdir(join(dir, ".ts-builds"), { recursive: true })
-    await writeFile(tmp, JSON.stringify(report, null, 2) + "\n")
+    await writeFile(tmp, `${JSON.stringify(report, null, 2)}\n`)
     await rename(tmp, path)
   } catch (err) {
     await rm(tmp, { force: true }).catch(() => undefined)

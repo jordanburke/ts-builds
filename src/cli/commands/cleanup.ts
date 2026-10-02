@@ -78,7 +78,7 @@ export async function cleanup(): Promise<void> {
     delete packageJson.dependencies
   }
 
-  writeFileSync(packageJsonPath, JSON.stringify(packageJson, null, 2) + "\n")
+  writeFileSync(packageJsonPath, `${JSON.stringify(packageJson, null, 2)}\n`)
 
   const totalRemoved = redundantDev.length + redundantDeps.length
   console.log(`\n✓ Removed ${totalRemoved} redundant package(s) from package.json`)
