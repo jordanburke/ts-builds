@@ -4,16 +4,18 @@
 
 This package uses **npm trusted publishers** for secure, tokenless publishing from GitHub Actions.
 
-## Automatic Releases (Dependency Updates)
+## Dependency Updates (No Automatic Release)
+
+Releases are **manual and tag-based only**. `publish.yml` runs only when a `v*` tag is pushed.
 
 When Dependabot updates dependencies:
 
-1. Dependabot creates a PR
-2. CI validates (`pnpm validate`)
-3. PR auto-merges (patch/minor updates)
-4. Version auto-bumps and publishes to npm
+1. Dependabot opens a PR
+2. CI validates it (`pnpm validate`)
+3. `auto-merge-dependabot.yml` approves and auto-merges patch and minor updates
+4. The update lands on `main` **unreleased**
 
-**No action required** - fully automated.
+Major updates are not auto-merged. To ship merged updates, cut a manual release (below).
 
 ## Manual Releases
 
@@ -34,6 +36,10 @@ git push --follow-tags
 ```
 
 The tag push triggers the publish workflow automatically.
+
+Push the tag from a local or PAT credential. A tag pushed by GitHub Actions' `GITHUB_TOKEN`
+does **not** trigger `publish.yml` (GitHub's recursion guard), so an automated bump-and-tag
+would never publish.
 
 ## What Happens on Release
 
@@ -65,5 +71,14 @@ This package uses [npm trusted publishers](https://docs.npmjs.com/trusted-publis
 
 ### npm version compatibility
 
-- Workflow updates npm to latest before publishing
-- Requires Node 20+ (configured in `.nvmrc`)
+- The workflow does not update npm. It uses the npm bundled with the Node version in `.nvmrc`.
+- `.nvmrc` pins an exact Node version (`24.20.0`, bundling npm 11.19.0), not a bare major.
+  A bare `24` lets `actions/setup-node` pick whichever 24.x the runner has cached, and some
+  bundled npm versions break the OIDC exchange.
+
+### Publish fails with E401 "Failed to generate Web Auth URLs"
+
+- npm abandoned the OIDC token exchange and fell back to interactive login. This is an npm
+  version problem, not a credential problem.
+- Check the Node/npm version in the publish log against `.nvmrc`, and keep `.nvmrc` pinned
+  to an exact version known to publish.
