@@ -78,7 +78,7 @@ switch (command) {
 
   // Analysis commands
   case "size":
-    process.exit(await runSize(process.argv.slice(3)))
+    process.exit(runSize(process.argv.slice(3)))
     break
   case "doctor":
     process.exit(runDoctor(subCommand === "--fix"))

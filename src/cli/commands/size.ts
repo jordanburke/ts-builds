@@ -98,8 +98,6 @@ function formatDelta(current: number, previous: number): string {
 }
 
 function formatSizeTable(files: List<FileSize>, baseline: Option<SizeBaseline>, showGzip: boolean): string {
-  const lines: string[] = []
-
   const nameWidth = Math.max(4, ...files.map((f) => f.path.length).toArray())
   const sizeWidth = 10
   const gzipWidth = 10
@@ -109,34 +107,31 @@ function formatSizeTable(files: List<FileSize>, baseline: Option<SizeBaseline>, 
     ? `${"File".padEnd(nameWidth)}  ${"Size".padStart(sizeWidth)}  ${"Gzip".padStart(gzipWidth)}  ${"Delta".padStart(deltaWidth)}`
     : `${"File".padEnd(nameWidth)}  ${"Size".padStart(sizeWidth)}  ${"Delta".padStart(deltaWidth)}`
 
-  lines.push(header)
-  lines.push("-".repeat(header.length))
-
+  const separator = "-".repeat(header.length)
   const baselineData = baseline.orUndefined()
 
-  for (const file of files) {
-    const prev = baselineData?.files[file.path]
-    const delta = prev ? formatDelta(file.raw, prev.raw) : ""
-    const row = showGzip
-      ? `${file.path.padEnd(nameWidth)}  ${formatBytes(file.raw).padStart(sizeWidth)}  ${formatBytes(file.gzip).padStart(gzipWidth)}  ${delta.padStart(deltaWidth)}`
-      : `${file.path.padEnd(nameWidth)}  ${formatBytes(file.raw).padStart(sizeWidth)}  ${delta.padStart(deltaWidth)}`
-    lines.push(row)
-  }
+  const rows = files
+    .map((file) => {
+      const prev = baselineData?.files[file.path]
+      const delta = prev ? formatDelta(file.raw, prev.raw) : ""
+      return showGzip
+        ? `${file.path.padEnd(nameWidth)}  ${formatBytes(file.raw).padStart(sizeWidth)}  ${formatBytes(file.gzip).padStart(gzipWidth)}  ${delta.padStart(deltaWidth)}`
+        : `${file.path.padEnd(nameWidth)}  ${formatBytes(file.raw).padStart(sizeWidth)}  ${delta.padStart(deltaWidth)}`
+    })
+    .toArray()
 
   const totalRaw = files.fold(0, (sum, f) => sum + f.raw)
   const totalGzip = files.fold(0, (sum, f) => sum + f.gzip)
   const totalDelta = baselineData ? formatDelta(totalRaw, baselineData.total.raw) : ""
 
-  lines.push("-".repeat(header.length))
   const totalRow = showGzip
     ? `${"Total".padEnd(nameWidth)}  ${formatBytes(totalRaw).padStart(sizeWidth)}  ${formatBytes(totalGzip).padStart(gzipWidth)}  ${totalDelta.padStart(deltaWidth)}`
     : `${"Total".padEnd(nameWidth)}  ${formatBytes(totalRaw).padStart(sizeWidth)}  ${totalDelta.padStart(deltaWidth)}`
-  lines.push(totalRow)
 
-  return lines.join("\n")
+  return [header, separator, ...rows, separator, totalRow].join("\n")
 }
 
-export async function runSize(args: string[]): Promise<number> {
+export function runSize(args: string[]): number {
   const config = loadConfig()
   const sizeConfig = config.size
   const showGzip = sizeConfig.gzip !== false
@@ -166,24 +161,20 @@ export async function runSize(args: string[]): Promise<number> {
     console.log(`\nBaseline saved to ${baselineFile}`)
   }
 
+  const { maxTotal, maxFile } = sizeConfig
   const totalRaw = files.fold(0, (sum, f) => sum + f.raw)
-  let failed = false
-
-  if (sizeConfig.maxTotal && totalRaw > sizeConfig.maxTotal) {
-    console.error(`\nTotal size ${formatBytes(totalRaw)} exceeds max ${formatBytes(sizeConfig.maxTotal)}`)
-    failed = true
+  const totalTooBig = maxTotal !== undefined && maxTotal !== 0 && totalRaw > maxTotal
+  if (totalTooBig) {
+    console.error(`\nTotal size ${formatBytes(totalRaw)} exceeds max ${formatBytes(maxTotal)}`)
   }
 
-  if (sizeConfig.maxFile) {
-    for (const file of files) {
-      if (file.raw > sizeConfig.maxFile) {
-        console.error(
-          `\n${file.path} (${formatBytes(file.raw)}) exceeds max file size ${formatBytes(sizeConfig.maxFile)}`,
-        )
-        failed = true
-      }
-    }
-  }
+  const oversized =
+    maxFile !== undefined && maxFile !== 0
+      ? files
+          .filter((file) => file.raw > maxFile)
+          .map((file) => `${file.path} (${formatBytes(file.raw)}) exceeds max file size ${formatBytes(maxFile)}`)
+      : List.empty<string>()
+  oversized.forEach((message) => console.error(`\n${message}`))
 
-  return failed ? 1 : 0
+  return totalTooBig || !oversized.isEmpty ? 1 : 0
 }
