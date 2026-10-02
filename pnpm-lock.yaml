@@ -24,14 +24,14 @@ importers:
         specifier: ^10.10.0
         version: 10.11.0(supports-color@7.2.0)
       eslint-config-functype:
-        specifier: ^2.109.0
-        version: 2.109.0(@typescript-eslint/eslint-plugin@8.70.1(@typescript-eslint/parser@8.70.1(eslint@10.11.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.11.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(@typescript-eslint/parser@8.70.1(eslint@10.11.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.11.0(supports-color@7.2.0)))(eslint@10.11.0(supports-color@7.2.0))(prettier@3.9.9))(eslint-plugin-simple-import-sort@14.0.0(eslint@10.11.0(supports-color@7.2.0)))(eslint@10.11.0(supports-color@7.2.0))(prettier@3.9.9)(supports-color@7.2.0)
+        specifier: ^2.111.0
+        version: 2.111.0(@typescript-eslint/eslint-plugin@8.70.1(@typescript-eslint/parser@8.70.1(eslint@10.11.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.11.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(@typescript-eslint/parser@8.70.1(eslint@10.11.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.11.0(supports-color@7.2.0)))(eslint@10.11.0(supports-color@7.2.0))(prettier@3.9.9))(eslint-plugin-simple-import-sort@14.0.0(eslint@10.11.0(supports-color@7.2.0)))(eslint@10.11.0(supports-color@7.2.0))(prettier@3.9.9)(supports-color@7.2.0)
       eslint-config-prettier:
         specifier: ^10.1.8
         version: 10.1.8(eslint@10.11.0(supports-color@7.2.0))
       eslint-plugin-functype:
-        specifier: ^2.109.0
-        version: 2.109.0(eslint@10.11.0(supports-color@7.2.0))
+        specifier: ^2.111.0
+        version: 2.111.0(eslint@10.11.0(supports-color@7.2.0))
       eslint-plugin-prettier:
         specifier: ^5.5.6
         version: 5.5.6(eslint-config-prettier@10.1.8(eslint@10.11.0(supports-color@7.2.0)))(eslint@10.11.0(supports-color@7.2.0))(prettier@3.9.9)
@@ -39,11 +39,11 @@ importers:
         specifier: ^14.0.0
         version: 14.0.0(eslint@10.11.0(supports-color@7.2.0))
       functype:
-        specifier: ^1.9.0
-        version: 1.9.0
+        specifier: ^1.11.0
+        version: 1.11.0
       functype-os:
         specifier: ^1.9.0
-        version: 1.9.0(functype@1.9.0)
+        version: 1.9.0(functype@1.11.0)
       globals:
         specifier: ^17.12.0
         version: 17.12.0
@@ -687,8 +687,8 @@ packages:
     resolution: {integrity: sha512-TtpcNJ3XAzx3Gq8sWRzJaVajRs0uVxA2YAkdb1jm2YkPz4G6egUFAyA3n5vtEIZefPk5Wa4UXbKuS5fKkJWdgA==}
     engines: {node: '>=10'}
 
-  eslint-config-functype@2.109.0:
-    resolution: {integrity: sha512-YiKANhD9nY+A7ZDSMUFXEaAkauJXllqIxVsVCIWi4YmCmqs3uDdAnp7h1rSWU1g5RCLVH21HlIfXssCR04COjQ==}
+  eslint-config-functype@2.111.0:
+    resolution: {integrity: sha512-EqZUv/iB4K04+GGcbutuX/n4Yu8ANkdO/6Y0uaYwNUgiifPi1jA709p/Zj+UN8D6Q/9OJFEAKj7PlLHbkT920w==}
     engines: {node: '>=20.20.0'}
     hasBin: true
     peerDependencies:
@@ -705,8 +705,8 @@ packages:
     peerDependencies:
       eslint: '>=7.0.0'
 
-  eslint-plugin-functype@2.109.0:
-    resolution: {integrity: sha512-f1rk+ntsiXfmq34era+zA1gC/okuP5luxhli7nDThXpk6+4+Xx7Mlj1z6aRRdQmQn1I6OOf1AdzoOJe1405aeg==}
+  eslint-plugin-functype@2.111.0:
+    resolution: {integrity: sha512-8CI/2mylT4dZz/uoeURcRHNEmIpkKzmtJmKfpbHv0JVNVUaDyDA4+kr6oqncoriZCLPUoPrfPhqsSGO5BmMTvA==}
     engines: {node: '>=20.20.0'}
     hasBin: true
     peerDependencies:
@@ -836,8 +836,8 @@ packages:
     peerDependencies:
       functype: '>=0.60.0'
 
-  functype@1.9.0:
-    resolution: {integrity: sha512-ZIMbSx69uVT88GVedxc/WGUJ1Mi0whoEt/LjXUe7Sr9hnOhCsyGvK0oJgY1w1nYMy2O9vRrFmnl/VzeLEVGokg==}
+  functype@1.11.0:
+    resolution: {integrity: sha512-lP5YushPFsxm45yJDW8ZCBw4/DdkNJqGyGTrg6RZNIZpVRsvFxdXEZnPIq0EYPDYQdfnTweUnU+oJphe6wJHMQ==}
     hasBin: true
 
   get-tsconfig@5.0.0-beta.6:
@@ -1927,7 +1927,7 @@ snapshots:
 
   escape-string-regexp@4.0.0: {}
 
-  eslint-config-functype@2.109.0(@typescript-eslint/eslint-plugin@8.70.1(@typescript-eslint/parser@8.70.1(eslint@10.11.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.11.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(@typescript-eslint/parser@8.70.1(eslint@10.11.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.11.0(supports-color@7.2.0)))(eslint@10.11.0(supports-color@7.2.0))(prettier@3.9.9))(eslint-plugin-simple-import-sort@14.0.0(eslint@10.11.0(supports-color@7.2.0)))(eslint@10.11.0(supports-color@7.2.0))(prettier@3.9.9)(supports-color@7.2.0):
+  eslint-config-functype@2.111.0(@typescript-eslint/eslint-plugin@8.70.1(@typescript-eslint/parser@8.70.1(eslint@10.11.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.11.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(@typescript-eslint/parser@8.70.1(eslint@10.11.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.11.0(supports-color@7.2.0)))(eslint@10.11.0(supports-color@7.2.0))(prettier@3.9.9))(eslint-plugin-simple-import-sort@14.0.0(eslint@10.11.0(supports-color@7.2.0)))(eslint@10.11.0(supports-color@7.2.0))(prettier@3.9.9)(supports-color@7.2.0):
     dependencies:
       '@eslint/eslintrc': 3.3.7(supports-color@7.2.0)
       '@eslint/js': 10.0.1(eslint@10.11.0(supports-color@7.2.0))
@@ -1944,7 +1944,7 @@ snapshots:
     dependencies:
       eslint: 10.11.0(supports-color@7.2.0)
 
-  eslint-plugin-functype@2.109.0(eslint@10.11.0(supports-color@7.2.0)):
+  eslint-plugin-functype@2.111.0(eslint@10.11.0(supports-color@7.2.0)):
     dependencies:
       eslint: 10.11.0(supports-color@7.2.0)
 
@@ -2073,11 +2073,11 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
-  functype-os@1.9.0(functype@1.9.0):
+  functype-os@1.9.0(functype@1.11.0):
     dependencies:
-      functype: 1.9.0
+      functype: 1.11.0
 
-  functype@1.9.0: {}
+  functype@1.11.0: {}
 
   get-tsconfig@5.0.0-beta.6:
     dependencies:
