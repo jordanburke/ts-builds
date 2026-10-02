@@ -4,7 +4,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
-import { Option } from "functype"
+import { Map, Option } from "functype"
 
 import {
   cleanDir,
@@ -86,8 +86,8 @@ describe("snapshotMtimes", () => {
       writeFileSync(join(dist, "rules", "x.js"), "b")
       const snap = await snapshotMtimes(dist)
       expect(snap.size).toBe(2)
-      expect(snap.has(join(dist, "index.js"))).toBe(true)
-      expect(snap.has(join(dist, "rules", "x.js"))).toBe(true)
+      expect(snap.get(join(dist, "index.js")).isSome()).toBe(true)
+      expect(snap.get(join(dist, "rules", "x.js")).isSome()).toBe(true)
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
@@ -127,7 +127,7 @@ describe("pruneOrphans", () => {
       const dist = join(dir, "dist")
       await mkdir(dist, { recursive: true })
       writeFileSync(join(dist, "index.js"), "a")
-      await pruneOrphans(dist, new Map())
+      await pruneOrphans(dist, Map.empty<string, number>())
       expect(existsSync(join(dist, "index.js"))).toBe(true)
     } finally {
       rmSync(dir, { recursive: true, force: true })

@@ -21,8 +21,8 @@ export async function cleanup(): Promise<void> {
   }
 
   const packageJson: PackageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"))
-  const devDeps = packageJson.devDependencies || {}
-  const deps = packageJson.dependencies || {}
+  const devDeps = packageJson.devDependencies ?? {}
+  const deps = packageJson.dependencies ?? {}
 
   const redundantDev = bundledPackages.filter((pkg): pkg is BundledPackage => pkg in devDeps)
   const redundantDeps = bundledPackages.filter((pkg): pkg is BundledPackage => pkg in deps)
