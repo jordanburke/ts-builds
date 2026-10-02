@@ -46,8 +46,11 @@ literals with functype's `Set` / `Map`. See the
 [eslint-plugin-functype README](https://www.npmjs.com/package/eslint-plugin-functype) for the
 boundary tools (`Wire<T>`, `@interop`, `invariant()`).
 
-**To downgrade a rule while you migrate**, add an override after the preset. This also suits
-tooling folders such as `scripts/` that do not depend on `functype`:
+**To downgrade a rule while you migrate**, add an override after the preset. In a tooling
+folder that cannot import `functype` (for example `scripts/` in a package with no `functype`
+dependency), downgrade only the two rules whose fix needs functype's `Map` / `Set`. Keep
+`no-let`, `no-imperative-loops` and `prefer-map` on there, because their fixes use plain
+`const` and native array methods:
 
 ```js
 import functype from "ts-builds/eslint-functype"
@@ -57,9 +60,8 @@ export default [
   {
     files: ["scripts/**"],
     rules: {
-      "functype/no-imperative-loops": "off",
-      "functype/prefer-functype-set": "off",
       "functype/prefer-functype-map": "off",
+      "functype/prefer-functype-set": "off",
     },
   },
 ]
