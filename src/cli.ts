@@ -84,7 +84,7 @@ switch (command) {
     process.exit(await runDoctor(subCommand === "--fix"))
     break
   case "changelog":
-    process.exit(await runChangelog(process.argv.slice(3)))
+    process.exit(runChangelog(process.argv.slice(3)))
     break
 
   case "init":
