@@ -6,6 +6,67 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+### Dependencies
+
+- raise the floors to `functype ^1.11.0`, `eslint-plugin-functype ^2.111.0` and `eslint-config-functype ^2.111.0`
+
+### Upgrade note: the functype ESLint preset is stricter
+
+This affects you only if you lint with `ts-builds/eslint-functype` (`eslint.config.functype.js`).
+That preset spreads `eslint-plugin-functype`'s `recommended` rules, so it carries whatever
+plugin version resolves. 2.111.0 already fell inside the old `^2.109.0` range, so a fresh
+install or lockfile update may have pulled it in before this release.
+
+Five rules moved from `warn` to `error` in `recommended`:
+
+- `functype/no-imperative-loops`
+- `functype/prefer-map`
+- `functype/prefer-fold`
+- `functype/prefer-functype-map`
+- `functype/prefer-functype-set`
+
+`functype/no-let` already errored. `prefer-option`, `prefer-either` and `prefer-try` still warn.
+
+Several defaults changed to cut false positives:
+
+- `prefer-fold` checks predicate calls only. Set `checkNullable: true` to also report plain null checks.
+- `prefer-map` no longer reports loops (`checkForLoops: false`), because `no-imperative-loops` covers them.
+- `prefer-functype-map` / `prefer-functype-set` skip a native `Map`/`Set` the code mutates on purpose (`allowMutable: true`).
+- `no-imperative-loops` skips `for await` loops and loops whose body `yield`s.
+- `prefer-option` skips `T | null` inside `useState` / `useRef` type arguments (`allowUseState: true`).
+
+The `@invariant` JSDoc tag from functype 1.10.0 is gone in 1.11.0, along with the
+`allowInvariantMarker` rule option. A config that still sets `allowInvariantMarker` now fails
+validation. Use `invariant(cond, msg)` from `functype` for bug checks instead, and
+`@interop <reason>` or `orThrow(builder)` where a host needs a throw.
+
+**How to fix:** replace push-only loops with `map` / `filter` / `flatMap`, index scans with
+`findIndex` / `find`, accumulator loops with `reduce` or `fold`, and lookup `Set` / `Map`
+literals with functype's `Set` / `Map`. See the
+[eslint-plugin-functype README](https://www.npmjs.com/package/eslint-plugin-functype) for the
+boundary tools (`Wire<T>`, `@interop`, `invariant()`).
+
+**To downgrade a rule while you migrate**, add an override after the preset. In a tooling
+folder that cannot import `functype` (for example `scripts/` in a package with no `functype`
+dependency), downgrade only the two rules whose fix needs functype's `Map` / `Set`. Keep
+`no-let`, `no-imperative-loops` and `prefer-map` on there, because their fixes use plain
+`const` and native array methods:
+
+```js
+import functype from "ts-builds/eslint-functype"
+
+export default [
+  ...functype,
+  {
+    files: ["scripts/**"],
+    rules: {
+      "functype/prefer-functype-map": "off",
+      "functype/prefer-functype-set": "off",
+    },
+  },
+]
+```
+
 ## 3.4.1 (2026-08-17)
 
 ### CI/CD
