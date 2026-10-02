@@ -1,17 +1,20 @@
+import type { Dirent } from "node:fs"
 import { existsSync, readFileSync } from "node:fs"
 import { readdir } from "node:fs/promises"
 import { isAbsolute, join } from "node:path"
+
+import { Set, Try } from "functype"
 
 import { targetDir } from "../config"
 import { LINT_REPORT_VERSION, type LintReport } from "../lint-report"
 
 /** node_modules is always skipped: huge, and never a workspace package itself. */
-const ALWAYS_SKIP = new Set(["node_modules"])
+const ALWAYS_SKIP = Set.of("node_modules")
 /** Skipped ONLY when the dir is not itself a package — a workspace package literally
  * named `lib`/`dist`/`coverage` must still be summarized, so we check for package.json.
  * (A publish-from-dist layout with a `package.json` inside `dist/` is therefore
  * traversed — harmless: the walk still only matches `.ts-builds/lint-report.json`.) */
-const SKIP_UNLESS_PACKAGE = new Set(["dist", "lib", "coverage"])
+const SKIP_UNLESS_PACKAGE = Set.of("dist", "lib", "coverage")
 
 /**
  * Recursively find every `.ts-builds/lint-report.json` under `root`.
@@ -23,27 +26,40 @@ const SKIP_UNLESS_PACKAGE = new Set(["dist", "lib", "coverage"])
  * false` and is skipped by the guard below (no cycles, no escaping the tree).
  */
 export async function findLintReports(root: string): Promise<string[]> {
-  const out: string[] = []
-  await walk(root, out)
-  return out.sort()
+  return (await walk(root)).sort()
 }
 
-async function walk(dir: string, out: string[]): Promise<void> {
+/** Visits entries one at a time, so a large tree never opens many handles at once. */
+async function walk(dir: string): Promise<string[]> {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue // skips files AND symlinks (see findLintReports)
-    if (entry.name === ".ts-builds") {
-      const report = join(dir, entry.name, "lint-report.json")
-      if (existsSync(report)) out.push(report)
-      continue
+  return entries.reduce<Promise<string[]>>(async (pending, entry) => {
+    const found = await pending
+    const target = classifyEntry(dir, entry)
+    switch (target.kind) {
+      case "report":
+        return [...found, target.path]
+      case "dir":
+        return [...found, ...(await walk(target.path))]
+      case "skip":
+        return found
     }
-    // Hidden dirs (.git, .idea, .cache) and node_modules are always skipped.
-    if (entry.name.startsWith(".") || ALWAYS_SKIP.has(entry.name)) continue
-    const sub = join(dir, entry.name)
-    // dist/lib/coverage are skipped unless they're actually a package.
-    if (SKIP_UNLESS_PACKAGE.has(entry.name) && !existsSync(join(sub, "package.json"))) continue
-    await walk(sub, out)
+  }, Promise.resolve([]))
+}
+
+type WalkTarget = { kind: "report"; path: string } | { kind: "dir"; path: string } | { kind: "skip" }
+
+function classifyEntry(dir: string, entry: Dirent): WalkTarget {
+  if (!entry.isDirectory()) return { kind: "skip" } // skips files AND symlinks (see findLintReports)
+  if (entry.name === ".ts-builds") {
+    const report = join(dir, entry.name, "lint-report.json")
+    return existsSync(report) ? { kind: "report", path: report } : { kind: "skip" }
   }
+  // Hidden dirs (.git, .idea, .cache) and node_modules are always skipped.
+  if (entry.name.startsWith(".") || ALWAYS_SKIP.has(entry.name)) return { kind: "skip" }
+  const sub = join(dir, entry.name)
+  // dist/lib/coverage are skipped unless they're actually a package.
+  if (SKIP_UNLESS_PACKAGE.has(entry.name) && !existsSync(join(sub, "package.json"))) return { kind: "skip" }
+  return { kind: "dir", path: sub }
 }
 
 export interface LintSummaryRow {
@@ -70,12 +86,7 @@ export interface LintSummaryTotals {
  * silently pass CI. Returns the typed report or null (caller counts nulls as invalid).
  */
 export function parseLintReport(raw: string): LintReport | null {
-  let obj: unknown
-  try {
-    obj = JSON.parse(raw)
-  } catch {
-    return null
-  }
+  const obj: unknown = Try((): unknown => JSON.parse(raw)).orElse(null)
   if (typeof obj !== "object" || obj === null) return null
   const r = obj as Record<string, unknown>
   const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v)
@@ -128,19 +139,13 @@ export function formatLintSummaryTable(totals: LintSummaryTotals): string {
 
   const label = (r: LintSummaryRow): string => (r.fatal ? `${r.package} (fatal)` : r.package)
   const header = `${"Package".padEnd(nameWidth)}  ${"Errors".padStart(numWidth)}  ${"Warnings".padStart(numWidth)}  ${"When (UTC)".padStart(timeWidth)}`
-  const lines = [header, "-".repeat(header.length)]
-
-  for (const r of rows) {
-    lines.push(
+  const separator = "-".repeat(header.length)
+  const body = rows.map(
+    (r) =>
       `${label(r).padEnd(nameWidth)}  ${String(r.errorCount).padStart(numWidth)}  ${String(r.warningCount).padStart(numWidth)}  ${shortTimestamp(r.timestamp).padStart(timeWidth)}`,
-    )
-  }
-
-  lines.push("-".repeat(header.length))
-  lines.push(
-    `${"Total".padEnd(nameWidth)}  ${String(totals.totalErrors).padStart(numWidth)}  ${String(totals.totalWarnings).padStart(numWidth)}  ${"".padStart(timeWidth)}`,
   )
-  return lines.join("\n")
+  const footer = `${"Total".padEnd(nameWidth)}  ${String(totals.totalErrors).padStart(numWidth)}  ${String(totals.totalWarnings).padStart(numWidth)}  ${"".padStart(timeWidth)}`
+  return [header, separator, ...body, separator, footer].join("\n")
 }
 
 /**
@@ -166,24 +171,16 @@ export async function runLintSummary(args: string[]): Promise<number> {
     return 1
   }
 
-  const reports: LintReport[] = []
-  let invalidCount = 0
-  for (const path of paths) {
-    // The read itself is in the invalid-counting path: a sidecar that vanished
-    // between the walk and here (or EACCES) counts as a failure, not a crash.
-    let report: LintReport | null
-    try {
-      report = parseLintReport(readFileSync(path, "utf-8"))
-    } catch {
-      report = null
-    }
-    if (report) {
-      reports.push(report)
-    } else {
-      invalidCount++
-      console.warn(`⚠  Unreadable or malformed lint report (counted as a failure): ${path}`)
-    }
-  }
+  // The read itself is in the invalid-counting path: a sidecar that vanished
+  // between the walk and here (or EACCES) counts as a failure, not a crash.
+  const read = paths.map((path) => ({
+    path,
+    report: Try(() => parseLintReport(readFileSync(path, "utf-8"))).orElse(null),
+  }))
+  const reports = read.flatMap(({ report }) => (report ? [report] : []))
+  const invalid = read.filter(({ report }) => !report)
+  invalid.forEach(({ path }) => console.warn(`⚠  Unreadable or malformed lint report (counted as a failure): ${path}`))
+  const invalidCount = invalid.length
 
   const totals = aggregateLintReports(reports, invalidCount)
   if (reports.length > 0) {
