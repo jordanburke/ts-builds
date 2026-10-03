@@ -187,7 +187,31 @@ function checkPeerDeps(pkg: PackageJson): List<CheckResult> {
   )
 }
 
-export async function runDoctor(fix = false): Promise<number> {
+const severityGlyph: Record<Severity, string> = { error: "x", warning: "!", info: "+" }
+
+function printSection(section: { name: string; results: List<CheckResult> }): void {
+  if (section.results.isEmpty) return
+  console.log(`Checking ${section.name}...`)
+  section.results.forEach((result) => console.log(`  ${severityGlyph[result.severity]} ${result.message}`))
+  console.log()
+}
+
+/** Runs `doctor --fix`'s pnpm 11 migration, prints what it did, and returns its error count. */
+function applyPnpm11Migration(): number {
+  const migration = migratePnpm11()
+  console.log("\nApplying pnpm 11 migration...")
+  if (migration.actions.length === 0) {
+    console.log("  + Nothing to migrate")
+  }
+  migration.actions.forEach((action) => {
+    const glyph = action.kind === "migrated" || action.kind === "removed" ? "+" : "!"
+    console.log(`  ${glyph} ${action.message}`)
+  })
+  console.log()
+  return migration.errors
+}
+
+export function runDoctor(fix = false): number {
   const packageJsonPath = join(targetDir, "package.json")
 
   return Fs.readFileSync(packageJsonPath).fold(
@@ -210,50 +234,14 @@ export async function runDoctor(fix = false): Promise<number> {
         { name: "pnpm 11 readiness", results: detectPnpm11Issues() },
       ])
 
-      let errors = 0
-      let warnings = 0
-      let passed = 0
+      sections.forEach(printSection)
 
-      for (const section of sections) {
-        if (section.results.isEmpty) continue
+      const results = sections.flatMap((section) => section.results)
+      const count = (severity: Severity): number => results.filter((r) => r.severity === severity).size
+      const errors = count("error")
+      console.log(`Summary: ${errors} error(s), ${count("warning")} warning(s), ${count("info")} passed`)
 
-        console.log(`Checking ${section.name}...`)
-        for (const result of section.results) {
-          switch (result.severity) {
-            case "error":
-              console.log(`  x ${result.message}`)
-              errors++
-              break
-            case "warning":
-              console.log(`  ! ${result.message}`)
-              warnings++
-              break
-            case "info":
-              console.log(`  + ${result.message}`)
-              passed++
-              break
-          }
-        }
-        console.log()
-      }
-
-      console.log(`Summary: ${errors} error(s), ${warnings} warning(s), ${passed} passed`)
-
-      let migrationErrors = 0
-      if (fix) {
-        const migration = migratePnpm11()
-        console.log("\nApplying pnpm 11 migration...")
-        if (migration.actions.length === 0) {
-          console.log("  + Nothing to migrate")
-        } else {
-          for (const action of migration.actions) {
-            const glyph = action.kind === "migrated" || action.kind === "removed" ? "+" : "!"
-            console.log(`  ${glyph} ${action.message}`)
-          }
-        }
-        migrationErrors = migration.errors
-        console.log()
-      }
+      const migrationErrors = fix ? applyPnpm11Migration() : 0
 
       return errors + migrationErrors > 0 ? 1 : 0
     },

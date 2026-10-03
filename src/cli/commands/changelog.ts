@@ -134,7 +134,7 @@ function groupCommits(
 
   const byType = filtered.filter((c) => typeMap[c.type] !== undefined).groupBy((c) => typeMap[c.type])
 
-  const sectionOrder = List([...new Set(Object.values(typeMap))])
+  const sectionOrder = List(Object.values(typeMap)).distinct()
   const sections = sectionOrder
     .filter((title) => byType.has(title))
     .map((title) => ({ title, commits: byType.get(title) ?? List.empty<ParsedCommit>() }))
@@ -166,69 +166,62 @@ function formatCommitLine(commit: ParsedCommit, repoUrl: Option<string>): string
   return `- ${scope}${commit.description} ${hashLink}${issueRef}`
 }
 
-function formatMarkdown(grouped: GroupedChangelog, repoUrl: Option<string>, version: Option<string>): string {
-  const lines: string[] = []
-  const date = new Date().toISOString().split("T")[0]
-
-  lines.push(
-    version.fold(
-      () => `## Unreleased (${date})`,
-      (v) => `## ${v} (${date})`,
-    ),
-  )
-  lines.push("")
-
-  if (!grouped.breaking.isEmpty) {
-    lines.push("### BREAKING CHANGES")
-    lines.push("")
-    for (const commit of grouped.breaking) {
-      lines.push(formatCommitLine(commit, repoUrl))
-    }
-    lines.push("")
-  }
-
-  for (const section of grouped.sections) {
-    lines.push(`### ${section.title}`)
-    lines.push("")
-    for (const commit of section.commits) {
-      lines.push(formatCommitLine(commit, repoUrl))
-    }
-    lines.push("")
-  }
-
-  return lines.join("\n")
+function formatSection(title: string, commits: List<ParsedCommit>, repoUrl: Option<string>): string[] {
+  return [`### ${title}`, "", ...commits.toArray().map((commit) => formatCommitLine(commit, repoUrl)), ""]
 }
 
-export async function runChangelog(args: string[]): Promise<number> {
+function formatMarkdown(grouped: GroupedChangelog, repoUrl: Option<string>, version: Option<string>): string {
+  const date = new Date().toISOString().split("T")[0]
+  const heading = version.fold(
+    () => `## Unreleased (${date})`,
+    (v) => `## ${v} (${date})`,
+  )
+  const breaking = grouped.breaking.isEmpty ? [] : formatSection("BREAKING CHANGES", grouped.breaking, repoUrl)
+  const sections = grouped.sections.flatMap((section) => formatSection(section.title, section.commits, repoUrl))
+
+  return [heading, "", ...breaking, ...sections].join("\n")
+}
+
+type ChangelogArgs = {
+  since: Option<string>
+  sinceExplicit: boolean
+  output: Option<string>
+  version: Option<string>
+}
+
+const noArgs: ChangelogArgs = {
+  since: Option.none(),
+  sinceExplicit: false,
+  output: Option.none(),
+  version: Option.none(),
+}
+
+/** Each flag consumes the argument after it; unknown arguments are skipped. */
+function parseChangelogArgs(args: string[], parsed: ChangelogArgs = noArgs): ChangelogArgs {
+  const [flag, value] = args
+  switch (flag) {
+    case undefined:
+      return parsed
+    case "--since":
+      return parseChangelogArgs(args.slice(2), { ...parsed, since: Option(value), sinceExplicit: true })
+    case "--output":
+      return parseChangelogArgs(args.slice(2), { ...parsed, output: Option(value) })
+    case "--version":
+      return parseChangelogArgs(args.slice(2), { ...parsed, version: Option(value) })
+    default:
+      return parseChangelogArgs(args.slice(1), parsed)
+  }
+}
+
+export function runChangelog(args: string[]): number {
   const config = loadConfig()
   const changelogConfig: ChangelogConfig = config.changelog
 
   const typeMap = { ...defaultTypeMap, ...changelogConfig.types }
   const exclude = changelogConfig.exclude ? List(changelogConfig.exclude) : defaultExclude
 
-  let since: Option<string> = Option.none()
-  let output: Option<string> = Option.none()
-  let version: Option<string> = Option.none()
-  let sinceExplicit = false
-
-  for (let i = 0; i < args.length; i++) {
-    switch (args[i]) {
-      case "--since":
-        since = Option(args[++i])
-        sinceExplicit = true
-        break
-      case "--output":
-        output = Option(args[++i])
-        break
-      case "--version":
-        version = Option(args[++i])
-        break
-    }
-  }
-
-  if (!sinceExplicit) {
-    since = getLastTag()
-  }
+  const { output, version, ...parsedSince } = parseChangelogArgs(args)
+  const since = parsedSince.sinceExplicit ? parsedSince.since : getLastTag()
 
   const rawCommits = getCommitsSince(since)
 

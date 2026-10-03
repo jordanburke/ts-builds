@@ -90,25 +90,25 @@ export const defaultChains: Record<string, string[]> = {
   validate: ["format", "lint", "typecheck", "test", "build"],
 }
 
+function readUserConfig(configPath: string): TsBuildsConfig {
+  if (!existsSync(configPath)) return {}
+  try {
+    return JSON.parse(readFileSync(configPath, "utf-8"))
+  } catch {
+    console.error("Warning: Failed to parse ts-builds.config.json, using defaults")
+    return {}
+  }
+}
+
 export function loadConfig(): ResolvedConfig {
-  const configPath = join(targetDir, "ts-builds.config.json")
-  let userConfig: TsBuildsConfig = {}
+  const userConfig = readUserConfig(join(targetDir, "ts-builds.config.json"))
 
-  if (existsSync(configPath)) {
-    try {
-      userConfig = JSON.parse(readFileSync(configPath, "utf-8"))
-    } catch {
-      console.error("Warning: Failed to parse ts-builds.config.json, using defaults")
-    }
-  }
-
-  const commands: Record<string, CommandDef> = {}
-  if (userConfig.commands) {
-    for (const [name, cmd] of Object.entries(userConfig.commands)) {
-      const normalized = typeof cmd === "string" ? { run: cmd } : cmd
-      commands[name] = normalized
-    }
-  }
+  const commands: Record<string, CommandDef> = Object.fromEntries(
+    Object.entries(userConfig.commands ?? {}).map(([name, cmd]) => [
+      name,
+      typeof cmd === "string" ? { run: cmd } : cmd,
+    ]),
+  )
 
   const chains: Record<string, string[]> = { ...defaultChains }
   if (userConfig.validateChain) {

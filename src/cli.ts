@@ -78,13 +78,13 @@ switch (command) {
 
   // Analysis commands
   case "size":
-    process.exit(await runSize(process.argv.slice(3)))
+    process.exit(runSize(process.argv.slice(3)))
     break
   case "doctor":
-    process.exit(await runDoctor(subCommand === "--fix"))
+    process.exit(runDoctor(subCommand === "--fix"))
     break
   case "changelog":
-    process.exit(await runChangelog(process.argv.slice(3)))
+    process.exit(runChangelog(process.argv.slice(3)))
     break
 
   case "init":

@@ -63,14 +63,14 @@ export function runShellCommand(shellCmd: string, options: RunOptions = {}): Pro
 }
 
 export async function runSequence(commands: Array<{ name: string; cmd: string; args: string[] }>): Promise<number> {
-  for (const { name, cmd, args } of commands) {
-    console.log(`\n▶ Running ${name}...`)
-    const code = await runCommand(cmd, args)
-    if (code !== 0) {
-      console.error(`\n✗ ${name} failed with exit code ${code}`)
-      return code
-    }
-    console.log(`✓ ${name} complete`)
+  const [first, ...rest] = commands
+  if (!first) return 0
+  console.log(`\n▶ Running ${first.name}...`)
+  const code = await runCommand(first.cmd, first.args)
+  if (code !== 0) {
+    console.error(`\n✗ ${first.name} failed with exit code ${code}`)
+    return code
   }
-  return 0
+  console.log(`✓ ${first.name} complete`)
+  return runSequence(rest)
 }

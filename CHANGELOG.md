@@ -45,6 +45,12 @@ code 1 instead of running. It has printed a deprecation warning since 2.8.0. Com
 the `validate:` prefix, and `validate:*` commands whose `cwd` stays inside the package, are
 unaffected. Use Turbo, nx or `pnpm -r` for cross-package validation.
 
+### Bug Fixes
+
+- **chains**: a chain reached from two branches of another chain (for example
+  `validate: ["a", "b"]` where both `a` and `b` include `shared`) now runs. It was reported
+  as `Circular chain reference detected` and failed. Real cycles are still caught.
+
 ### Dependencies
 
 - raise the floors to `functype ^1.11.0`, `eslint-plugin-functype ^2.111.0` and `eslint-config-functype ^2.111.0`

@@ -124,6 +124,22 @@ describe("runChain references", () => {
     expect(code).toBe(1)
   })
 
+  it("runs a chain shared by two branches instead of reporting it as circular", async () => {
+    const shared = join(tempDir, "shared.touched")
+    const config = baseConfig({
+      commands: { "shared-cmd": { run: touchCommand(shared) } },
+      chains: {
+        top: ["left", "right"],
+        left: ["shared"],
+        right: ["shared"],
+        shared: ["shared-cmd"],
+      },
+    })
+    const code = await runChain("top", config)
+    expect(code).toBe(0)
+    expect(existsSync(shared)).toBe(true)
+  })
+
   it("returns 1 when the named chain does not exist", async () => {
     const config = baseConfig({ chains: {}, commands: {} })
     const code = await runChain("nonexistent", config)

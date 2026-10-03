@@ -3,14 +3,14 @@ import { readdir, rm, stat } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { List, Option } from "functype"
+import { List, Map, Option, Set } from "functype"
 import { Fs } from "functype-os"
 
 import { loadConfig, targetDir } from "../config"
 import { buildLintReport, fatalLintReport, readPackageName, writeLintReport } from "../lint-report"
 import { runCommand } from "../process"
 
-const TRANSIENT_RM_ERRORS = new Set(["EBUSY", "EPERM", "ENOTEMPTY", "EMFILE"])
+const TRANSIENT_RM_ERRORS = Set.of("EBUSY", "EPERM", "ENOTEMPTY", "EMFILE")
 const RETRY_DELAYS_MS = [100, 250, 500, 1000]
 
 /**
@@ -24,23 +24,24 @@ const RETRY_DELAYS_MS = [100, 250, 500, 1000]
  * Returns 0 on success (including when the directory didn't exist),
  * 1 if every retry failed.
  */
-export async function cleanDir(absPath: string): Promise<number> {
-  const attempts = RETRY_DELAYS_MS.length + 1
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    try {
-      await rm(absPath, { recursive: true, force: true })
-      return 0
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code ?? ""
-      const isLastAttempt = attempt === attempts - 1
-      if (!TRANSIENT_RM_ERRORS.has(code) || isLastAttempt) {
-        console.error(`Failed to clean ${absPath}: ${(err as Error).message}`)
-        return 1
-      }
-      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]))
+export function cleanDir(absPath: string): Promise<number> {
+  return removeWithRetry(absPath, 0)
+}
+
+async function removeWithRetry(absPath: string, attempt: number): Promise<number> {
+  try {
+    await rm(absPath, { recursive: true, force: true })
+    return 0
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code ?? ""
+    const delay = RETRY_DELAYS_MS[attempt]
+    if (!TRANSIENT_RM_ERRORS.has(code) || delay === undefined) {
+      console.error(`Failed to clean ${absPath}: ${(err as Error).message}`)
+      return 1
     }
+    await new Promise((r) => setTimeout(r, delay))
+    return removeWithRetry(absPath, attempt + 1)
   }
-  return 1
 }
 
 async function cleanDist(): Promise<number> {
@@ -304,20 +305,25 @@ export async function runTest(mode: "run" | "watch" | "coverage" | "ui" = "run")
  * map when `dir` doesn't exist. Best-effort: unreadable entries are skipped.
  */
 export async function snapshotMtimes(dir: string): Promise<Map<string, number>> {
-  const out = new Map<string, number>()
+  return Map(await collectMtimes(dir))
+}
+
+/** Walks `dir` one entry at a time, so a large tree never opens many handles at once. */
+async function collectMtimes(dir: string): Promise<Array<[string, number]>> {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
-  for (const entry of entries) {
+  return entries.reduce<Promise<Array<[string, number]>>>(async (pending, entry) => {
+    const acc = await pending
     const path = join(dir, entry.name)
-    if (entry.isDirectory()) {
-      for (const [p, m] of await snapshotMtimes(path)) out.set(p, m)
-    } else {
-      const mtime = await stat(path)
-        .then((s) => s.mtimeMs)
-        .catch(() => undefined)
-      if (mtime !== undefined) out.set(path, mtime)
-    }
-  }
-  return out
+    if (entry.isDirectory()) return [...acc, ...(await collectMtimes(path))]
+    const mtime = await statMtime(path)
+    return mtime === undefined ? acc : [...acc, [path, mtime]]
+  }, Promise.resolve([]))
+}
+
+function statMtime(path: string): Promise<number | undefined> {
+  return stat(path)
+    .then((s) => s.mtimeMs)
+    .catch(() => undefined)
 }
 
 /**
@@ -335,14 +341,10 @@ export async function snapshotMtimes(dir: string): Promise<Map<string, number>> 
  * the build.
  */
 export async function pruneOrphans(distDir: string, before: Map<string, number>): Promise<void> {
-  for (const [path, mtimeBefore] of before) {
-    const mtimeNow = await stat(path)
-      .then((s) => s.mtimeMs)
-      .catch(() => undefined)
-    if (mtimeNow === mtimeBefore) {
-      await rm(path, { force: true }).catch(() => undefined)
-    }
-  }
+  await [...before].reduce<Promise<void>>(async (pending, [path, mtimeBefore]) => {
+    await pending
+    if ((await statMtime(path)) === mtimeBefore) await rm(path, { force: true }).catch(() => undefined)
+  }, Promise.resolve())
 }
 
 /**

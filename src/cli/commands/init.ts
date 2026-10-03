@@ -10,7 +10,7 @@ import { targetDir } from "../config"
 const hoistPatterns = ["*eslint*", "*prettier*", "*vitest*", "typescript", "globals"]
 
 function renderHoistBlock(): string {
-  return "publicHoistPattern:\n" + hoistPatterns.map((p) => `  - "${p}"`).join("\n") + "\n"
+  return `publicHoistPattern:\n${hoistPatterns.map((p) => `  - "${p}"`).join("\n")}\n`
 }
 
 export function ensureWorkspaceHoistPatterns(): void {
@@ -54,7 +54,7 @@ export function createConfig(force = false): void {
     validateChain: ["format", "lint", "typecheck", "test", "build"],
   }
 
-  writeFileSync(configPath, JSON.stringify(defaultConfig, null, 2) + "\n")
+  writeFileSync(configPath, `${JSON.stringify(defaultConfig, null, 2)}\n`)
   console.log("✓ Created ts-builds.config.json")
   console.log(`
 Configuration options:
