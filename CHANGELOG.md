@@ -6,7 +6,9 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
-### ⚠ Breaking changes (4.0.0)
+## 4.0.0 (2026-10-03)
+
+### ⚠ Breaking changes
 
 #### Bundled vitest moves to 5
 
