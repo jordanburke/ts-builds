@@ -40,10 +40,10 @@ importers:
         version: 14.0.0(eslint@10.12.0(supports-color@7.2.0))
       functype:
         specifier: ^1.11.0
-        version: 1.11.0
+        version: 1.11.1
       functype-os:
         specifier: ^1.9.0
-        version: 1.9.0(functype@1.11.0)
+        version: 1.9.0(functype@1.11.1)
       globals:
         specifier: ^17.12.0
         version: 17.12.0
@@ -860,8 +860,8 @@ packages:
     peerDependencies:
       functype: '>=0.60.0'
 
-  functype@1.11.0:
-    resolution: {integrity: sha512-lP5YushPFsxm45yJDW8ZCBw4/DdkNJqGyGTrg6RZNIZpVRsvFxdXEZnPIq0EYPDYQdfnTweUnU+oJphe6wJHMQ==}
+  functype@1.11.1:
+    resolution: {integrity: sha512-BDfkgZ7A0hEbK6OqdLjrWsKa62VdQytkxrhhxk0ajUyDNiJ9k+ncvh+9zqiP0Xq25PRDH4RZU/3XiLImup6ZpA==}
     hasBin: true
 
   get-tsconfig@5.0.0-beta.6:
@@ -2097,11 +2097,11 @@ snapshots:
   fsevents@2.3.3:
     optional: true
 
-  functype-os@1.9.0(functype@1.11.0):
+  functype-os@1.9.0(functype@1.11.1):
     dependencies:
-      functype: 1.11.0
+      functype: 1.11.1
 
-  functype@1.11.0: {}
+  functype@1.11.1: {}
 
   get-tsconfig@5.0.0-beta.6:
     dependencies:
