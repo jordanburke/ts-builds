@@ -25,13 +25,13 @@ importers:
         version: 10.12.0(supports-color@7.2.0)
       eslint-config-functype:
         specifier: ^2.111.0
-        version: 2.111.1(@typescript-eslint/eslint-plugin@8.71.0(@typescript-eslint/parser@8.71.0(eslint@10.12.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.12.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(@typescript-eslint/parser@8.71.0(eslint@10.12.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.12.0(supports-color@7.2.0)))(eslint@10.12.0(supports-color@7.2.0))(prettier@3.9.9))(eslint-plugin-simple-import-sort@14.0.0(eslint@10.12.0(supports-color@7.2.0)))(eslint@10.12.0(supports-color@7.2.0))(prettier@3.9.9)(supports-color@7.2.0)
+        version: 2.115.0(@typescript-eslint/eslint-plugin@8.71.0(@typescript-eslint/parser@8.71.0(eslint@10.12.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.12.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(@typescript-eslint/parser@8.71.0(eslint@10.12.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.12.0(supports-color@7.2.0)))(eslint@10.12.0(supports-color@7.2.0))(prettier@3.9.9))(eslint-plugin-simple-import-sort@14.0.0(eslint@10.12.0(supports-color@7.2.0)))(eslint@10.12.0(supports-color@7.2.0))(prettier@3.9.9)(supports-color@7.2.0)
       eslint-config-prettier:
         specifier: ^10.1.8
         version: 10.1.8(eslint@10.12.0(supports-color@7.2.0))
       eslint-plugin-functype:
         specifier: ^2.111.0
-        version: 2.111.1(eslint@10.12.0(supports-color@7.2.0))
+        version: 2.115.0(eslint@10.12.0(supports-color@7.2.0))
       eslint-plugin-prettier:
         specifier: ^5.5.6
         version: 5.5.6(eslint-config-prettier@10.1.8(eslint@10.12.0(supports-color@7.2.0)))(eslint@10.12.0(supports-color@7.2.0))(prettier@3.9.9)
@@ -711,8 +711,8 @@ packages:
     resolution: {integrity: sha512-TtpcNJ3XAzx3Gq8sWRzJaVajRs0uVxA2YAkdb1jm2YkPz4G6egUFAyA3n5vtEIZefPk5Wa4UXbKuS5fKkJWdgA==}
     engines: {node: '>=10'}
 
-  eslint-config-functype@2.111.1:
-    resolution: {integrity: sha512-MS7aoVFHAnTWUbVlITEQ+4lmdVxAmLWhWW9Rj73UMCMICUDzSpPg91soZtgiEPXzAx6a783mQieaTxj5d9EJaQ==}
+  eslint-config-functype@2.115.0:
+    resolution: {integrity: sha512-7ZKKdxT52YBbOtkd14y8srm5nTPbdAOOo6QPywHW19aaYdSrdy+XUSbyMg04H7q+ja92cmnO5CoA0eSGrC9r5Q==}
     engines: {node: '>=20.20.0'}
     hasBin: true
     peerDependencies:
@@ -729,8 +729,8 @@ packages:
     peerDependencies:
       eslint: '>=7.0.0'
 
-  eslint-plugin-functype@2.111.1:
-    resolution: {integrity: sha512-cbOFJe0V3AlYtIBkL774nl3QJxvZxYVkG/iV/WhZoLNSYCBwt48r37nieko86hcpEUTIbzTQWFycUk8GVCsAog==}
+  eslint-plugin-functype@2.115.0:
+    resolution: {integrity: sha512-hoqUkP/qvbXpRai/+LEJzr40XpUB16PCfnW07sF+MDWuTFV8cl4RCu1EjLYZbqsYilmp00XjydoJ1uJXraMDCw==}
     engines: {node: '>=20.20.0'}
     hasBin: true
     peerDependencies:
@@ -1951,7 +1951,7 @@ snapshots:
 
   escape-string-regexp@4.0.0: {}
 
-  eslint-config-functype@2.111.1(@typescript-eslint/eslint-plugin@8.71.0(@typescript-eslint/parser@8.71.0(eslint@10.12.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.12.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(@typescript-eslint/parser@8.71.0(eslint@10.12.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.12.0(supports-color@7.2.0)))(eslint@10.12.0(supports-color@7.2.0))(prettier@3.9.9))(eslint-plugin-simple-import-sort@14.0.0(eslint@10.12.0(supports-color@7.2.0)))(eslint@10.12.0(supports-color@7.2.0))(prettier@3.9.9)(supports-color@7.2.0):
+  eslint-config-functype@2.115.0(@typescript-eslint/eslint-plugin@8.71.0(@typescript-eslint/parser@8.71.0(eslint@10.12.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.12.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(@typescript-eslint/parser@8.71.0(eslint@10.12.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint-plugin-prettier@5.5.6(eslint-config-prettier@10.1.8(eslint@10.12.0(supports-color@7.2.0)))(eslint@10.12.0(supports-color@7.2.0))(prettier@3.9.9))(eslint-plugin-simple-import-sort@14.0.0(eslint@10.12.0(supports-color@7.2.0)))(eslint@10.12.0(supports-color@7.2.0))(prettier@3.9.9)(supports-color@7.2.0):
     dependencies:
       '@eslint/eslintrc': 3.3.7(supports-color@7.2.0)
       '@eslint/js': 10.0.1(eslint@10.12.0(supports-color@7.2.0))
@@ -1968,7 +1968,7 @@ snapshots:
     dependencies:
       eslint: 10.12.0(supports-color@7.2.0)
 
-  eslint-plugin-functype@2.111.1(eslint@10.12.0(supports-color@7.2.0)):
+  eslint-plugin-functype@2.115.0(eslint@10.12.0(supports-color@7.2.0)):
     dependencies:
       eslint: 10.12.0(supports-color@7.2.0)
 
