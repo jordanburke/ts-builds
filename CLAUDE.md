@@ -278,11 +278,19 @@ keys are reported for manual migration rather than altered.
 `doctor` also surfaces the two pnpm 11 supply-chain settings that need judgment:
 
 - **`minimumReleaseAge` violations** — a `minimumReleaseAge` check shells out to a
-  side-effect-free `pnpm install --resolution-only` probe (the lockfile is
-  snapshotted and restored, so `doctor` never rewrites it; if pnpm is absent the
-  probe degrades quietly) and reports the real error `ERR_PNPM_NO_MATURE_MATCHING_VERSION`.
-  Each flagged `pkg@version` is surfaced with a suggested `minimumReleaseAgeExclude`
-  line. `--fix` appends/merges those entries into `pnpm-workspace.yaml` — pinned
+  `pnpm install --lockfile-only` probe (works on pnpm 11 and 12; pnpm 12 removed the
+  `--resolution-only` flag used before 4.0.2). pnpm rewrites `pnpm-lock.yaml` during
+  the probe and, in its default lenient mode, writes the violating packages into
+  `pnpm-workspace.yaml` itself, so the probe snapshots both files — in the package
+  and at the workspace root — and restores them byte-for-byte; `doctor` never leaves
+  either changed. The parser reads both of pnpm's output shapes: the strict-mode
+  `<pkg>@<ver> was published ... minimumReleaseAge` lines (which pnpm 12 word-wraps,
+  so whitespace is collapsed first) and the lenient-mode list headed
+  `Added N entries to minimumReleaseAgeExclude`. If pnpm is absent the probe degrades
+  quietly; if pnpm fails without reporting a violation, `doctor` warns that the check
+  could not run rather than reporting ready. Each flagged `pkg@version` is surfaced
+  with a suggested `minimumReleaseAgeExclude` line. `--fix` appends/merges those
+  entries into `pnpm-workspace.yaml` — pinned
   `pkg@version` for third-party deps with no aged-enough alternative, bare names for
   first-party libs (`ts-builds`, `functype`, `functype-*`).
 - **`allowBuilds` gaps** — a static check (no install) compares a curated known-safe
