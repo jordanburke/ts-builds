@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { delimiter, join } from "node:path"
 
 import { describe, expect, it } from "vitest"
 
@@ -110,7 +110,7 @@ describe("detectPnpm11Issues", () => {
     }
   })
 
-  it("degrades quietly on an unrelated probe failure (no false warning, no crash)", () => {
+  it("warns that the check could not run when pnpm fails without reporting a violation", () => {
     const dir = tmp()
     try {
       writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
@@ -120,8 +120,66 @@ describe("detectPnpm11Issues", () => {
         status: 1,
       })
       const results = detectPnpm11Issues(dir, probe).toArray()
-      expect(results.some((r) => r.message.includes("minimumReleaseAge"))).toBe(false)
-      // Existing detection still works: with no .npmrc / pnpm field this stays "ready".
+      expect(results).toHaveLength(1)
+      expect(results[0].severity).toBe("warning")
+      expect(results[0].message).toBe(
+        "Could not check minimumReleaseAge: `pnpm install --lockfile-only` exited 1: " +
+          "[ERR_PNPM_FETCH_404] GET https://registry.npmjs.org/nope: Not Found",
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("does not report ready when pnpm rejects the probe's own flags (#206)", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      // Real pnpm 12.15.0 output for the `--resolution-only` flag it removed.
+      const probe: PnpmReleaseAgeProbe = () => ({
+        stdout: "",
+        stderr:
+          "error: unexpected argument '--resolution-only' found\n\n" +
+          "  tip: a similar argument exists: '--production'\n\n" +
+          "Usage: pnpm install --prod\n\nFor more information, try '--help'.\n",
+        status: 2,
+      })
+      const results = detectPnpm11Issues(dir, probe).toArray()
+      expect(results.some((r) => r.message === "pnpm 11 ready")).toBe(false)
+      expect(results).toHaveLength(1)
+      expect(results[0].severity).toBe("warning")
+      expect(results[0].message).toContain("exited 2: error: unexpected argument '--resolution-only' found")
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("names the pnpm error line, not pnpm 11's leading workspace Scope line", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      const probe: PnpmReleaseAgeProbe = () => ({
+        stdout:
+          "Scope: all 2 workspace projects\n[ERR_PNPM_FETCH_404] GET https://registry.npmjs.org/nope: Not Found\n",
+        stderr: "",
+        status: 1,
+      })
+      const [result] = detectPnpm11Issues(dir, probe).toArray()
+      expect(result.message).toBe(
+        "Could not check minimumReleaseAge: `pnpm install --lockfile-only` exited 1: " +
+          "[ERR_PNPM_FETCH_404] GET https://registry.npmjs.org/nope: Not Found",
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("stays quiet when pnpm is not installed (probe status -1)", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      const probe: PnpmReleaseAgeProbe = () => ({ stdout: "", stderr: "", status: -1 })
+      const results = detectPnpm11Issues(dir, probe).toArray()
       expect(results).toHaveLength(1)
       expect(results[0].severity).toBe("info")
     } finally {
@@ -159,6 +217,75 @@ describe("parseReleaseAgeViolations", () => {
     // not the header code, so a future pnpm code/format tweak still parses.
     const stderr = "[ERR_PNPM_SOME_FUTURE_CODE] foo@2.1.0 was published within the minimumReleaseAge cutoff\n"
     expect(parseReleaseAgeViolations("", stderr)).toEqual(["foo@2.1.0"])
+  })
+
+  it("extracts a violation from real pnpm 12 strict-mode stderr, which word-wraps it", () => {
+    // Captured from pnpm 12.15.0 with `minimumReleaseAgeStrict: true`: the violation
+    // is split across two lines, between "within the" and "minimumReleaseAge".
+    const stderr =
+      "Error: ERR_PNPM_NO_MATURE_MATCHING_VERSION\n\n" +
+      "  × installing dependencies\n" +
+      "  ╰─▶ 1 version does not meet the minimumReleaseAge constraint:\n" +
+      "        tsdown@0.23.2 was published at 2026-10-23T12:50:53.747Z, within the\n" +
+      "      minimumReleaseAge cutoff (2026-10-22T21:31:09.103Z)\n" +
+      "  help: Run the install interactively to approve these picks, add them to\n" +
+      "        minimumReleaseAgeExclude in pnpm-workspace.yaml, or wait for the\n" +
+      "        packages to mature.\n"
+    expect(parseReleaseAgeViolations("", stderr)).toEqual(["tsdown@0.23.2"])
+  })
+
+  it("extracts the entries pnpm auto-excludes in lenient (default) mode", () => {
+    // Captured from pnpm 11.27.0 and 12.15.0 (identical apart from the leading
+    // blank line): the install succeeds and pnpm writes the entry itself.
+    const stdout =
+      "\nAdded 1 entry to minimumReleaseAgeExclude in pnpm-workspace.yaml " +
+      "(set minimumReleaseAgeStrict to true to gate these updates with a prompt):\n" +
+      "  tsdown@0.23.2\n" +
+      "Done in 368ms using pnpm v11.27.0\n"
+    expect(parseReleaseAgeViolations(stdout, "")).toEqual(["tsdown@0.23.2"])
+  })
+
+  it("extracts several lenient-mode entries, scoped ones included, and stops at the block's end", () => {
+    const stdout =
+      "Added 2 entries to minimumReleaseAgeExclude in pnpm-workspace.yaml (...):\n" +
+      "  @types/node@26.6.6\n" +
+      "  tsdown@0.23.2\n" +
+      "Done in 25ms using pnpm v12.15.0\n" +
+      "  unrelated@1.0.0\n"
+    expect(parseReleaseAgeViolations(stdout, "")).toEqual(["@types/node@26.6.6", "tsdown@0.23.2"])
+  })
+
+  it("extracts a too-new version already pinned in the lockfile, from real pnpm 11 stdout", () => {
+    // Captured from pnpm 11.27.0 with a cold lockfile-verification cache.
+    const stdout =
+      "✗ Lockfile failed supply-chain policy check (55 entries in 5.8s)\n" +
+      "[ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION] 1 lockfile entries failed verification:\n" +
+      "  tsdown@0.23.2 was published at 2026-10-23T12:46:44.000Z, within the minimumReleaseAge cutoff (2026-10-22T21:55:07.792Z)\n" +
+      "\nThe lockfile contains entries that the active policies reject.\n"
+    expect(parseReleaseAgeViolations(stdout, "")).toEqual(["tsdown@0.23.2"])
+  })
+
+  it("extracts a too-new version already pinned in the lockfile, from real pnpm 12 stderr", () => {
+    // Captured from pnpm 12.15.0 with a cold lockfile-verification cache; wrapped.
+    const stderr =
+      "Error: ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION\n\n" +
+      "  × installing dependencies\n" +
+      "  ╰─▶ 1 lockfile entries failed verification:\n" +
+      "        tsdown@0.23.2 was published at 2026-10-23T12:46:44.000Z, within the\n" +
+      "      minimumReleaseAge cutoff (2026-10-22T21:55:15.182Z)\n" +
+      "  help: The lockfile contains entries that the active policies reject. This\n" +
+      "        can mean the lockfile is stale, or that someone committed a lockfile\n" +
+      "        that bypassed the policy locally — inspect recent changes to pnpm-\n" +
+      "        lock.yaml before trusting it.\n"
+    expect(parseReleaseAgeViolations("", stderr)).toEqual(["tsdown@0.23.2"])
+  })
+
+  it("does not pair an unrelated 'was published' with a later mention of minimumReleaseAge", () => {
+    // Whitespace is collapsed before matching, so the pattern must stay tight.
+    const stdout =
+      "WARN deprecated foo@1.0.0: was published by mistake, use bar instead\n" +
+      "Hint: see minimumReleaseAge in pnpm-workspace.yaml\n"
+    expect(parseReleaseAgeViolations(stdout, "")).toEqual([])
   })
 
   it("returns no violations for unrelated error output", () => {
@@ -581,6 +708,27 @@ describe("migratePnpm11 — B3 minimumReleaseAgeExclude", () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it("reports a skipped step, not a clean run, when the probe could not run", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - '**'\n")
+      const probe: PnpmReleaseAgeProbe = () => ({ stdout: "", stderr: "error: unexpected argument", status: 2 })
+      const report = migratePnpm11(dir, probe)
+      expect(readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")).toBe("packages:\n  - '**'\n")
+      expect(report.errors).toBe(0)
+      expect(report.actions).toEqual([
+        {
+          kind: "skipped",
+          message:
+            "Could not check minimumReleaseAge: `pnpm install --lockfile-only` exited 2: error: unexpected argument",
+        },
+      ])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })
 
 describe("migratePnpm11 — B3 allowBuilds", () => {
@@ -654,8 +802,8 @@ describe("migratePnpm11 — block (d) reads the lockfile before the probe runs (
       writeFileSync(join(dir, "pnpm-lock.yaml"), LOCKFILE_WITH_ESBUILD)
       writeFileSync(join(dir, "pnpm-workspace.yaml"), "packages:\n  - '**'\n")
 
-      // Simulate the real Bug 2: the probe clobbers the consumer lockfile (as a
-      // mutating `pnpm install --resolution-only` would) and reports no
+      // Simulate the real Bug 2: the probe clobbers the consumer lockfile (as an
+      // unrestored `pnpm install --lockfile-only` would) and reports no
       // release-age violations. Block (d) must NOT depend on the post-probe
       // lockfile — it must use the contents read before the probe ran.
       const mutatingProbe: PnpmReleaseAgeProbe = () => {
@@ -697,6 +845,124 @@ describe("defaultReleaseAgeProbe — side-effect-free (Bug 1)", () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  // A stand-in `pnpm` on PATH that records its arguments, appends `append` to every
+  // file in `writes` (creating it if absent, as real pnpm does to the lockfile, and
+  // to pnpm-workspace.yaml in lenient mode), and prints `stdout`. Deterministic: no
+  // network, and no dependence on a package being less than a day old.
+  type FakePnpm = { writes: string[]; append?: string; stdout?: string }
+  const LENIENT_STDOUT = "Added 1 entry to minimumReleaseAgeExclude in pnpm-workspace.yaml (...):\n  left-pad@1.3.0\n"
+
+  function withFakePnpm(
+    { writes, append = "written-by-pnpm\n", stdout = LENIENT_STDOUT }: FakePnpm,
+    run: (argsFile: string) => void,
+  ): void {
+    const bin = tmp()
+    const argsFile = join(bin, "args.txt")
+    const appendFile = join(bin, "append.txt")
+    const stdoutFile = join(bin, "stdout.txt")
+    writeFileSync(appendFile, append)
+    writeFileSync(stdoutFile, stdout)
+    writeFileSync(
+      join(bin, "pnpm"),
+      "#!/bin/sh\n" +
+        `printf "%s" "$*" > "${argsFile}"\n` +
+        `for f in ${writes.map((f) => `"${f}"`).join(" ")}; do cat "${appendFile}" >> "$f"; done\n` +
+        `cat "${stdoutFile}"\n`,
+      { mode: 0o755 },
+    )
+    const savedPath = process.env.PATH
+    process.env.PATH = `${bin}${delimiter}${savedPath ?? ""}`
+    try {
+      run(argsFile)
+    } finally {
+      process.env.PATH = savedPath
+      rmSync(bin, { recursive: true, force: true })
+    }
+  }
+
+  it.skipIf(process.platform === "win32")(
+    "runs `pnpm install --lockfile-only` and restores pnpm-workspace.yaml and the lockfile it writes",
+    () => {
+      const dir = tmp()
+      try {
+        writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "probe-fixture", version: "0.0.0" }))
+        const lockPath = join(dir, "pnpm-lock.yaml")
+        writeFileSync(lockPath, "lockfileVersion: '9.0'\n")
+        const wsPath = join(dir, "pnpm-workspace.yaml")
+        // No pnpm-workspace.yaml before the probe: lenient pnpm creates one.
+        withFakePnpm({ writes: [lockPath, wsPath] }, (argsFile) => {
+          const result = defaultReleaseAgeProbe(dir)
+          expect(readFileSync(argsFile, "utf-8")).toBe("install --lockfile-only")
+          expect(parseReleaseAgeViolations(result.stdout, result.stderr)).toEqual(["left-pad@1.3.0"])
+        })
+        expect(readFileSync(lockPath, "utf-8")).toBe("lockfileVersion: '9.0'\n")
+        expect(existsSync(wsPath)).toBe(false)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it.skipIf(process.platform === "win32")(
+    "restores the workspace root's files when probing from a package inside a workspace",
+    () => {
+      const root = tmp()
+      try {
+        const rootWs = join(root, "pnpm-workspace.yaml")
+        const rootLock = join(root, "pnpm-lock.yaml")
+        writeFileSync(rootWs, "packages:\n  - 'packages/*'\n")
+        writeFileSync(rootLock, "lockfileVersion: '9.0'\n")
+        const pkgDir = join(root, "packages", "a")
+        mkdirSync(pkgDir, { recursive: true })
+        writeFileSync(join(pkgDir, "package.json"), JSON.stringify({ name: "a", version: "0.0.0" }))
+        withFakePnpm({ writes: [rootWs, rootLock] }, () => {
+          defaultReleaseAgeProbe(pkgDir)
+        })
+        expect(readFileSync(rootWs, "utf-8")).toBe("packages:\n  - 'packages/*'\n")
+        expect(readFileSync(rootLock, "utf-8")).toBe("lockfileVersion: '9.0'\n")
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it.skipIf(process.platform === "win32")(
+    "reports the entries pnpm writes into the workspace root without printing them",
+    () => {
+      // pnpm 12.15.0 run from a workspace package in lenient mode prints only
+      // "Scope: ..." and "Done", and silently appends the exclude to the ROOT
+      // pnpm-workspace.yaml. Only the file diff reveals the violation.
+      const root = tmp()
+      try {
+        const rootWs = join(root, "pnpm-workspace.yaml")
+        const before = "packages:\n  - 'packages/*'\nminimumReleaseAgeExclude:\n  - \"*functype*\"\n"
+        writeFileSync(rootWs, before)
+        const pkgDir = join(root, "packages", "a")
+        mkdirSync(pkgDir, { recursive: true })
+        writeFileSync(join(pkgDir, "package.json"), JSON.stringify({ name: "a", version: "0.0.0" }))
+        withFakePnpm(
+          {
+            writes: [rootWs],
+            append: "  - tsdown@0.23.2\n",
+            stdout: "Scope: all 2 workspace projects\nDone in 57ms using pnpm v12.15.0\n",
+          },
+          () => {
+            const result = defaultReleaseAgeProbe(pkgDir)
+            expect(parseReleaseAgeViolations(result.stdout, result.stderr)).toEqual([])
+            // The pre-existing *functype* entry is not reported; only the new one.
+            expect(result.autoExcluded).toEqual(["tsdown@0.23.2"])
+            expect(detectPnpm11Issues(pkgDir, () => result).toArray()).toEqual([
+              expect.objectContaining({ severity: "warning", message: expect.stringContaining("tsdown@0.23.2") }),
+            ])
+          },
+        )
+        expect(readFileSync(rootWs, "utf-8")).toBe(before)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    },
+  )
 })
 
 describe("migratePnpm11 — B3 integration & idempotence (acceptance proxy)", () => {

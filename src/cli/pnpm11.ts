@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process"
 import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { basename, dirname, join } from "node:path"
 
-import { List, Map, Set } from "functype"
+import { List, Map, Option, Set } from "functype"
 
 import type { CheckResult } from "./commands/doctor"
 import { targetDir } from "./config"
@@ -10,32 +10,76 @@ import { targetDir } from "./config"
 const HOIST_LINE = /^public-hoist-pattern\[\]=(.+)$/
 
 /**
- * The impure edge of release-age detection: runs a non-mutating pnpm resolution
- * pass and captures its output. Injectable so tests can feed canned pnpm stderr
- * without shelling out. Returns -1 status when pnpm cannot be spawned at all.
+ * The impure edge of release-age detection: runs a pnpm resolution pass, leaving
+ * the consumer's files as it found them, and captures its output. Injectable so
+ * tests can feed canned pnpm output without shelling out. Returns -1 status when
+ * pnpm cannot be spawned at all.
  */
-export type PnpmReleaseAgeProbe = (dir: string) => { stdout: string; stderr: string; status: number }
+export type PnpmReleaseAgeProbe = (dir: string) => PnpmProbeResult
 
-// Each per-violation line pnpm prints looks like:
+export type PnpmProbeResult = {
+  stdout: string
+  stderr: string
+  status: number
+  /**
+   * `minimumReleaseAgeExclude` entries pnpm added to a `pnpm-workspace.yaml` during
+   * the run (lenient mode). pnpm 12 run from a workspace package writes them without
+   * printing anything about it, so the file is the only reliable signal.
+   */
+  autoExcluded?: string[]
+}
+
+// A package token is `name@version`, where name may be scoped (`@scope/name`).
+const PKG_VERSION = String.raw`@?[^\s@/]+(?:\/[^\s@]+)?@\S+`
+
+// pnpm reports release-age violations in one of two shapes, depending on
+// `minimumReleaseAgeStrict`. Both verified against pnpm 11.27.0 and 12.15.0.
+//
+// Strict: the install fails (ERR_PNPM_NO_MATURE_MATCHING_VERSION) and lists each violation:
 //   left-pad@1.3.0 was published at 2018-04-09T01:10:45.796Z, within the minimumReleaseAge cutoff (...)
-// Verified against pnpm 11.5.2: the failure surfaces under the error code
-// ERR_PNPM_NO_MATURE_MATCHING_VERSION. We match the per-violation LINE rather than
-// the header code so we stay robust to message-format/code changes across pnpm
-// releases. The package token is `name@version`, where name may be scoped
-// (`@scope/name`).
-const RELEASE_AGE_LINE = /(@?[^\s@/]+(?:\/[^\s@]+)?@[^\s]+)\s+was published.*minimumReleaseAge/
+// A too-new version already pinned in the lockfile fails pnpm's lockfile verification
+// (ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION) with the same per-entry wording, in either mode.
+// pnpm 11 prints these on one line to stdout. pnpm 12 prints them to stderr word-wrapped
+// at ~80 columns, splitting them across lines, so they are matched against the output
+// with all whitespace collapsed. We match the per-violation wording rather than the
+// error code so we stay robust to code changes across pnpm releases. The match is kept
+// tight ("was published [at <time>,] within the minimumReleaseAge") because, on
+// collapsed text, a loose `.*?` could pair an unrelated "was published" with a later,
+// unrelated mention of minimumReleaseAge.
+const RELEASE_AGE_VIOLATION = new RegExp(
+  `(${PKG_VERSION}) was published (?:at \\S+, )?within the minimumReleaseAge`,
+  "g",
+)
+
+// Lenient (the default): the install succeeds, pnpm writes the entries into
+// pnpm-workspace.yaml itself, and lists them under a header:
+//   Added 1 entry to minimumReleaseAgeExclude in pnpm-workspace.yaml (set minimumReleaseAgeStrict ...):
+//     tsdown@0.23.2
+const AUTO_EXCLUDE_HEADER = /^Added \d+ entr\S* to minimumReleaseAgeExclude/
+const AUTO_EXCLUDE_ENTRY = new RegExp(`^\\s+(${PKG_VERSION})$`)
 
 /**
  * Pure parser (no I/O): extracts the flagged `pkg@version` tokens from captured
- * pnpm output. Order-preserving and de-duplicated. Returns [] for unrelated or
- * empty output so callers never emit false warnings.
+ * pnpm output, in either the strict or the lenient shape. Order-preserving and
+ * de-duplicated. Returns [] for unrelated or empty output so callers never emit
+ * false warnings.
  */
 export function parseReleaseAgeViolations(stdout: string, stderr: string): string[] {
-  const tokens = `${stdout}\n${stderr}`
-    .split("\n")
-    .map((line) => RELEASE_AGE_LINE.exec(line.trim())?.[1])
-    .filter((token): token is string => token !== undefined)
-  return List(tokens).distinct().toArray()
+  const output = `${stdout}\n${stderr}`
+  const strict = [...output.replace(/\s+/g, " ").matchAll(RELEASE_AGE_VIOLATION)].map((match) => match[1])
+  return List([...strict, ...autoExcludedEntries(output)])
+    .distinct()
+    .toArray()
+}
+
+/** The `pkg@version` lines listed under pnpm's lenient-mode "Added N entries" header. */
+function autoExcludedEntries(output: string): string[] {
+  const lines = output.split("\n").map((raw) => raw.trimEnd())
+  const start = lines.findIndex((line) => AUTO_EXCLUDE_HEADER.test(line.trim()))
+  if (start === -1) return []
+  const body = lines.slice(start + 1)
+  const end = body.findIndex((line) => !AUTO_EXCLUDE_ENTRY.test(line))
+  return matchFirstGroups(end === -1 ? body : body.slice(0, end), AUTO_EXCLUDE_ENTRY)
 }
 
 /** Pure helper: the suggested pnpm-workspace.yaml exclude line for a flagged token. */
@@ -43,26 +87,27 @@ export function buildReleaseAgeExcludeLine(pkgVersion: string): string {
   return `minimumReleaseAgeExclude:\n${renderExcludeEntry(releaseAgeExcludeEntry(pkgVersion))}`
 }
 
+/** The command the default probe runs. Exported so warnings and tests name it exactly. */
+export const RELEASE_AGE_PROBE_ARGS = ["install", "--lockfile-only"] as const
+
 /**
- * Default probe: runs `pnpm install --resolution-only`, which re-runs resolution
- * (re-applying minimumReleaseAge) and captures its output. If pnpm is not on PATH
- * the spawn errors and we return status -1 so detection degrades quietly.
+ * Default probe: runs `pnpm install --lockfile-only`, which resolves anything the
+ * lockfile does not already pin (re-applying minimumReleaseAge) without installing
+ * packages, and captures its output. `--lockfile-only` exists in pnpm 11 and 12;
+ * the `--resolution-only` flag this used before was removed in pnpm 12. If pnpm is
+ * not on PATH the spawn errors and we return status -1 so detection degrades quietly.
  *
- * SNAPSHOT/RESTORE: `--resolution-only` is NOT non-mutating in general. When the
- * committed `pnpm-lock.yaml` is stale or doesn't match resolution, pnpm REWRITES
- * it to match (it only avoids writing when it ABORTS on a violation). A read-only
- * diagnostic must never touch a consumer's lockfile, so we snapshot the exact
- * bytes before spawning and restore them in a `finally` — putting the file back
- * exactly as found (or removing one the probe created where none existed).
- * `--resolution-only` does not install packages, so node_modules is not a concern.
+ * SNAPSHOT/RESTORE: the run is NOT non-mutating. pnpm rewrites `pnpm-lock.yaml`
+ * to match resolution, and in lenient mode it also writes the violating packages
+ * into `pnpm-workspace.yaml` itself. A read-only diagnostic must never touch a
+ * consumer's files, so we snapshot the exact bytes of both files — in `dir` and at
+ * the workspace root pnpm resolves from — and restore them in a `finally`, putting
+ * each back exactly as found (or removing one the probe created where none existed).
  */
 export const defaultReleaseAgeProbe: PnpmReleaseAgeProbe = (dir) => {
-  const lockPath = join(dir, "pnpm-lock.yaml")
-  const lockExisted = existsSync(lockPath)
-  // readFileSync without an encoding yields a Buffer, preserving bytes exactly.
-  const originalLock = lockExisted ? readFileSync(lockPath) : undefined
+  const snapshots = probeWrittenFiles(dir).map(snapshotFile)
   try {
-    const result = spawnSync("pnpm", ["install", "--resolution-only"], {
+    const result = spawnSync("pnpm", [...RELEASE_AGE_PROBE_ARGS], {
       cwd: dir,
       encoding: "utf-8",
       env: process.env,
@@ -70,14 +115,72 @@ export const defaultReleaseAgeProbe: PnpmReleaseAgeProbe = (dir) => {
     if (result.error) {
       return { stdout: "", stderr: "", status: -1 }
     }
-    return { stdout: result.stdout ?? "", stderr: result.stderr ?? "", status: result.status ?? 1 }
-  } finally {
-    if (lockExisted && originalLock !== undefined) {
-      writeFileSync(lockPath, originalLock)
-    } else if (!lockExisted && existsSync(lockPath)) {
-      rmSync(lockPath, { force: true })
+    return {
+      stdout: result.stdout ?? "",
+      stderr: result.stderr ?? "",
+      status: result.status ?? 1,
+      // Read before the `finally` restores the files.
+      autoExcluded: snapshots.flatMap(addedExcludeEntries),
     }
+  } finally {
+    snapshots.forEach(restoreFile)
   }
+}
+
+type FileSnapshot = { path: string; bytes: Option<Buffer> }
+
+/** The `minimumReleaseAgeExclude` entries a `pnpm-workspace.yaml` gained since its snapshot. */
+function addedExcludeEntries({ path, bytes }: FileSnapshot): string[] {
+  if (basename(path) !== "pnpm-workspace.yaml" || !isFile(path)) return []
+  const before = readReleaseAgeExcludeEntries(
+    bytes.fold(
+      () => "",
+      (original) => original.toString("utf-8"),
+    ),
+  )
+  return readReleaseAgeExcludeEntries(readFileSync(path, "utf-8"))
+    .toArray()
+    .filter((entry) => !before.has(entry))
+}
+
+/**
+ * `pnpm-lock.yaml` and `pnpm-workspace.yaml` in `dir` and at its workspace root,
+ * if it has one. A path that exists but is not a regular file is left untracked,
+ * since pnpm cannot have written it either.
+ */
+function probeWrittenFiles(dir: string): string[] {
+  const roots = findWorkspaceRoot(dir).fold(
+    () => [dir],
+    (root) => [dir, root],
+  )
+  return List(roots)
+    .distinct()
+    .toArray()
+    .flatMap((root) => [join(root, "pnpm-lock.yaml"), join(root, "pnpm-workspace.yaml")])
+    .filter((path) => !existsSync(path) || isFile(path))
+}
+
+const isFile = (path: string): boolean => existsSync(path) && statSync(path).isFile()
+
+/** The nearest directory at or above `dir` holding a `pnpm-workspace.yaml`. */
+function findWorkspaceRoot(dir: string): Option<string> {
+  if (isFile(join(dir, "pnpm-workspace.yaml"))) return Option(dir)
+  const parent = dirname(dir)
+  return parent === dir ? Option.none<string>() : findWorkspaceRoot(parent)
+}
+
+function snapshotFile(path: string): FileSnapshot {
+  // readFileSync without an encoding yields a Buffer, preserving bytes exactly.
+  return { path, bytes: existsSync(path) ? Option(readFileSync(path)) : Option.none<Buffer>() }
+}
+
+function restoreFile({ path, bytes }: FileSnapshot): void {
+  bytes.fold(
+    () => {
+      if (existsSync(path)) rmSync(path, { force: true })
+    },
+    (original) => writeFileSync(path, original),
+  )
 }
 
 // ─── B2: allowBuilds / esbuild detection ────────────────────────────────────
@@ -154,16 +257,46 @@ function detectAllowBuildsIssues(dir: string): CheckResult[] {
 }
 
 function detectReleaseAgeIssues(dir: string, probe: PnpmReleaseAgeProbe): CheckResult[] {
-  // Only meaningful where pnpm has something to resolve. A bare tmpdir with no
-  // lockfile/manifest context yields nothing to flag; the probe degrades to empty.
-  const { stdout, stderr } = probe(dir)
-  const violations = parseReleaseAgeViolations(stdout, stderr)
-  return violations.map((pkgVersion) => ({
-    severity: "warning" as const,
-    message:
-      `${pkgVersion} is newer than the pnpm minimumReleaseAge cutoff — ` +
-      `add to pnpm-workspace.yaml to allow it:\n      ${buildReleaseAgeExcludeLine(pkgVersion)}`,
-  }))
+  const result = probe(dir)
+  const { stdout, stderr, status } = result
+  const violations = probeViolations(result)
+  if (violations.length > 0) {
+    return violations.map((pkgVersion) => ({
+      severity: "warning" as const,
+      message:
+        `${pkgVersion} is newer than the pnpm minimumReleaseAge cutoff — ` +
+        `add to pnpm-workspace.yaml to allow it:\n      ${buildReleaseAgeExcludeLine(pkgVersion)}`,
+    }))
+  }
+  return probeFailure(stdout, stderr, status)
+    .map((message): CheckResult[] => [{ severity: "warning", message }])
+    .orElse([])
+}
+
+/** Every flagged `pkg@version`, from pnpm's output and from the entries it wrote. */
+function probeViolations({ stdout, stderr, autoExcluded = [] }: PnpmProbeResult): string[] {
+  return List([...parseReleaseAgeViolations(stdout, stderr), ...autoExcluded])
+    .distinct()
+    .toArray()
+}
+
+/**
+ * A message when the probe ran pnpm and pnpm failed without reporting a violation,
+ * meaning the release-age check never actually ran. That must not read as "ready".
+ * Status -1 (pnpm not installed) stays quiet: there is nothing to check against.
+ */
+function probeFailure(stdout: string, stderr: string, status: number): Option<string> {
+  if (status <= 0) return Option.none<string>()
+  // pnpm 11 prints errors to stdout (after a "Scope:" line in a workspace), pnpm 12
+  // to stderr. Prefer the line naming the pnpm error code.
+  const lines = `${stderr}\n${stdout}`
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+  const reason = lines.find((line) => line.includes("ERR_PNPM")) ?? lines.at(0)
+  const command = `pnpm ${RELEASE_AGE_PROBE_ARGS.join(" ")}`
+  const detail = reason === undefined ? "" : `: ${reason}`
+  return Option(`Could not check minimumReleaseAge: \`${command}\` exited ${status}${detail}`)
 }
 
 function readHoistPatterns(npmrc: string): string[] {
@@ -516,8 +649,15 @@ function migratePackageJsonPnpm(dir: string, ws: string): MigrationStep {
  * sourceMutation is needed — it joins the same single ws write.
  */
 function migrateReleaseAgeExcludes(dir: string, ws: string, probe: PnpmReleaseAgeProbe): MigrationStep {
-  const { stdout, stderr } = probe(dir)
-  const violations = parseReleaseAgeViolations(stdout, stderr)
+  const result = probe(dir)
+  const { stdout, stderr, status } = result
+  const violations = probeViolations(result)
+  if (violations.length === 0) {
+    return probeFailure(stdout, stderr, status).fold(
+      () => noChange(ws),
+      (message) => ({ ws, actions: [{ kind: "skipped" as const, message }], sourceMutations: [] }),
+    )
+  }
   // Canonicalize existing entries so any first-party form already present —
   // a `functype@x` pin pnpm auto-added, a bare `functype-os`, or the `*functype*`
   // glob itself — counts as covering a fresh functype-family violation, and we
@@ -577,9 +717,9 @@ export function migratePnpm11(
   const wsExists = existsSync(wsPath) && statSync(wsPath).isFile()
   const originalWs = wsExists ? readFileSync(wsPath, "utf-8") : ""
 
-  // Read pnpm-lock.yaml ONCE, up front — BEFORE step (c)'s probe runs. The probe
-  // can rewrite the consumer lockfile (see defaultReleaseAgeProbe), so step (d)
-  // must decide allowBuilds from this snapshot, not a re-read after the probe.
+  // Read pnpm-lock.yaml ONCE, up front — BEFORE step (c)'s probe runs. pnpm
+  // rewrites the lockfile during the probe; the default probe restores it, but an
+  // injected one need not, so step (d) decides allowBuilds from this snapshot.
   const lockPath = join(dir, "pnpm-lock.yaml")
   const lockfile = existsSync(lockPath) ? readFileSync(lockPath, "utf-8") : undefined
 
