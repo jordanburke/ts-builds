@@ -286,7 +286,13 @@ keys are reported for manual migration rather than altered.
   either changed. The parser reads both of pnpm's output shapes: the strict-mode
   `<pkg>@<ver> was published ... minimumReleaseAge` lines (which pnpm 12 word-wraps,
   so whitespace is collapsed first) and the lenient-mode list headed
-  `Added N entries to minimumReleaseAgeExclude`. If pnpm is absent the probe degrades
+  `Added N entries to minimumReleaseAgeExclude`. It also diffs the snapshotted
+  `pnpm-workspace.yaml` files against what pnpm left before restoring them, because
+  pnpm 12 run from a workspace package adds the entries to the root file without
+  printing them. Limit: `--lockfile-only` resolves only what the lockfile does not
+  already pin, so a too-new version already in `pnpm-lock.yaml` is caught only when
+  pnpm re-verifies the lockfile (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`), and pnpm
+  caches that verification per machine. If pnpm is absent the probe degrades
   quietly; if pnpm fails without reporting a violation, `doctor` warns that the check
   could not run rather than reporting ready. Each flagged `pkg@version` is surfaced
   with a suggested `minimumReleaseAgeExclude` line. `--fix` appends/merges those

@@ -8,18 +8,26 @@ conventional commits via `ts-builds changelog`.
 
 ### Bug Fixes
 
-- **doctor:** the `minimumReleaseAge` check works again (#206). It ran `pnpm install --resolution-only`,
-  which pnpm 12 rejects, and `doctor` ignored the failure and reported "pnpm 11 ready" without
-  checking. It now runs `pnpm install --lockfile-only`, which pnpm 11 and 12 both support. Two older
-  gaps are fixed with it:
+- **doctor:** the `minimumReleaseAge` check runs again on pnpm 12 (#206). It ran
+  `pnpm install --resolution-only`, which pnpm 12 rejects, and `doctor` ignored the failure and
+  reported "pnpm 11 ready" without checking. It now runs `pnpm install --lockfile-only`, which pnpm
+  11 and 12 both support. Two older gaps are fixed with it:
   - On recent pnpm 11 too (verified on 11.27.0), the default lenient mode prints the too-new
-    packages in a form the parser did not read, so nothing was flagged. Both of pnpm's output forms are now read, including
-    pnpm 12's word-wrapped strict-mode error.
+    packages in a form the parser did not read, so nothing was flagged. `doctor` now reads both of
+    pnpm's output forms, including pnpm 12's word-wrapped errors. It also checks what pnpm wrote
+    into `pnpm-workspace.yaml`, because pnpm 12 run from a monorepo package adds the entries without
+    printing them.
   - In lenient mode pnpm writes the too-new packages into `pnpm-workspace.yaml` during the probe,
     and `doctor` left that edit behind. The probe now restores `pnpm-workspace.yaml` as well as
     `pnpm-lock.yaml`, including at a monorepo's workspace root.
 - **doctor:** when pnpm fails without reporting a too-new package, `doctor` now warns that the
   check could not run, instead of reporting ready. `doctor --fix` reports the step as skipped.
+- **doctor:** one narrowing to know about. `--lockfile-only` only resolves what the lockfile doesn't
+  already pin. A too-new version already pinned in `pnpm-lock.yaml` is caught only when pnpm
+  re-verifies the lockfile. pnpm caches that verification per machine, so on a machine that has
+  already accepted the lockfile `doctor` reports nothing, while a CI runner with a cold cache fails
+  the install. The old `--resolution-only` probe re-resolved everything, but pnpm 12 has no
+  equivalent flag.
 
 ## 4.0.1 (2026-10-23)
 
