@@ -6,6 +6,20 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+## 4.0.1 (2026-10-23)
+
+### Dependencies
+
+- update bundled dependencies within their existing ranges, no majors (#203): `typescript-eslint` 8.72.0,
+  `eslint-plugin-functype` / `eslint-config-functype` 2.119.0, `functype` / `functype-os` 1.19.0, plus
+  Dependabot patch and minor bumps since 4.0.0. TypeScript stays on 6.0, because `typescript-eslint`
+  does not support TypeScript 7 yet.
+
+### CI/CD
+
+- drop the unpermitted Dependabot Approve step and pin `.nvmrc` to 24.21.0 (#195)
+- drop a trailing blank line that prettier rewrote on every validate (#204)
+
 ## 4.0.0 (2026-10-03)
 
 ### ⚠ Breaking changes
