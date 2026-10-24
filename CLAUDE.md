@@ -284,21 +284,28 @@ keys are reported for manual migration rather than altered.
   `pnpm-workspace.yaml` itself, so the probe snapshots both files — in the package
   and at the workspace root — and restores them byte-for-byte; `doctor` never leaves
   either changed. The parser reads both of pnpm's output shapes: the strict-mode
-  `<pkg>@<ver> was published ... minimumReleaseAge` lines (which pnpm 12 word-wraps,
-  so whitespace is collapsed first) and the lenient-mode list headed
-  `Added N entries to minimumReleaseAgeExclude`. It also diffs the snapshotted
-  `pnpm-workspace.yaml` files against what pnpm left before restoring them, because
-  pnpm 12 run from a workspace package adds the entries to the root file without
-  printing them. Limit: `--lockfile-only` resolves only what the lockfile does not
-  already pin, so a too-new version already in `pnpm-lock.yaml` is caught only when
-  pnpm re-verifies the lockfile (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`), and pnpm
-  caches that verification per machine. If pnpm is absent the probe degrades
+  `<pkg>@<ver> was published ... minimumReleaseAge` lines and the lenient-mode list
+  headed `Added N entries to minimumReleaseAgeExclude`. pnpm 12 wraps the strict lines
+  at 80 columns (it ignores `COLUMNS`) and breaks after hyphens too, splitting dates
+  and package names mid-token, so hyphen breaks are rejoined and whitespace collapsed
+  before matching. It also diffs the snapshotted `pnpm-workspace.yaml` files against
+  what pnpm left before restoring them, because pnpm 12 run from a workspace package
+  adds the entries to the root file without printing them. pnpm writes scoped entries
+  single-quoted, so `readReleaseAgeExcludeEntries` strips both quote styles. A
+  too-new version already pinned in `pnpm-lock.yaml` is not re-resolved by
+  `--lockfile-only`; pnpm's lockfile verification reports it instead
+  (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`, same per-entry wording). The parser's
+  test fixtures are real captured pnpm 11.27.0 / 12.15.0 output in
+  `test/fixtures/pnpm-release-age/` — keep them real; hand-written short unscoped
+  names hid the wrapping and quoting bugs. If pnpm is absent the probe degrades
   quietly; if pnpm fails without reporting a violation, `doctor` warns that the check
   could not run rather than reporting ready. Each flagged `pkg@version` is surfaced
   with a suggested `minimumReleaseAgeExclude` line. `--fix` appends/merges those
   entries into `pnpm-workspace.yaml` — pinned
   `pkg@version` for third-party deps with no aged-enough alternative, bare names for
-  first-party libs (`ts-builds`, `functype`, `functype-*`).
+  first-party libs (`ts-builds`, `functype`, `functype-*`). Run from a workspace
+  package, `--fix` writes no entries and names the workspace root to run it from,
+  since pnpm reads the setting only there.
 - **`allowBuilds` gaps** — a static check (no install) compares a curated known-safe
   set (`esbuild`) present in `pnpm-lock.yaml` against the `allowBuilds` keys already
   in `pnpm-workspace.yaml`; an undecided build script (hard-errors as

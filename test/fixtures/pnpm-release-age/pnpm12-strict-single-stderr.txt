@@ -1,0 +1,40 @@
+Error: ERR_PNPM_NO_MATURE_MATCHING_VERSION
+
+  × installing dependencies
+  ╰─▶ 11 versions do not meet the minimumReleaseAge constraint:
+        @biomejs/biome@2.6.3 was published at 2026-10-24T13:14:10.610Z, within
+      the minimumReleaseAge cutoff (2026-10-23T16:00:35.640Z)
+        @biomejs/cli-android-arm64@2.6.3 was published at 2026-10-
+      24T13:21:38.101Z, within the minimumReleaseAge cutoff (2026-10-
+      23T16:00:35.640Z)
+        @biomejs/cli-android-x64@2.6.3 was published at 2026-10-
+      24T13:15:16.938Z, within the minimumReleaseAge cutoff (2026-10-
+      23T16:00:35.640Z)
+        @biomejs/cli-darwin-arm64@2.6.3 was published at 2026-10-
+      24T13:15:25.971Z, within the minimumReleaseAge cutoff (2026-10-
+      23T16:00:35.640Z)
+        @biomejs/cli-darwin-x64@2.6.3 was published at 2026-10-
+      24T13:15:38.621Z, within the minimumReleaseAge cutoff (2026-10-
+      23T16:00:35.640Z)
+        @biomejs/cli-linux-arm64-musl@2.6.3 was published at 2026-10-
+      24T13:15:52.516Z, within the minimumReleaseAge cutoff (2026-10-
+      23T16:00:35.640Z)
+        @biomejs/cli-linux-arm64@2.6.3 was published at 2026-10-
+      24T13:15:22.876Z, within the minimumReleaseAge cutoff (2026-10-
+      23T16:00:35.640Z)
+        @biomejs/cli-linux-x64-musl@2.6.3 was published at 2026-10-
+      24T13:16:44.431Z, within the minimumReleaseAge cutoff (2026-10-
+      23T16:00:35.640Z)
+        @biomejs/cli-linux-x64@2.6.3 was published at 2026-10-
+      24T13:16:06.464Z, within the minimumReleaseAge cutoff (2026-10-
+      23T16:00:35.640Z)
+        @biomejs/cli-win32-arm64@2.6.3 was published at 2026-10-
+      24T13:16:22.986Z, within the minimumReleaseAge cutoff (2026-10-
+      23T16:00:35.640Z)
+        @biomejs/cli-win32-x64@2.6.3 was published at 2026-10-
+      24T13:20:07.993Z, within the minimumReleaseAge cutoff (2026-10-
+      23T16:00:35.640Z)
+  help: Run the install interactively to approve these picks, add them to
+        minimumReleaseAgeExclude in pnpm-workspace.yaml, or wait for the
+        packages to mature.
+

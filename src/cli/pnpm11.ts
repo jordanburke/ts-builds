@@ -39,9 +39,11 @@ const PKG_VERSION = String.raw`@?[^\s@/]+(?:\/[^\s@]+)?@\S+`
 //   left-pad@1.3.0 was published at 2018-04-09T01:10:45.796Z, within the minimumReleaseAge cutoff (...)
 // A too-new version already pinned in the lockfile fails pnpm's lockfile verification
 // (ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION) with the same per-entry wording, in either mode.
-// pnpm 11 prints these on one line to stdout. pnpm 12 prints them to stderr word-wrapped
-// at ~80 columns, splitting them across lines, so they are matched against the output
-// with all whitespace collapsed. We match the per-violation wording rather than the
+// pnpm 11 prints these on one line to stdout. pnpm 12 prints them to stderr wrapped at
+// 80 columns (it ignores COLUMNS), and it breaks after hyphens as well as at spaces, so
+// a date or a package name can be split mid-token ("2026-10-\n      24T13:21:38.101Z").
+// The output is therefore matched with hyphen breaks rejoined and the remaining
+// whitespace collapsed. We match the per-violation wording rather than the
 // error code so we stay robust to code changes across pnpm releases. The match is kept
 // tight ("was published [at <time>,] within the minimumReleaseAge") because, on
 // collapsed text, a loose `.*?` could pair an unrelated "was published" with a later,
@@ -66,7 +68,8 @@ const AUTO_EXCLUDE_ENTRY = new RegExp(`^\\s+(${PKG_VERSION})$`)
  */
 export function parseReleaseAgeViolations(stdout: string, stderr: string): string[] {
   const output = `${stdout}\n${stderr}`
-  const strict = [...output.replace(/\s+/g, " ").matchAll(RELEASE_AGE_VIOLATION)].map((match) => match[1])
+  const unwrapped = output.replace(/-\r?\n\s+/g, "-").replace(/\s+/g, " ")
+  const strict = [...unwrapped.matchAll(RELEASE_AGE_VIOLATION)].map((match) => match[1])
   return List([...strict, ...autoExcludedEntries(output)])
     .distinct()
     .toArray()
@@ -450,11 +453,19 @@ function renderExcludeEntry(entry: string): string {
 
 /**
  * Pure parser: returns the set of entries already listed under
- * `minimumReleaseAgeExclude:`, normalized (quotes stripped). Same manual
- * line-by-line style as readAllowBuildsKeys — stops at the next top-level key.
+ * `minimumReleaseAgeExclude:`, normalized (quotes stripped). pnpm itself writes
+ * scoped entries single-quoted (`- '@scope/name@1.0.0'`); we write them
+ * double-quoted. Same manual line-by-line style as readAllowBuildsKeys — stops at
+ * the next top-level key.
  */
 export function readReleaseAgeExcludeEntries(yaml: string): Set<string> {
-  return Set(matchFirstGroups(blockLines(yaml, /^minimumReleaseAgeExclude:/), /^\s*-\s*"?([^"]+?)"?\s*$/))
+  // `- entry`, `- 'entry'` or `- "entry"`, optionally followed by a `# comment`.
+  const entryLine = /^\s*-\s*(["']?)([^"'\s#]+)\1\s*(?:#.*)?$/
+  return Set(
+    blockLines(yaml, /^minimumReleaseAgeExclude:/)
+      .map((line) => entryLine.exec(line)?.[2])
+      .filter((entry): entry is string => entry !== undefined),
+  )
 }
 
 /**
@@ -656,6 +667,28 @@ function migrateReleaseAgeExcludes(dir: string, ws: string, probe: PnpmReleaseAg
     return probeFailure(stdout, stderr, status).fold(
       () => noChange(ws),
       (message) => ({ ws, actions: [{ kind: "skipped" as const, message }], sourceMutations: [] }),
+    )
+  }
+  // pnpm reads minimumReleaseAgeExclude only from the workspace root. Writing it into
+  // a package's own pnpm-workspace.yaml would do nothing, and a stray file there can
+  // make pnpm treat the package as a workspace root, so point at the root instead.
+  const outerRoot = findWorkspaceRoot(dir).filter((root) => root !== dir)
+  if (outerRoot.isSome()) {
+    return outerRoot.fold(
+      () => noChange(ws),
+      (root) => ({
+        ws,
+        actions: [
+          {
+            kind: "manual" as const,
+            message:
+              `${violations.length} package(s) are newer than the minimumReleaseAge cutoff, but this is a ` +
+              `workspace package — run 'ts-builds doctor --fix' from the workspace root (${root}) ` +
+              `to add them to its pnpm-workspace.yaml`,
+          },
+        ],
+        sourceMutations: [],
+      }),
     )
   }
   // Canonicalize existing entries so any first-party form already present —

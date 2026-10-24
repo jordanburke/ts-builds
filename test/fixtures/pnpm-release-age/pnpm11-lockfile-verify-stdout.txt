@@ -1,0 +1,16 @@
+? Verifying lockfile against supply-chain policies (11 entries)...
+✗ Lockfile failed supply-chain policy check (11 entries in 290ms)
+[ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION] 11 lockfile entries failed verification:
+  @biomejs/biome@2.6.3 was published at 2026-10-24T13:13:12.000Z, within the minimumReleaseAge cutoff (2026-10-23T16:00:52.263Z)
+  @biomejs/cli-android-arm64@2.6.3 was published at 2026-10-24T13:13:19.000Z, within the minimumReleaseAge cutoff (2026-10-23T16:00:52.263Z)
+  @biomejs/cli-android-x64@2.6.3 was published at 2026-10-24T13:13:30.000Z, within the minimumReleaseAge cutoff (2026-10-23T16:00:52.263Z)
+  @biomejs/cli-darwin-arm64@2.6.3 was published at 2026-10-24T13:13:39.000Z, within the minimumReleaseAge cutoff (2026-10-23T16:00:52.263Z)
+  @biomejs/cli-darwin-x64@2.6.3 was published at 2026-10-24T13:13:48.000Z, within the minimumReleaseAge cutoff (2026-10-23T16:00:52.263Z)
+  @biomejs/cli-linux-arm64-musl@2.6.3 was published at 2026-10-24T13:14:07.000Z, within the minimumReleaseAge cutoff (2026-10-23T16:00:52.263Z)
+  @biomejs/cli-linux-arm64@2.6.3 was published at 2026-10-24T13:13:59.000Z, within the minimumReleaseAge cutoff (2026-10-23T16:00:52.263Z)
+  @biomejs/cli-linux-x64-musl@2.6.3 was published at 2026-10-24T13:14:28.000Z, within the minimumReleaseAge cutoff (2026-10-23T16:00:52.263Z)
+  @biomejs/cli-linux-x64@2.6.3 was published at 2026-10-24T13:14:18.000Z, within the minimumReleaseAge cutoff (2026-10-23T16:00:52.263Z)
+  @biomejs/cli-win32-arm64@2.6.3 was published at 2026-10-24T13:14:38.000Z, within the minimumReleaseAge cutoff (2026-10-23T16:00:52.263Z)
+  @biomejs/cli-win32-x64@2.6.3 was published at 2026-10-24T13:14:48.000Z, within the minimumReleaseAge cutoff (2026-10-23T16:00:52.263Z)
+
+The lockfile contains entries that the active policies reject. This can mean the lockfile is stale, or that someone committed a lockfile that bypassed the policy locally — inspect recent changes to pnpm-lock.yaml before trusting it. If the changes look expected, run "pnpm clean --lockfile" and then "pnpm install" to rebuild from a fresh resolution. Alternatively, relax the policy that flagged them.

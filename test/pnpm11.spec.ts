@@ -12,11 +12,34 @@ import {
   migratePnpm11,
   parseReleaseAgeViolations,
   readAllowBuildsKeys,
+  readReleaseAgeExcludeEntries,
 } from "../src/cli/pnpm11"
 
 function tmp(): string {
   return mkdtempSync(join(tmpdir(), "ts-builds-pnpm11-"))
 }
+
+// Real, unedited pnpm 11.27.0 / 12.15.0 output for `pnpm install --lockfile-only` on a
+// project depending on @biomejs/biome@2.6.3 while it was inside the 1-day cooldown
+// (captured 2026-10-24). Its long scoped platform packages are what pnpm 12 wraps
+// mid-token and what pnpm writes single-quoted — hand-written fixtures with a short
+// unscoped name hid both.
+const fixture = (name: string): string =>
+  readFileSync(join(import.meta.dirname, "fixtures", "pnpm-release-age", `${name}.txt`), "utf-8")
+
+const BIOME_2_6_3 = [
+  "@biomejs/biome@2.6.3",
+  "@biomejs/cli-android-arm64@2.6.3",
+  "@biomejs/cli-android-x64@2.6.3",
+  "@biomejs/cli-darwin-arm64@2.6.3",
+  "@biomejs/cli-darwin-x64@2.6.3",
+  "@biomejs/cli-linux-arm64-musl@2.6.3",
+  "@biomejs/cli-linux-arm64@2.6.3",
+  "@biomejs/cli-linux-x64-musl@2.6.3",
+  "@biomejs/cli-linux-x64@2.6.3",
+  "@biomejs/cli-win32-arm64@2.6.3",
+  "@biomejs/cli-win32-x64@2.6.3",
+]
 
 // No-op probe so the non-release-age tests stay deterministic and never shell
 // out to real pnpm. Release-age behaviour is exercised by its own tests below.
@@ -185,6 +208,52 @@ describe("detectPnpm11Issues", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe("parseReleaseAgeViolations — real pnpm 11 and 12 output", () => {
+  it.each([
+    ["pnpm 11 strict, stdout", "pnpm11-strict-single-stdout", ""],
+    ["pnpm 11 strict from a workspace package", "pnpm11-strict-workspace-pkg-stdout", ""],
+    ["pnpm 11 lockfile verification", "pnpm11-lockfile-verify-stdout", ""],
+    ["pnpm 11 lenient", "pnpm11-lenient-single-stdout", ""],
+    ["pnpm 11 lenient from a workspace package", "pnpm11-lenient-workspace-pkg-stdout", ""],
+    ["pnpm 12 lenient", "pnpm12-lenient-single-stdout", ""],
+    ["pnpm 12 strict, stderr wrapped mid-token", "", "pnpm12-strict-single-stderr"],
+    ["pnpm 12 strict from a workspace package", "", "pnpm12-strict-workspace-pkg-stderr"],
+    ["pnpm 12 lockfile verification, wrapped", "", "pnpm12-lockfile-verify-stderr"],
+  ])("extracts all 11 entries: %s", (_label, stdoutName, stderrName) => {
+    const stdout = stdoutName === "" ? "" : fixture(stdoutName)
+    const stderr = stderrName === "" ? "" : fixture(stderrName)
+    expect(parseReleaseAgeViolations(stdout, stderr)).toEqual(BIOME_2_6_3)
+  })
+
+  it("finds nothing in pnpm 12's output from a workspace package in lenient mode", () => {
+    // pnpm 12 prints only "Scope" and "Done" here; the root file diff is the only signal.
+    expect(parseReleaseAgeViolations(fixture("pnpm12-lenient-workspace-pkg-stdout"), "")).toEqual([])
+  })
+
+  it("rejoins a package name pnpm 12 splits at a hyphen", () => {
+    const stderr =
+      "        @biomejs/cli-linux-arm64-\n      musl@2.6.3 was published at 2026-10-\n" +
+      "      24T13:15:52.516Z, within the minimumReleaseAge cutoff (2026-10-\n      23T16:00:35.640Z)\n"
+    expect(parseReleaseAgeViolations("", stderr)).toEqual(["@biomejs/cli-linux-arm64-musl@2.6.3"])
+  })
+})
+
+describe("readReleaseAgeExcludeEntries", () => {
+  it("strips the single quotes pnpm writes around scoped entries", () => {
+    const entries = readReleaseAgeExcludeEntries(fixture("pnpm12-lenient-workspace-pkg-root-workspace-yaml"))
+    expect(entries.toArray().sort()).toEqual([...BIOME_2_6_3].sort())
+  })
+
+  it("reads bare, single-quoted, double-quoted and commented entries alike", () => {
+    const yaml =
+      "minimumReleaseAgeExclude:\n  - left-pad@1.3.0\n  - '@a/b@1.0.0'\n  - \"*functype*\"\n" +
+      "  - ts-builds # first-party\nallowBuilds:\n  esbuild: false\n"
+    expect(readReleaseAgeExcludeEntries(yaml).toArray().sort()).toEqual(
+      ["*functype*", "@a/b@1.0.0", "left-pad@1.3.0", "ts-builds"].sort(),
+    )
   })
 })
 
@@ -709,6 +778,45 @@ describe("migratePnpm11 — B3 minimumReleaseAgeExclude", () => {
     }
   })
 
+  it("treats pnpm's own single-quoted entries as already covering a violation", () => {
+    const dir = tmp()
+    try {
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "x" }))
+      const before = fixture("pnpm12-lenient-workspace-pkg-root-workspace-yaml")
+      writeFileSync(join(dir, "pnpm-workspace.yaml"), before)
+      const report = migratePnpm11(dir, () => ({
+        stdout: fixture("pnpm12-lenient-single-stdout"),
+        stderr: "",
+        status: 0,
+      }))
+      expect(readFileSync(join(dir, "pnpm-workspace.yaml"), "utf-8")).toBe(before)
+      expect(report.actions.length).toBe(0)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("writes nothing from a workspace package and points at the workspace root instead", () => {
+    const root = tmp()
+    try {
+      const rootWs = "packages:\n  - 'packages/*'\n"
+      writeFileSync(join(root, "pnpm-workspace.yaml"), rootWs)
+      const pkgDir = join(root, "packages", "a")
+      mkdirSync(pkgDir, { recursive: true })
+      writeFileSync(join(pkgDir, "package.json"), JSON.stringify({ name: "a", version: "0.0.0" }))
+      const report = migratePnpm11(pkgDir, () => ({ stdout: "", stderr: "", status: 0, autoExcluded: BIOME_2_6_3 }))
+      // pnpm never reads a package's own pnpm-workspace.yaml, so none may be created.
+      expect(existsSync(join(pkgDir, "pnpm-workspace.yaml"))).toBe(false)
+      expect(readFileSync(join(root, "pnpm-workspace.yaml"), "utf-8")).toBe(rootWs)
+      expect(report.actions).toEqual([
+        expect.objectContaining({ kind: "manual", message: expect.stringContaining(`workspace root (${root})`) }),
+      ])
+      expect(report.errors).toBe(0)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("reports a skipped step, not a clean run, when the probe could not run", () => {
     const dir = tmp()
     try {
@@ -955,6 +1063,37 @@ describe("defaultReleaseAgeProbe — side-effect-free (Bug 1)", () => {
             expect(detectPnpm11Issues(pkgDir, () => result).toArray()).toEqual([
               expect.objectContaining({ severity: "warning", message: expect.stringContaining("tsdown@0.23.2") }),
             ])
+          },
+        )
+        expect(readFileSync(rootWs, "utf-8")).toBe(before)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    },
+  )
+
+  it.skipIf(process.platform === "win32")(
+    "reports pnpm 12's real single-quoted root entries unquoted, once each",
+    () => {
+      const root = tmp()
+      try {
+        const rootWs = join(root, "pnpm-workspace.yaml")
+        const before = "packages:\n  - 'packages/*'\n"
+        writeFileSync(rootWs, before)
+        const pkgDir = join(root, "packages", "a")
+        mkdirSync(pkgDir, { recursive: true })
+        writeFileSync(join(pkgDir, "package.json"), JSON.stringify({ name: "a", version: "0.0.0" }))
+        // Replays pnpm 12.15.0's real run: the captured root file is `before` plus the
+        // block pnpm appended, and the captured stdout names none of the entries.
+        const appended = fixture("pnpm12-lenient-workspace-pkg-root-workspace-yaml").slice(before.length)
+        withFakePnpm(
+          { writes: [rootWs], append: appended, stdout: fixture("pnpm12-lenient-workspace-pkg-stdout") },
+          () => {
+            const result = defaultReleaseAgeProbe(pkgDir)
+            expect(result.autoExcluded).toEqual(BIOME_2_6_3)
+            const warnings = detectPnpm11Issues(pkgDir, () => result).toArray()
+            expect(warnings).toHaveLength(BIOME_2_6_3.length)
+            expect(warnings.some((w) => w.message.includes("'"))).toBe(false)
           },
         )
         expect(readFileSync(rootWs, "utf-8")).toBe(before)
