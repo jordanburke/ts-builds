@@ -6,6 +6,8 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+## 4.0.2 (2026-10-24)
+
 ### Bug Fixes
 
 - **doctor:** the `minimumReleaseAge` check runs again on pnpm 12 (#206). It ran
