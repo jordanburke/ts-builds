@@ -1,8 +1,8 @@
 import { spawnSync } from "node:child_process"
-import { existsSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
-import { basename, dirname, join } from "node:path"
+import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { basename, dirname, join, relative, sep } from "node:path"
 
-import { List, Map, Option, Set } from "functype"
+import { List, Map, Option, Set, Try } from "functype"
 
 import type { CheckResult } from "./commands/doctor"
 import { targetDir } from "./config"
@@ -170,6 +170,121 @@ function findWorkspaceRoot(dir: string): Option<string> {
   if (isFile(join(dir, "pnpm-workspace.yaml"))) return Option(dir)
   const parent = dirname(dir)
   return parent === dir ? Option.none<string>() : findWorkspaceRoot(parent)
+}
+
+// ─── Stray pnpm-workspace.yaml inside a workspace package (#210) ────────────
+
+/** The `packages:` globs of a `pnpm-workspace.yaml`, quotes stripped. */
+export function readWorkspacePackageGlobs(yaml: string): string[] {
+  return readListBlock(yaml, /^packages:/)
+}
+
+// One glob token: `**/`, a trailing `/**`, `**`, `*`, `?`, or any other single character.
+const GLOB_TOKEN = /\*\*\/|\/\*\*$|\*\*|\*|\?|[^*?]/g
+const GLOB_TOKEN_REGEX: Record<string, string> = {
+  "**/": "(?:.*/)?",
+  "/**": "(?:/.*)?",
+  "**": ".*",
+  "*": "[^/]*",
+  "?": "[^/]",
+}
+
+const normalizeGlobPath = (path: string): string => path.replace(/\\/g, "/").replace(/^\.\//, "").replace(/\/+$/, "")
+
+function globRegExp(glob: string): RegExp {
+  const body = normalizeGlobPath(glob).replace(
+    GLOB_TOKEN,
+    (token) => GLOB_TOKEN_REGEX[token] ?? token.replace(/[.+^${}()|[\]\\]/g, "\\$&"),
+  )
+  return new RegExp(`^${body}$`)
+}
+
+/**
+ * Pure matcher: whether pnpm's `packages:` globs list `relDir`, a directory path
+ * relative to the workspace root. Covers the forms pnpm documents: `*` (within one
+ * path segment), `**` (any depth, including none), `?`, and a leading `!` to exclude.
+ * Listed means some include matches and no exclude does.
+ */
+export function isListedPackage(relDir: string, globs: string[]): boolean {
+  const path = normalizeGlobPath(relDir)
+  const matches = (glob: string): boolean => globRegExp(glob).test(path)
+  const includes = globs.filter((glob) => !glob.startsWith("!"))
+  const excludes = globs.filter((glob) => glob.startsWith("!")).map((glob) => glob.slice(1))
+  return includes.some(matches) && !excludes.some(matches)
+}
+
+/** The workspace root strictly above `dir` whose `packages:` globs list it, if any. */
+function findListingRoot(dir: string): Option<string> {
+  const parent = dirname(dir)
+  if (parent === dir) return Option.none<string>()
+  return findWorkspaceRoot(parent).filter((root) =>
+    isListedPackage(
+      relative(root, dir),
+      readWorkspacePackageGlobs(readFileSync(join(root, "pnpm-workspace.yaml"), "utf-8")),
+    ),
+  )
+}
+
+/**
+ * For a package with its own `pnpm-workspace.yaml` that a workspace root above
+ * lists, that root. pnpm treats only a directory with a `package.json` as a
+ * workspace package, and a nested file in an unlisted directory is a legitimate
+ * separate workspace (pnpm 12 creates one there itself), so both are required.
+ */
+function strayWorkspaceRoot(dir: string): Option<string> {
+  const ownFile = isFile(join(dir, "pnpm-workspace.yaml")) && existsSync(join(dir, "package.json"))
+  return ownFile ? findListingRoot(dir) : Option.none<string>()
+}
+
+/**
+ * Directories below `dir` holding their own `pnpm-workspace.yaml`, without
+ * descending into one once found. Skips hidden directories, `node_modules` and
+ * symlinks, like the lint-report walk; an unreadable directory counts as empty.
+ */
+function nestedWorkspaceDirs(dir: string): string[] {
+  const entries = Try(() => readdirSync(dir, { withFileTypes: true })).orElse([])
+  const subdirs = entries
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules")
+    .map((entry) => join(dir, entry.name))
+  return subdirs.flatMap((sub) => (isFile(join(sub, "pnpm-workspace.yaml")) ? [sub] : nestedWorkspaceDirs(sub)))
+}
+
+/**
+ * Every stray file `doctor` should report from `dir`: `dir` itself when it is a
+ * stray package, and, when `dir` is a workspace root, each package below it that
+ * its globs list and that has its own `pnpm-workspace.yaml`. Returned as
+ * `[root, packageDir]` pairs.
+ */
+function findStrayWorkspaceFiles(dir: string): Array<[string, string]> {
+  const asPackage = strayWorkspaceRoot(dir).fold(
+    (): Array<[string, string]> => [],
+    (root) => [[root, dir]],
+  )
+  const wsPath = join(dir, "pnpm-workspace.yaml")
+  const globs = isFile(wsPath) ? readWorkspacePackageGlobs(readFileSync(wsPath, "utf-8")) : []
+  // No `packages:` key means a single-project workspace: nothing below it is listed.
+  const asRoot =
+    globs.length === 0
+      ? []
+      : nestedWorkspaceDirs(dir)
+          .filter((sub) => existsSync(join(sub, "package.json")) && isListedPackage(relative(dir, sub), globs))
+          .map((sub): [string, string] => [dir, sub])
+  return [...asPackage, ...asRoot]
+}
+
+function detectStrayWorkspaceFiles(dir: string): CheckResult[] {
+  return findStrayWorkspaceFiles(dir).map(([root, pkgDir]) => {
+    const rel = relative(root, pkgDir).split(sep).join("/")
+    return {
+      severity: "warning" as const,
+      message:
+        `${rel}/pnpm-workspace.yaml sits inside a package that the workspace root (${root}) lists. ` +
+        `Its settings don't apply to the workspace, and pnpm run from ${rel} treats it as a separate ` +
+        `workspace: it ignores the root's settings and packageManager pin and writes its own ` +
+        `pnpm-lock.yaml. Move any settings it holds to the root's pnpm-workspace.yaml and delete it, ` +
+        `or add "!${rel}" to the root's packages to keep it a separate workspace`,
+    }
+  })
 }
 
 function snapshotFile(path: string): FileSnapshot {
@@ -341,6 +456,7 @@ export function detectPnpm11Issues(
     ...pnpmFieldIssues,
     ...detectAllowBuildsIssues(dir),
     ...detectReleaseAgeIssues(dir, releaseAgeProbe),
+    ...detectStrayWorkspaceFiles(dir),
   ]
 
   return List(results.length > 0 ? results : [{ severity: "info", message: "pnpm 11 ready" }])
@@ -459,13 +575,17 @@ function renderExcludeEntry(entry: string): string {
  * the next top-level key.
  */
 export function readReleaseAgeExcludeEntries(yaml: string): Set<string> {
-  // `- entry`, `- 'entry'` or `- "entry"`, optionally followed by a `# comment`.
-  const entryLine = /^\s*-\s*(["']?)([^"'\s#]+)\1\s*(?:#.*)?$/
-  return Set(
-    blockLines(yaml, /^minimumReleaseAgeExclude:/)
-      .map((line) => entryLine.exec(line)?.[2])
-      .filter((entry): entry is string => entry !== undefined),
-  )
+  return Set(readListBlock(yaml, /^minimumReleaseAgeExclude:/))
+}
+
+// A YAML list item: `- entry`, `- 'entry'` or `- "entry"`, optionally followed by a `# comment`.
+const YAML_LIST_ENTRY = /^\s*-\s*(["']?)([^"'\s#]+)\1\s*(?:#.*)?$/
+
+/** The unquoted items of the top-level list block whose header matches `header`. */
+function readListBlock(yaml: string, header: RegExp): string[] {
+  return blockLines(yaml, header)
+    .map((line) => YAML_LIST_ENTRY.exec(line)?.[2])
+    .filter((entry): entry is string => entry !== undefined)
 }
 
 /**
@@ -738,6 +858,30 @@ function workspacePackageAction(root: string): MigrationAction {
   }
 }
 
+/**
+ * The refusal `--fix` reports from a stray package: one with its own
+ * `pnpm-workspace.yaml` that a workspace root lists. pnpm run from here does read
+ * that file, which is the problem, so writing more into it would entrench it.
+ */
+function strayPackageAction(root: string): MigrationAction {
+  return {
+    kind: "manual",
+    message:
+      `Nothing changed: this package's own pnpm-workspace.yaml sits inside the workspace rooted at ` +
+      `${root} (see the warning above). Move its settings to the root's pnpm-workspace.yaml and ` +
+      `delete it, then run 'ts-builds doctor --fix' from the root`,
+  }
+}
+
+/** Why `--fix` must not write from `dir`, if it must not: a stray or ordinary workspace package. */
+function workspaceRefusal(dir: string): Option<MigrationAction> {
+  const stray = strayWorkspaceRoot(dir).map(strayPackageAction)
+  if (stray.isSome()) return stray
+  return findWorkspaceRoot(dir)
+    .filter((root) => root !== dir)
+    .map(workspacePackageAction)
+}
+
 export function migratePnpm11(
   dir: string = targetDir,
   releaseAgeProbe: PnpmReleaseAgeProbe = defaultReleaseAgeProbe,
@@ -765,10 +909,8 @@ export function migratePnpm11(
   // refused here with nothing touched. Only a pending write is refused: steps that
   // write nothing (a skipped probe, a key left for manual migration) report as usual.
   const wouldWrite = ws !== originalWs || steps.some((step) => step.sourceMutations.length > 0)
-  const refusal = findWorkspaceRoot(dir)
-    .filter((root) => wouldWrite && root !== dir)
-    .map((root): MigrationReport => ({ actions: [workspacePackageAction(root)], errors: 0 }))
-  if (refusal.isSome()) return refusal.orThrow()
+  const refusal = wouldWrite ? workspaceRefusal(dir) : Option.none<MigrationAction>()
+  if (refusal.isSome()) return { actions: [refusal.orThrow()], errors: 0 }
 
   // Destructive edits to the SOURCE files are deferred until the destination
   // (pnpm-workspace.yaml) is safely on disk — otherwise a failed ws write would
