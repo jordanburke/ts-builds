@@ -276,13 +276,17 @@ lines in `.npmrc` and a `package.json` `pnpm` field (both ignored by pnpm 11).
 keys are reported for manual migration rather than altered.
 
 Run from a workspace package (a directory with a `pnpm-workspace.yaml` above it but
-none of its own), `--fix` changes nothing and reports one `manual` action naming the
-workspace root. pnpm reads these settings only from the root's `pnpm-workspace.yaml`,
-and a stray one inside a package can make pnpm treat the package as its own root.
-Moving a package's settings up to the root is not automated, because it could switch
-on settings that are inert today (a package's `pnpm.overrides`, say). When the package
-has nothing to migrate, `--fix` stays silent. The guard sits in `migratePnpm11` after
-every step is computed and before the single write.
+none of its own), `--fix` refuses any write: it changes nothing and reports one
+`manual` action naming the workspace root. pnpm reads these settings only from the
+root's `pnpm-workspace.yaml`, and a stray one inside a package can make pnpm treat the
+package as its own root. Moving a package's settings up to the root is not automated,
+because it could switch on settings that are inert today (a package's
+`pnpm.overrides`, say). Steps that write nothing — a skipped release-age probe, a key
+left for manual migration — report as usual, and with nothing at all it prints
+"Nothing to migrate". The guard sits in `migratePnpm11` after every step is computed
+and before the single write, keyed on whether `ws` changed or any source mutation is
+pending. Limit: a package that already has its own stray `pnpm-workspace.yaml` (left
+by older `--fix` runs) counts as a root, so the guard does not fire there (#210).
 
 `doctor` also surfaces the two pnpm 11 supply-chain settings that need judgment:
 

@@ -861,6 +861,30 @@ describe("migratePnpm11 — B3 minimumReleaseAgeExclude", () => {
       }
     })
 
+    it("reports steps that write nothing as usual, instead of the refusal", () => {
+      const [root, pkgDir] = workspace()
+      try {
+        // A failed probe and a key left for manual migration write nothing, so there is
+        // nothing to refuse; their own messages say more than the refusal would.
+        writeFileSync(
+          join(pkgDir, "package.json"),
+          JSON.stringify({ name: "a", version: "0.0.0", pnpm: { packageExtensions: { foo: {} } } }),
+        )
+        const failingProbe: PnpmReleaseAgeProbe = () => ({
+          stdout: "",
+          stderr: "Error: ERR_PNPM_FETCH_404",
+          status: 1,
+        })
+        const report = migratePnpm11(pkgDir, failingProbe)
+        expect(existsSync(join(pkgDir, "pnpm-workspace.yaml"))).toBe(false)
+        expect(report.actions.map((a) => a.kind).sort()).toEqual(["manual", "skipped"])
+        expect(report.actions.some((a) => a.message.includes("packageExtensions"))).toBe(true)
+        expect(report.actions.some((a) => a.message.includes("workspace root"))).toBe(false)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
     it("still migrates when run from the workspace root itself", () => {
       const [root] = workspace()
       try {

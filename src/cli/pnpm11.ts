@@ -762,11 +762,13 @@ export function migratePnpm11(
   const actions = steps.flatMap((step) => step.actions)
 
   // Every step above is computed without writing, so a workspace package can be
-  // refused here with nothing touched.
-  const outerRoot = findWorkspaceRoot(dir).filter((root) => root !== dir)
-  if (actions.length > 0 && outerRoot.isSome()) {
-    return { actions: outerRoot.toList().map(workspacePackageAction).toArray(), errors: 0 }
-  }
+  // refused here with nothing touched. Only a pending write is refused: steps that
+  // write nothing (a skipped probe, a key left for manual migration) report as usual.
+  const wouldWrite = ws !== originalWs || steps.some((step) => step.sourceMutations.length > 0)
+  const refusal = findWorkspaceRoot(dir)
+    .filter((root) => wouldWrite && root !== dir)
+    .map((root): MigrationReport => ({ actions: [workspacePackageAction(root)], errors: 0 }))
+  if (refusal.isSome()) return refusal.orThrow()
 
   // Destructive edits to the SOURCE files are deferred until the destination
   // (pnpm-workspace.yaml) is safely on disk — otherwise a failed ws write would

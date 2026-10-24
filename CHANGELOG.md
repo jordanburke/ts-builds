@@ -10,9 +10,10 @@ conventional commits via `ts-builds changelog`.
 
 - **doctor:** `doctor --fix` run from a workspace package no longer writes anything (#208). It used
   to migrate the package's `.npmrc` hoist patterns, its `package.json` `pnpm` field and
-  `allowBuilds` into the package's own `pnpm-workspace.yaml`. pnpm never reads that file, and a
-  stray one can make pnpm treat the package as its own workspace root. `--fix` now changes nothing
-  there and names the workspace root to run it from. Settings in a package's own `.npmrc` or
+  `allowBuilds` into the package's own `pnpm-workspace.yaml`. pnpm doesn't apply settings from a
+  package's own `pnpm-workspace.yaml` to the workspace, and the stray file can make pnpm treat the
+  package as its own workspace root. When `--fix` would write anything there, it now changes nothing
+  and names the workspace root to run it from. Settings in a package's own `.npmrc` or
   `pnpm` field must be moved to the root by hand, because moving them automatically could switch
   on settings that are inert today. 4.0.2 already did this for `minimumReleaseAgeExclude`.
 
