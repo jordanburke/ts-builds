@@ -817,6 +817,91 @@ describe("migratePnpm11 — B3 minimumReleaseAgeExclude", () => {
     }
   })
 
+  describe("run from a workspace package (#208)", () => {
+    const ROOT_WS = "packages:\n  - 'packages/*'\n"
+
+    // A workspace root with one package, `packages/a`, returned as [root, pkgDir].
+    function workspace(): [string, string] {
+      const root = tmp()
+      writeFileSync(join(root, "pnpm-workspace.yaml"), ROOT_WS)
+      const pkgDir = join(root, "packages", "a")
+      mkdirSync(pkgDir, { recursive: true })
+      return [root, pkgDir]
+    }
+
+    it("refuses every migration, touching no file in the package or at the root", () => {
+      const [root, pkgDir] = workspace()
+      try {
+        const pkgJson = JSON.stringify({ name: "a", version: "0.0.0", pnpm: { overrides: { foo: "1.0.0" } } })
+        const npmrc = "public-hoist-pattern[]=*eslint*\n"
+        writeFileSync(join(pkgDir, "package.json"), pkgJson)
+        writeFileSync(join(pkgDir, ".npmrc"), npmrc)
+        writeFileSync(join(pkgDir, "pnpm-lock.yaml"), LOCKFILE_WITH_ESBUILD)
+        const report = migratePnpm11(pkgDir, probeReporting("left-pad@1.3.0"))
+        expect(existsSync(join(pkgDir, "pnpm-workspace.yaml"))).toBe(false)
+        expect(readFileSync(join(pkgDir, "package.json"), "utf-8")).toBe(pkgJson)
+        expect(readFileSync(join(pkgDir, ".npmrc"), "utf-8")).toBe(npmrc)
+        expect(readFileSync(join(root, "pnpm-workspace.yaml"), "utf-8")).toBe(ROOT_WS)
+        expect(report).toEqual({
+          actions: [{ kind: "manual", message: expect.stringContaining(`workspace root (${root})`) }],
+          errors: 0,
+        })
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it("stays silent when the package has nothing to migrate", () => {
+      const [root, pkgDir] = workspace()
+      try {
+        writeFileSync(join(pkgDir, "package.json"), JSON.stringify({ name: "a", version: "0.0.0" }))
+        expect(migratePnpm11(pkgDir, noReleaseAgeProbe)).toEqual({ actions: [], errors: 0 })
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it("reports steps that write nothing as usual, instead of the refusal", () => {
+      const [root, pkgDir] = workspace()
+      try {
+        // A failed probe and a key left for manual migration write nothing, so there is
+        // nothing to refuse; their own messages say more than the refusal would.
+        writeFileSync(
+          join(pkgDir, "package.json"),
+          JSON.stringify({ name: "a", version: "0.0.0", pnpm: { packageExtensions: { foo: {} } } }),
+        )
+        const failingProbe: PnpmReleaseAgeProbe = () => ({
+          stdout: "",
+          stderr: "Error: ERR_PNPM_FETCH_404",
+          status: 1,
+        })
+        const report = migratePnpm11(pkgDir, failingProbe)
+        expect(existsSync(join(pkgDir, "pnpm-workspace.yaml"))).toBe(false)
+        expect(report.actions.map((a) => a.kind).sort()).toEqual(["manual", "skipped"])
+        expect(report.actions.some((a) => a.message.includes("packageExtensions"))).toBe(true)
+        expect(report.actions.some((a) => a.message.includes("workspace root"))).toBe(false)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+
+    it("still migrates when run from the workspace root itself", () => {
+      const [root] = workspace()
+      try {
+        writeFileSync(join(root, "package.json"), JSON.stringify({ name: "root", private: true }))
+        writeFileSync(join(root, ".npmrc"), "public-hoist-pattern[]=*eslint*\n")
+        const report = migratePnpm11(root, noReleaseAgeProbe)
+        expect(readFileSync(join(root, "pnpm-workspace.yaml"), "utf-8")).toContain(
+          `publicHoistPattern:\n  - "*eslint*"`,
+        )
+        expect(report.errors).toBe(0)
+        expect(report.actions.some((a) => a.kind === "manual")).toBe(false)
+      } finally {
+        rmSync(root, { recursive: true, force: true })
+      }
+    })
+  })
+
   it("reports a skipped step, not a clean run, when the probe could not run", () => {
     const dir = tmp()
     try {
