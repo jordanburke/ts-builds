@@ -1,0 +1,13 @@
+Added 11 entries to minimumReleaseAgeExclude in pnpm-workspace.yaml (set minimumReleaseAgeStrict to true to gate these updates with a prompt):
+  @biomejs/biome@2.6.3
+  @biomejs/cli-android-arm64@2.6.3
+  @biomejs/cli-android-x64@2.6.3
+  @biomejs/cli-darwin-arm64@2.6.3
+  @biomejs/cli-darwin-x64@2.6.3
+  @biomejs/cli-linux-arm64-musl@2.6.3
+  @biomejs/cli-linux-arm64@2.6.3
+  @biomejs/cli-linux-x64-musl@2.6.3
+  @biomejs/cli-linux-x64@2.6.3
+  @biomejs/cli-win32-arm64@2.6.3
+  @biomejs/cli-win32-x64@2.6.3
+Done in 19ms using pnpm v12.15.0

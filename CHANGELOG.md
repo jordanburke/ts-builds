@@ -6,6 +6,36 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- **doctor:** the `minimumReleaseAge` check runs again on pnpm 12 (#206). It ran
+  `pnpm install --resolution-only`, which pnpm 12 rejects, and `doctor` ignored the failure and
+  reported "pnpm 11 ready" without checking. It now runs `pnpm install --lockfile-only`, which pnpm
+  11 and 12 both support. Older gaps fixed with it:
+  - On recent pnpm 11 too (verified on 11.27.0), the default lenient mode prints the too-new
+    packages in a form the parser did not read, so nothing was flagged. `doctor` now reads both of
+    pnpm's output forms. pnpm 12 wraps its errors at 80 columns and splits dates and package names
+    at hyphens, so `doctor` rejoins those lines before reading them.
+  - pnpm 12 run from a monorepo package adds the entries to the root `pnpm-workspace.yaml` without
+    printing them, so `doctor` also reads what pnpm wrote there. pnpm writes scoped entries
+    single-quoted (`- '@scope/name@1.0.0'`), and `doctor` now reads those quotes, both here and when
+    `--fix` checks which entries already exist.
+  - In lenient mode pnpm writes the too-new packages into `pnpm-workspace.yaml` during the probe,
+    and `doctor` left that edit behind. The probe now restores `pnpm-workspace.yaml` as well as
+    `pnpm-lock.yaml`, including at a monorepo's workspace root.
+- **doctor:** when pnpm fails without reporting a too-new package, `doctor` now warns that the
+  check could not run, instead of reporting ready. `doctor --fix` reports the step as skipped.
+- **doctor:** `doctor --fix` run from a monorepo package no longer writes `minimumReleaseAgeExclude`
+  into the package's own `pnpm-workspace.yaml`, which pnpm never reads. It names the workspace root
+  to run `--fix` from instead.
+- **doctor:** one limit to know about. `--lockfile-only` doesn't re-resolve versions the lockfile
+  already pins. pnpm checks those through its lockfile verification instead, and `doctor` reads
+  that error. But pnpm caches a passing verification on each machine and reuses it for the same
+  lockfile. A lenient install on the same machine records a pass, so `doctor` then reports ready
+  for a lockfile that pins too-new versions, while a CI runner with a cold cache fails the install.
+  Verified on pnpm 11.27.0 and 12.15.0. The old `--resolution-only` probe re-resolved everything,
+  but pnpm 12 has no equivalent flag.
+
 ## 4.0.1 (2026-10-23)
 
 ### Dependencies
