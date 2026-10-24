@@ -294,7 +294,11 @@ keys are reported for manual migration rather than altered.
   single-quoted, so `readReleaseAgeExcludeEntries` strips both quote styles. A
   too-new version already pinned in `pnpm-lock.yaml` is not re-resolved by
   `--lockfile-only`; pnpm's lockfile verification reports it instead
-  (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`, same per-entry wording). The parser's
+  (`ERR_PNPM_MINIMUM_RELEASE_AGE_VIOLATION`, same per-entry wording). Limit: pnpm
+  caches a passing verification per machine and reuses it for the same lockfile, so
+  after a lenient install has recorded a pass on this machine, `doctor` reports ready
+  while a cold-cache CI runner fails the same install (reproduced on 11.27.0 and
+  12.15.0). The parser's
   test fixtures are real captured pnpm 11.27.0 / 12.15.0 output in
   `test/fixtures/pnpm-release-age/` — keep them real; hand-written short unscoped
   names hid the wrapping and quoting bugs. If pnpm is absent the probe degrades
