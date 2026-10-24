@@ -275,6 +275,15 @@ lines in `.npmrc` and a `package.json` `pnpm` field (both ignored by pnpm 11).
 `pnpm` field. Exotic `pnpm` keys (e.g. `packageExtensions`) and pre-existing target
 keys are reported for manual migration rather than altered.
 
+Run from a workspace package (a directory with a `pnpm-workspace.yaml` above it but
+none of its own), `--fix` changes nothing and reports one `manual` action naming the
+workspace root. pnpm reads these settings only from the root's `pnpm-workspace.yaml`,
+and a stray one inside a package can make pnpm treat the package as its own root.
+Moving a package's settings up to the root is not automated, because it could switch
+on settings that are inert today (a package's `pnpm.overrides`, say). When the package
+has nothing to migrate, `--fix` stays silent. The guard sits in `migratePnpm11` after
+every step is computed and before the single write.
+
 `doctor` also surfaces the two pnpm 11 supply-chain settings that need judgment:
 
 - **`minimumReleaseAge` violations** — a `minimumReleaseAge` check shells out to a
@@ -308,8 +317,7 @@ keys are reported for manual migration rather than altered.
   entries into `pnpm-workspace.yaml` — pinned
   `pkg@version` for third-party deps with no aged-enough alternative, bare names for
   first-party libs (`ts-builds`, `functype`, `functype-*`). Run from a workspace
-  package, `--fix` writes no entries and names the workspace root to run it from,
-  since pnpm reads the setting only there.
+  package, `--fix` writes nothing (see above).
 - **`allowBuilds` gaps** — a static check (no install) compares a curated known-safe
   set (`esbuild`) present in `pnpm-lock.yaml` against the `allowBuilds` keys already
   in `pnpm-workspace.yaml`; an undecided build script (hard-errors as

@@ -669,28 +669,6 @@ function migrateReleaseAgeExcludes(dir: string, ws: string, probe: PnpmReleaseAg
       (message) => ({ ws, actions: [{ kind: "skipped" as const, message }], sourceMutations: [] }),
     )
   }
-  // pnpm reads minimumReleaseAgeExclude only from the workspace root. Writing it into
-  // a package's own pnpm-workspace.yaml would do nothing, and a stray file there can
-  // make pnpm treat the package as a workspace root, so point at the root instead.
-  const outerRoot = findWorkspaceRoot(dir).filter((root) => root !== dir)
-  if (outerRoot.isSome()) {
-    return outerRoot.fold(
-      () => noChange(ws),
-      (root) => ({
-        ws,
-        actions: [
-          {
-            kind: "manual" as const,
-            message:
-              `${violations.length} package(s) are newer than the minimumReleaseAge cutoff, but this is a ` +
-              `workspace package — run 'ts-builds doctor --fix' from the workspace root (${root}) ` +
-              `to add them to its pnpm-workspace.yaml`,
-          },
-        ],
-        sourceMutations: [],
-      }),
-    )
-  }
   // Canonicalize existing entries so any first-party form already present —
   // a `functype@x` pin pnpm auto-added, a bare `functype-os`, or the `*functype*`
   // glob itself — counts as covering a fresh functype-family violation, and we
@@ -742,6 +720,24 @@ function migrateAllowBuilds(ws: string, lockfile: string | undefined): Migration
   }
 }
 
+/**
+ * The refusal `--fix` reports from inside a workspace package. pnpm reads
+ * pnpm-workspace.yaml settings only from the workspace root: writing them into the
+ * package's own file would do nothing, and a stray pnpm-workspace.yaml can make pnpm
+ * treat the package as its own workspace root. Moving the package's settings to the
+ * root is not automated, because it could switch on settings that are inert today
+ * (a package's `pnpm.overrides`, say).
+ */
+function workspacePackageAction(root: string): MigrationAction {
+  return {
+    kind: "manual",
+    message:
+      `Nothing changed: this is a workspace package, and pnpm reads these settings only from the ` +
+      `workspace root (${root}). Run 'ts-builds doctor --fix' there, and move any settings in this ` +
+      `package's .npmrc or package.json "pnpm" field to the root's pnpm-workspace.yaml by hand`,
+  }
+}
+
 export function migratePnpm11(
   dir: string = targetDir,
   releaseAgeProbe: PnpmReleaseAgeProbe = defaultReleaseAgeProbe,
@@ -764,6 +760,13 @@ export function migratePnpm11(
   const steps = [npmrc, pkgJson, releaseAge, allowBuilds]
   const { ws } = allowBuilds
   const actions = steps.flatMap((step) => step.actions)
+
+  // Every step above is computed without writing, so a workspace package can be
+  // refused here with nothing touched.
+  const outerRoot = findWorkspaceRoot(dir).filter((root) => root !== dir)
+  if (actions.length > 0 && outerRoot.isSome()) {
+    return { actions: outerRoot.toList().map(workspacePackageAction).toArray(), errors: 0 }
+  }
 
   // Destructive edits to the SOURCE files are deferred until the destination
   // (pnpm-workspace.yaml) is safely on disk — otherwise a failed ws write would
