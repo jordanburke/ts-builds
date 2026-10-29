@@ -6,6 +6,17 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+### Features
+
+- **doctor:** warns about a stray `pnpm-workspace.yaml` inside a workspace package (#210), such as
+  one an older `doctor --fix` wrote into `packages/a`. pnpm ignores its settings from the root, but
+  pnpm run from that package treats it as a separate workspace: it ignores the root's settings and
+  `packageManager` pin and writes its own `pnpm-lock.yaml`. The warning names the root and suggests
+  moving the settings there and deleting the file, or adding `!packages/a` to the root's `packages`
+  to keep it separate. `doctor` reports it from the package itself, and from the root for every
+  listed package. A nested `pnpm-workspace.yaml` in a directory the root doesn't list is left
+  alone. `--fix` never deletes the file, and from a stray package it refuses to write.
+
 ### Bug Fixes
 
 - **doctor:** `doctor --fix` run from a workspace package no longer writes anything (#208). It used

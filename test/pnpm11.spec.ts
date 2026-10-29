@@ -9,10 +9,12 @@ import {
   buildReleaseAgeExcludeLine,
   defaultReleaseAgeProbe,
   detectPnpm11Issues,
+  isListedPackage,
   migratePnpm11,
   parseReleaseAgeViolations,
   readAllowBuildsKeys,
   readReleaseAgeExcludeEntries,
+  readWorkspacePackageGlobs,
 } from "../src/cli/pnpm11"
 
 function tmp(): string {
@@ -1224,6 +1226,177 @@ describe("migratePnpm11 — B3 integration & idempotence (acceptance proxy)", ()
       expect(report2.errors).toBe(0)
     } finally {
       rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("isListedPackage — pnpm's documented packages globs", () => {
+  it.each([
+    ["packages/a", ["packages/*"], true],
+    ["packages/a/b", ["packages/*"], false],
+    ["packages", ["packages/*"], false],
+    ["anything/at/all", ["**"], true],
+    ["apps", ["apps/**"], true],
+    ["apps/x/y", ["apps/**"], true],
+    ["a/b", ["a/**/b"], true],
+    ["a/x/y/b", ["a/**/b"], true],
+    ["components/button", ["components/**", "!**/test/**"], true],
+    ["components/test/fixture", ["components/**", "!**/test/**"], false],
+    ["packages/a", ["./packages/*/"], true],
+    ["pkg1", ["pkg?"], true],
+    ["pkg10", ["pkg?"], false],
+    ["my.pkg", ["my.pkg"], true],
+    ["myXpkg", ["my.pkg"], false],
+    ["packages/a", [], false],
+    ["packages/a", ["!packages/a"], false],
+  ])("%s with %j → %s", (relDir, globs, expected) => {
+    expect(isListedPackage(relDir, globs)).toBe(expected)
+  })
+})
+
+describe("readWorkspacePackageGlobs", () => {
+  it("reads bare, quoted and negated globs and stops at the next key", () => {
+    const yaml =
+      "packages:\n  - 'packages/*'\n  - \"apps/**\"\n  - tools\n  - '!**/test/**'\noverrides:\n  foo: 1.0.0\n"
+    expect(readWorkspacePackageGlobs(yaml)).toEqual(["packages/*", "apps/**", "tools", "!**/test/**"])
+  })
+
+  it("returns [] without a packages key", () => {
+    expect(readWorkspacePackageGlobs("minimumReleaseAgeExclude:\n  - foo\n")).toEqual([])
+  })
+})
+
+describe("stray pnpm-workspace.yaml inside a workspace package (#210)", () => {
+  const ROOT_WS = "packages:\n  - 'packages/*'\n  - '!packages/excluded'\n"
+
+  // Writes `files` (path → contents) under a fresh root and returns the root.
+  function layout(files: Record<string, string>): string {
+    const root = tmp()
+    Object.entries(files).forEach(([path, contents]) => {
+      mkdirSync(join(root, path, ".."), { recursive: true })
+      writeFileSync(join(root, path), contents)
+    })
+    return root
+  }
+
+  const pkg = (name: string): string => JSON.stringify({ name, version: "0.0.0" })
+  const strayWarnings = (dir: string): string[] =>
+    detectPnpm11Issues(dir, noReleaseAgeProbe)
+      .toArray()
+      .filter((r) => r.message.includes("sits inside a package"))
+      .map((r) => r.message)
+
+  it("warns from the stray package itself, naming the root and pnpm's own escape hatch", () => {
+    const root = layout({
+      "pnpm-workspace.yaml": ROOT_WS,
+      "packages/a/package.json": pkg("a"),
+      "packages/a/pnpm-workspace.yaml": "overrides:\n  foo: 1.0.0\n",
+    })
+    try {
+      const warnings = strayWarnings(join(root, "packages", "a"))
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain(
+        `packages/a/pnpm-workspace.yaml sits inside a package that the workspace root (${root}) lists`,
+      )
+      expect(warnings[0]).toContain(`"!packages/a"`)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("warns from the root about each listed package below it, and only those", () => {
+    const root = layout({
+      "pnpm-workspace.yaml": ROOT_WS,
+      "packages/a/package.json": pkg("a"),
+      "packages/a/pnpm-workspace.yaml": "overrides:\n  foo: 1.0.0\n",
+      // Not listed: excluded by the root's `!` glob, or outside `packages/*`.
+      "packages/excluded/package.json": pkg("excluded"),
+      "packages/excluded/pnpm-workspace.yaml": "packages:\n  - '.'\n",
+      "examples/demo/package.json": pkg("demo"),
+      "examples/demo/pnpm-workspace.yaml": "packages:\n  - '.'\n",
+      // Listed, but no package.json: pnpm does not treat it as a package.
+      "packages/notapkg/pnpm-workspace.yaml": "overrides:\n  foo: 1.0.0\n",
+      // Never walked.
+      "node_modules/x/package.json": pkg("x"),
+      "node_modules/x/pnpm-workspace.yaml": "packages:\n  - '.'\n",
+      ".hidden/y/package.json": pkg("y"),
+      ".hidden/y/pnpm-workspace.yaml": "packages:\n  - '.'\n",
+    })
+    try {
+      const warnings = strayWarnings(root)
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain("packages/a/pnpm-workspace.yaml sits inside")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("does not warn about a separate workspace in a directory the root does not list", () => {
+    // pnpm 12 itself creates a pnpm-workspace.yaml in an unlisted directory below a workspace.
+    const root = layout({
+      "pnpm-workspace.yaml": ROOT_WS,
+      "examples/demo/package.json": pkg("demo"),
+      "examples/demo/pnpm-workspace.yaml": "minimumReleaseAgeExclude:\n  - foo@1.0.0\n",
+    })
+    try {
+      expect(strayWarnings(join(root, "examples", "demo"))).toEqual([])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("does not walk below a root without a packages key", () => {
+    const root = layout({
+      "pnpm-workspace.yaml": "overrides:\n  foo: 1.0.0\n",
+      "packages/a/package.json": pkg("a"),
+      "packages/a/pnpm-workspace.yaml": "overrides:\n  foo: 1.0.0\n",
+    })
+    try {
+      expect(strayWarnings(root)).toEqual([])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("refuses --fix in a stray package with the stray-file message, writing nothing", () => {
+    const strayWs = "overrides:\n  foo: 1.0.0\n"
+    const root = layout({
+      "pnpm-workspace.yaml": ROOT_WS,
+      "packages/a/package.json": pkg("a"),
+      "packages/a/pnpm-workspace.yaml": strayWs,
+      "packages/a/.npmrc": "public-hoist-pattern[]=*eslint*\n",
+    })
+    try {
+      const pkgDir = join(root, "packages", "a")
+      const report = migratePnpm11(pkgDir, noReleaseAgeProbe)
+      expect(readFileSync(join(pkgDir, "pnpm-workspace.yaml"), "utf-8")).toBe(strayWs)
+      expect(readFileSync(join(pkgDir, ".npmrc"), "utf-8")).toBe("public-hoist-pattern[]=*eslint*\n")
+      expect(report).toEqual({
+        actions: [
+          {
+            kind: "manual",
+            message: expect.stringContaining(
+              `this package's own pnpm-workspace.yaml sits inside the workspace rooted at ${root}`,
+            ),
+          },
+        ],
+        errors: 0,
+      })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("does not refuse --fix in a stray package when nothing would be written", () => {
+    const root = layout({
+      "pnpm-workspace.yaml": ROOT_WS,
+      "packages/a/package.json": pkg("a"),
+      "packages/a/pnpm-workspace.yaml": "overrides:\n  foo: 1.0.0\n",
+    })
+    try {
+      expect(migratePnpm11(join(root, "packages", "a"), noReleaseAgeProbe)).toEqual({ actions: [], errors: 0 })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })

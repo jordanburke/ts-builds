@@ -285,8 +285,22 @@ because it could switch on settings that are inert today (a package's
 left for manual migration — report as usual, and with nothing at all it prints
 "Nothing to migrate". The guard sits in `migratePnpm11` after every step is computed
 and before the single write, keyed on whether `ws` changed or any source mutation is
-pending. Limit: a package that already has its own stray `pnpm-workspace.yaml` (left
-by older `--fix` runs) counts as a root, so the guard does not fire there (#210).
+pending.
+
+`doctor` also warns about a stray `pnpm-workspace.yaml` (#210): one in a directory
+that has a `package.json` and that the nearest workspace root above lists in its
+`packages:` globs. Older `--fix` runs left such files. Verified on pnpm 11.27.0 and
+12.15.0: from the root, pnpm keeps the package as a member and ignores the nested
+file's settings (pnpm 12 warns about it itself); run from the package, pnpm treats it
+as a separate workspace, ignoring the root's settings and `packageManager` pin and
+writing its own `pnpm-lock.yaml`. Run from the package, `doctor` reports that package;
+run from a root with a `packages:` key, it walks the tree (skipping hidden directories,
+`node_modules` and symlinks, and not descending below a nested file) and reports each
+listed package. A nested file in an unlisted directory is a separate workspace and is
+not reported. `--fix` never deletes the file, and refuses to write from a stray
+package, with its own message. Globs are matched by `isListedPackage`, a small
+hand-written matcher for pnpm's documented forms (`*`, `**`, `?`, leading `!`),
+because `path.matchesGlob` is experimental on Node 22.
 
 `doctor` also surfaces the two pnpm 11 supply-chain settings that need judgment:
 
