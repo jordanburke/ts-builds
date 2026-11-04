@@ -8,6 +8,10 @@ conventional commits via `ts-builds changelog`.
 
 ### Features
 
+- **lint:** the fp and functype configs relax the rules that misread a test's shape, for test files
+  only (#213). They spread functype's `test-overrides` and, in the functype config, the plugin's
+  `tests` config, so `eslint-config-functype` and `eslint-plugin-functype` now need `^2.124.0`.
+  Formatting, import sorting and the rest stay on. The base config is unchanged.
 - **lint:** `lint.includeTests` lints `testDir` as well as `srcDir` (#213), on both the bundled and
   `useProjectEslint` paths. A missing `testDir` is skipped, and `lint:summary` and the sidecar count
   both directories. It's off by default in 4.x, because turning it on can fail `validate` in a repo
