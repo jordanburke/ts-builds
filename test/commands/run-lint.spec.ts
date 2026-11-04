@@ -149,22 +149,26 @@ export default [{ files: ["**/*.ts"], languageOptions: { parser: tseslint.parser
       )
     })
 
-    itIfBuilt("on, with useProjectEslint: the project's eslint gets both directories", () => {
-      const stub = '#!/bin/sh\necho "$@" > eslint-args.txt\n'
-      inFixture(
-        "export default []",
-        {
-          "ts-builds.config.json": JSON.stringify({ lint: { includeTests: true, useProjectEslint: true } }),
-          "src/a.js": "",
-          "test/a.js": "",
-          "node_modules/.bin/eslint": stub,
-        },
-        (dir) => {
-          chmodSync(join(dir, "node_modules", ".bin", "eslint"), 0o755)
-          expect(runCli(dir, "lint:check").status).toBe(0)
-          expect(readFileSync(join(dir, "eslint-args.txt"), "utf-8").trim()).toBe("./src ./test")
-        },
-      )
-    })
+    // The stub is a shell script, which npx can't run on Windows.
+    it.skipIf(!existsSync(cliPath) || process.platform === "win32")(
+      "on, with useProjectEslint: the project's eslint gets both directories",
+      () => {
+        const stub = '#!/bin/sh\necho "$@" > eslint-args.txt\n'
+        inFixture(
+          "export default []",
+          {
+            "ts-builds.config.json": JSON.stringify({ lint: { includeTests: true, useProjectEslint: true } }),
+            "src/a.js": "",
+            "test/a.js": "",
+            "node_modules/.bin/eslint": stub,
+          },
+          (dir) => {
+            chmodSync(join(dir, "node_modules", ".bin", "eslint"), 0o755)
+            expect(runCli(dir, "lint:check").status).toBe(0)
+            expect(readFileSync(join(dir, "eslint-args.txt"), "utf-8").trim()).toBe("./src ./test")
+          },
+        )
+      },
+    )
   })
 })
