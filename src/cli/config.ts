@@ -49,6 +49,8 @@ export interface CommandDef {
 
 export interface LintConfig {
   useProjectEslint?: boolean
+  /** Lint `testDir` as well as `srcDir`, when it exists. Off by default until 5.0. */
+  includeTests?: boolean
 }
 
 export interface SizeConfig {
@@ -79,7 +81,7 @@ export interface ResolvedConfig {
   srcDir: string
   testDir: string
   buildMode: BuildMode
-  lint: { useProjectEslint: boolean }
+  lint: { useProjectEslint: boolean; includeTests: boolean }
   size: SizeConfig
   changelog: ChangelogConfig
   commands: Record<string, CommandDef>
@@ -124,6 +126,7 @@ export function loadConfig(): ResolvedConfig {
     buildMode: userConfig.buildMode ?? "tsdown",
     lint: {
       useProjectEslint: userConfig.lint?.useProjectEslint ?? false,
+      includeTests: userConfig.lint?.includeTests ?? false,
     },
     size: userConfig.size ?? {},
     changelog: userConfig.changelog ?? {},

@@ -182,6 +182,7 @@ Create `ts-builds.config.json` in your project root to customize behavior:
 | `testDir`               | string   | `"./test"`                                         | Test directory                                               |
 | `buildMode`             | string   | `"tsdown"`                                         | Build tool: `"tsdown"` (libraries) or `"vite"` (SPAs)        |
 | `lint.useProjectEslint` | boolean  | `false`                                            | Use project's ESLint instead of bundled (for custom plugins) |
+| `lint.includeTests`     | boolean  | `false`                                            | Also lint `testDir`, when it exists. 5.0 turns it on         |
 | `validateChain`         | string[] | `["format", "lint", "typecheck", "test", "build"]` | Commands to run for validate                                 |
 | `commands`              | object   | `{}`                                               | Custom commands                                              |
 | `chains`                | object   | `{}`                                               | Named command chains                                         |

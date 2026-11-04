@@ -132,6 +132,24 @@ If your project uses ESLint plugins not bundled with ts-builds (e.g., `eslint-pl
 
 This tells ts-builds to use your project's ESLint installation instead of the bundled version.
 
+### Linting Tests
+
+`ts-builds lint` covers `srcDir`. Set `lint.includeTests` to cover `testDir` as well:
+
+```json
+{
+  "testDir": "./test",
+  "lint": {
+    "includeTests": true
+  }
+}
+```
+
+- It's off by default in 4.x, because turning it on can fail `validate` in a repo whose tests were never linted. 5.0 turns it on.
+- A `testDir` that doesn't exist is skipped. One with nothing ESLint can lint, such as only JSON fixtures, stops `lint` with exit code 2, the same as an empty `srcDir`.
+- `.ts-builds/lint-report.json` and `lint:summary` count both directories.
+- The fp and functype configs use type-aware rules, so every test file has to be in a tsconfig. Add `test/**/*` to `include`, or point `parserOptions.project` at a `tsconfig.eslint.json` that has it. On the bundled path, test files outside any tsconfig count as errors and print as one message naming this fix. With `lint.useProjectEslint`, your ESLint reports each one itself.
+
 ### For SPAs/React Apps (Vite)
 
 Use Vite instead of tsdown for SPA builds:

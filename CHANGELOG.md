@@ -8,6 +8,12 @@ conventional commits via `ts-builds changelog`.
 
 ### Features
 
+- **lint:** `lint.includeTests` lints `testDir` as well as `srcDir` (#213), on both the bundled and
+  `useProjectEslint` paths. A missing `testDir` is skipped, and `lint:summary` and the sidecar count
+  both directories. It's off by default in 4.x, because turning it on can fail `validate` in a repo
+  whose tests were never linted; 5.0 turns it on. On the bundled path, test files that no tsconfig
+  includes count as errors and print as one message naming the fix, not one parse error per file.
+  The `package-scripts.json` templates use `ts-builds lint` in place of a hard-coded `eslint ./src`.
 - **doctor:** warns about a stray `pnpm-workspace.yaml` inside a workspace package (#210), such as
   one an older `doctor --fix` wrote into `packages/a`. pnpm ignores its settings from the root, but
   pnpm run from that package treats it as a separate workspace: it ignores the root's settings and
