@@ -125,6 +125,17 @@ describe("runLint (bundled Node API, via built CLI)", () => {
       })
     })
 
+    itIfBuilt("on, with an absolute testDir: lints it", () => {
+      inFixture(noUnused, { "src/a.js": "export default 1\n", "test/a.js": dirty }, (dir) => {
+        writeFileSync(
+          join(dir, "ts-builds.config.json"),
+          JSON.stringify({ lint: { includeTests: true }, testDir: join(dir, "test") }),
+        )
+        expect(runCli(dir, "lint:check").status).toBe(1)
+        expect(readReport(dir).errorCount).toBe(1)
+      })
+    })
+
     itIfBuilt("on, with test files outside the tsconfig: one message, and they count as errors", () => {
       const parser = join(repoRoot, "node_modules", "typescript-eslint", "dist", "index.js")
       const typeAware = `import tseslint from ${JSON.stringify(parser)}
@@ -145,6 +156,45 @@ export default [{ files: ["**/*.ts"], languageOptions: { parser: tseslint.parser
           expect(stdout).toContain('Add "test/**/*" to "include"')
           expect(stdout).not.toContain("was not found by the project service")
           expect(readReport(dir).errorCount).toBe(2)
+        },
+      )
+    })
+
+    itIfBuilt("off, with testDir inside srcDir: keeps ESLint's own parse error", () => {
+      const parser = join(repoRoot, "node_modules", "typescript-eslint", "dist", "index.js")
+      const typeAware = `import tseslint from ${JSON.stringify(parser)}
+export default [{ files: ["**/*.ts"], languageOptions: { parser: tseslint.parser, parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } } }]`
+      inFixture(
+        typeAware,
+        {
+          "ts-builds.config.json": JSON.stringify({ lint: { includeTests: false }, testDir: "./src/__tests__" }),
+          "tsconfig.json": JSON.stringify({ include: ["src/*.ts"] }),
+          "src/a.ts": "export const a = 1\n",
+          "src/__tests__/a.ts": "export const b = 1\n",
+        },
+        (dir) => {
+          const { status, stdout } = runCli(dir, "lint:check")
+          expect(status).toBe(1)
+          expect(stdout).toContain("was not found by the project service")
+          expect(stdout).not.toContain("aren't in a tsconfig")
+        },
+      )
+    })
+
+    itIfBuilt("on, with a trailing slash on testDir: the hint reads cleanly", () => {
+      const parser = join(repoRoot, "node_modules", "typescript-eslint", "dist", "index.js")
+      const typeAware = `import tseslint from ${JSON.stringify(parser)}
+export default [{ files: ["**/*.ts"], languageOptions: { parser: tseslint.parser, parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } } }]`
+      inFixture(
+        typeAware,
+        {
+          "ts-builds.config.json": JSON.stringify({ lint: { includeTests: true }, testDir: "./test/" }),
+          "tsconfig.json": JSON.stringify({ include: ["src/**/*"] }),
+          "src/a.ts": "export const a = 1\n",
+          "test/a.ts": "export const b = 1\n",
+        },
+        (dir) => {
+          expect(runCli(dir, "lint:check").stdout).toContain('Add "test/**/*" to "include"')
         },
       )
     })

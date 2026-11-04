@@ -146,7 +146,7 @@ This tells ts-builds to use your project's ESLint installation instead of the bu
 ```
 
 - It's off by default in 4.x, because turning it on can fail `validate` in a repo whose tests were never linted. 5.0 turns it on.
-- A `testDir` that doesn't exist is skipped.
+- A `testDir` that doesn't exist is skipped. One with nothing ESLint can lint, such as only JSON fixtures, stops `lint` with exit code 2, the same as an empty `srcDir`.
 - `.ts-builds/lint-report.json` and `lint:summary` count both directories.
 - The fp and functype configs use type-aware rules, so every test file has to be in a tsconfig. Add `test/**/*` to `include`, or point `parserOptions.project` at a `tsconfig.eslint.json` that has it. On the bundled path, test files outside any tsconfig count as errors and print as one message naming this fix. With `lint.useProjectEslint`, your ESLint reports each one itself.
 

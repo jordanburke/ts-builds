@@ -218,7 +218,7 @@ function writeAll(stream: NodeJS.WritableStream, data: string): Promise<void> {
 
 /** What `lint` covers: `srcDir`, plus `testDir` when `lint.includeTests` is on and it exists. */
 export function lintTargets(config: ResolvedConfig, dir: string): string[] {
-  return config.lint.includeTests && existsSync(join(dir, config.testDir))
+  return config.lint.includeTests && existsSync(resolve(dir, config.testDir))
     ? [config.srcDir, config.testDir]
     : [config.srcDir]
 }
@@ -289,14 +289,16 @@ export async function runLint(check = false): Promise<number> {
     // saved report with a fatal one nor change the real exit code below.
     try {
       const testDir = resolve(targetDir, config.testDir)
-      const unparsed = results.filter((result) => isInside(result.filePath, testDir) && notInTsconfig(result))
+      const unparsed = config.lint.includeTests
+        ? results.filter((result) => isInside(result.filePath, testDir) && notInTsconfig(result))
+        : []
       const formatter = await eslint.loadFormatter("stylish")
       const output = await formatter.format(results.filter((result) => !unparsed.includes(result)))
       if (output) await writeAll(process.stdout, output)
       if (unparsed.length > 0)
         await writeAll(
           process.stdout,
-          `\n✗ ${unparsed.length} file(s) in ${config.testDir} aren't in a tsconfig, so type-aware rules can't read them.\n  Add "${config.testDir.replace(/^\.\//, "")}/**/*" to "include" in tsconfig.json, or point parserOptions.project at a tsconfig.eslint.json that has it.\n`,
+          `\n✗ ${unparsed.length} file(s) in ${config.testDir} aren't in a tsconfig, so type-aware rules can't read them.\n  Add "${relative(targetDir, testDir).split(sep).join("/")}/**/*" to "include" in tsconfig.json, or point parserOptions.project at a tsconfig.eslint.json that has it.\n`,
         )
     } catch {
       // report is saved; the exit code below is authoritative
