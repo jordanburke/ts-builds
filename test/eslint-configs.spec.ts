@@ -1,4 +1,4 @@
-import { Linter } from "eslint"
+import { ESLint, Linter } from "eslint"
 import { describe, expect, it } from "vitest"
 
 // Helper to collect all plugins from a flat config array
@@ -262,5 +262,69 @@ describe("ESLint Config Linting Behavior", () => {
       const parseErrors = messages.filter((m) => m.fatal)
       expect(parseErrors).toHaveLength(0)
     })
+  })
+})
+
+describe("rules for test files", () => {
+  const OFF = 0
+  /** A rule no config mentions comes back undefined, so "not off" alone would pass for a rule that's gone. */
+  const ON = [1, 2]
+
+  const severity = async (config: Linter.Config[], file: string, rule: string): Promise<unknown> => {
+    const eslint = new ESLint({ overrideConfig: config, overrideConfigFile: true })
+    const resolved = (await eslint.calculateConfigForFile(file)) as { rules: Record<string, unknown> }
+    const value = resolved.rules[rule]
+    return Array.isArray(value) ? (value as unknown[])[0] : value
+  }
+
+  const configs = {
+    "eslint.config.base.js": () => import("../eslint.config.base.js"),
+    "eslint.config.fp.js": () => import("../eslint.config.fp.js"),
+    "eslint.config.functype.js": () => import("../eslint.config.functype.js"),
+  }
+  const load = async (name: keyof typeof configs): Promise<Linter.Config[]> =>
+    (await configs[name]()).default as Linter.Config[]
+
+  const shared = ["@typescript-eslint/require-await", "@typescript-eslint/no-unnecessary-condition"]
+  const functypeOnly = ["functype/prefer-option", "functype/prefer-either", "functype/prefer-try"]
+  const testFiles = ["test/foo.spec.ts", "src/foo.test.ts", "src/__tests__/foo.ts"]
+
+  describe.each(testFiles)("%s", (file) => {
+    it.each(shared)("fp: %s is off", async (rule) => {
+      expect(await severity(await load("eslint.config.fp.js"), file, rule)).toBe(OFF)
+    })
+
+    it.each([...shared, ...functypeOnly])("functype: %s is off", async (rule) => {
+      expect(await severity(await load("eslint.config.functype.js"), file, rule)).toBe(OFF)
+    })
+
+    it("functype: the structural rules stay configured", async () => {
+      const config = await load("eslint.config.functype.js")
+      expect(ON).toContain(await severity(config, file, "functype/no-let"))
+      expect(ON).toContain(await severity(config, file, "functype/no-imperative-loops"))
+    })
+
+    it("base: has no such rule to relax", async () => {
+      const config = await load("eslint.config.base.js")
+      for (const rule of shared) expect(await severity(config, file, rule)).toBeUndefined()
+    })
+  })
+
+  describe("src/foo.ts", () => {
+    it.each(shared)("fp: %s stays on", async (rule) => {
+      expect(ON).toContain(await severity(await load("eslint.config.fp.js"), "src/foo.ts", rule))
+    })
+
+    it.each([...shared, ...functypeOnly])("functype: %s stays on", async (rule) => {
+      expect(ON).toContain(await severity(await load("eslint.config.functype.js"), "src/foo.ts", rule))
+    })
+  })
+
+  it("a consumer's block after the shared config still wins", async () => {
+    const config = [
+      ...(await load("eslint.config.functype.js")),
+      { files: ["test/**"], rules: { "functype/prefer-option": "error" as const } },
+    ]
+    expect(await severity(config, "test/foo.ts", "functype/prefer-option")).toBe(2)
   })
 })

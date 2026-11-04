@@ -45,4 +45,7 @@ export default [
       ...functypePlugin.configs.recommended.rules,
     },
   },
+  // Last, so they win over the rules above, and a consumer's own blocks after them win over them.
+  functypeConfig.configs.testOverrides,
+  functypePlugin.configs.tests,
 ]

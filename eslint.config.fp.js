@@ -41,4 +41,6 @@ export default [
       ...functypeConfig.configs.recommended.rules,
     },
   },
+  // Last, so it wins over the rules above, and a consumer's own blocks after it win over it.
+  functypeConfig.configs.testOverrides,
 ]
