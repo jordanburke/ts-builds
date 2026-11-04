@@ -6,6 +6,11 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+### Dependencies
+
+- `eslint-config-functype` and `eslint-plugin-functype` now need `^2.124.1`. That version stops
+  installing `@eslint/eslintrc`, and with it `minimatch` 3.x.
+
 ## 4.1.0 (2026-11-04)
 
 ### Features
