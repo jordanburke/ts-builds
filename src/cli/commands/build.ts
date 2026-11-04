@@ -1,12 +1,12 @@
 import { existsSync } from "node:fs"
 import { readdir, rm, stat } from "node:fs/promises"
-import { dirname, join } from "node:path"
+import { dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { List, Map, Option, Set } from "functype"
 import { Fs } from "functype-os"
 
-import { loadConfig, targetDir } from "../config"
+import { loadConfig, type ResolvedConfig, targetDir } from "../config"
 import { buildLintReport, fatalLintReport, readPackageName, writeLintReport } from "../lint-report"
 import { runCommand } from "../process"
 
@@ -216,8 +216,28 @@ function writeAll(stream: NodeJS.WritableStream, data: string): Promise<void> {
   })
 }
 
+/** What `lint` covers: `srcDir`, plus `testDir` when `lint.includeTests` is on and it exists. */
+export function lintTargets(config: ResolvedConfig, dir: string): string[] {
+  return config.lint.includeTests && existsSync(join(dir, config.testDir))
+    ? [config.srcDir, config.testDir]
+    : [config.srcDir]
+}
+
+const isInside = (file: string, directory: string): boolean => {
+  const path = relative(directory, file)
+  return path !== "" && path !== ".." && !path.startsWith(`..${sep}`)
+}
+
+const notInTsconfig = (result: { messages: ReadonlyArray<{ fatal?: boolean; message: string }> }): boolean =>
+  result.messages.some(
+    (message) => message.fatal === true && message.message.includes("was not found by the project service"),
+  )
+
 /**
- * Lint `srcDir`.
+ * Lint `srcDir`, and `testDir` with `lint.includeTests`.
+ *
+ * Test files no tsconfig includes each fail to parse under a type-aware config. They still
+ * count as errors, but print as one message that names the fix, not one parse error per file.
  *
  * Bundled path (default, `useProjectEslint: false`): runs ESLint through its Node
  * API in a single pass, so we get the familiar stylish output AND exact issue
@@ -247,8 +267,8 @@ export async function runLint(check = false): Promise<number> {
   const config = loadConfig()
 
   if (config.lint.useProjectEslint) {
-    const args = check ? [config.srcDir] : ["--fix", config.srcDir]
-    return runCommand("npx eslint", args)
+    const targets = lintTargets(config, targetDir)
+    return runCommand("npx eslint", check ? targets : ["--fix", ...targets])
   }
 
   const fix = !check
@@ -257,7 +277,7 @@ export async function runLint(check = false): Promise<number> {
   try {
     const { ESLint } = await import("eslint")
     const eslint = new ESLint({ fix, cwd: targetDir })
-    const results = await eslint.lintFiles([config.srcDir])
+    const results = await eslint.lintFiles(lintTargets(config, targetDir))
     if (fix) await ESLint.outputFixes(results)
 
     // Persist the sidecar BEFORE printing: a broken pipe (`ts-builds lint | head`)
@@ -268,9 +288,16 @@ export async function runLint(check = false): Promise<number> {
     // Printing is best-effort: a formatter bug or a closed pipe must not overwrite the
     // saved report with a fatal one nor change the real exit code below.
     try {
+      const testDir = resolve(targetDir, config.testDir)
+      const unparsed = results.filter((result) => isInside(result.filePath, testDir) && notInTsconfig(result))
       const formatter = await eslint.loadFormatter("stylish")
-      const output = await formatter.format(results)
+      const output = await formatter.format(results.filter((result) => !unparsed.includes(result)))
       if (output) await writeAll(process.stdout, output)
+      if (unparsed.length > 0)
+        await writeAll(
+          process.stdout,
+          `\n✗ ${unparsed.length} file(s) in ${config.testDir} aren't in a tsconfig, so type-aware rules can't read them.\n  Add "${config.testDir.replace(/^\.\//, "")}/**/*" to "include" in tsconfig.json, or point parserOptions.project at a tsconfig.eslint.json that has it.\n`,
+        )
     } catch {
       // report is saved; the exit code below is authoritative
     }

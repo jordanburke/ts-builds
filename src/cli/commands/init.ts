@@ -59,9 +59,9 @@ export function createConfig(force = false): void {
   console.log(`
 Configuration options:
   srcDir         Source directory for linting (default: "./src")
-  testDir        Test directory (default: "./test")
+  testDir        Test directory (default: "./test"); linted with lint.includeTests
   buildMode      "tsdown" (default, libraries) or "vite" (SPAs/React apps)
-  lint           Lint settings: { "useProjectEslint": true }
+  lint           Lint settings: { "useProjectEslint": true, "includeTests": true }
   validateChain  Commands to run for validate (default shown above)
   commands       Custom commands: { "name": "shell command" }
   chains         Named chains: { "validate:fast": ["format", "lint"] }

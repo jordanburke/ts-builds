@@ -17,12 +17,12 @@
       "required": true
     },
     "lint": {
-      "command": "eslint ./src --fix",
+      "command": "ts-builds lint",
       "description": "Lint and auto-fix with ESLint",
       "required": true
     },
     "lint:check": {
-      "command": "eslint ./src",
+      "command": "ts-builds lint:check",
       "description": "Check ESLint without fixing",
       "required": true
     },
@@ -87,7 +87,7 @@
       "scripts": {
         "validate": "pnpm format && pnpm lint && pnpm test && pnpm build",
         "format": "prettier --write .",
-        "lint": "eslint ./src --fix",
+        "lint": "ts-builds lint",
         "test": "vitest run",
         "build": "ts-builds build"
       }
