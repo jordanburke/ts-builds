@@ -6,6 +6,8 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+## 4.1.0 (2026-11-04)
+
 ### Features
 
 - **lint:** the fp and functype configs relax the rules that misread a test's shape, for test files
