@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process"
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -13,17 +14,28 @@ const onWarning = (warning: Error): void => {
 }
 process.on("warning", onWarning)
 
+const nodeMajor = Number(process.versions.node.split(".")[0])
+const warningCodes = (): (string | undefined)[] => warnings.map((w) => (w as Error & { code?: string }).code)
+/** Deprecation warnings are emitted after the call that triggers them */
+const nextTick = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 50))
+
 afterAll(() => {
   process.off("warning", onWarning)
 })
 
 describe("runCommand shell use", () => {
-  it("does not trigger DEP0190 (args passed to a child process with shell: true)", async () => {
+  // DEP0190 exists from Node 24; on older Node there is nothing to observe
+  it.skipIf(nodeMajor < 24)("does not trigger DEP0190 (args passed to a child process with shell: true)", async () => {
     const code = await runCommand("node", ["-v"])
     expect(code).toBe(0)
-    // Deprecation warnings are emitted on the next tick
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    expect(warnings.map((w) => (w as Error & { code?: string }).code)).not.toContain("DEP0190")
+    await nextTick()
+    expect(warningCodes()).not.toContain("DEP0190")
+
+    // Positive control: the deprecated form must be caught here, or the check above proves
+    // nothing (e.g. under --no-deprecation, or if this process already emitted DEP0190).
+    await new Promise((resolve) => spawn("node", ["-v"], { shell: true, stdio: "ignore" }).on("close", resolve))
+    await nextTick()
+    expect(warningCodes()).toContain("DEP0190")
   })
 
   it("keeps an argument the caller quoted for the shell as one argument", async () => {
