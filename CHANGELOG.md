@@ -6,6 +6,8 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+## 4.2.0 (2026-11-08)
+
 ### Features
 
 - **lint:** opt-in telemetry. With `TS_BUILDS_TELEMETRY=1` and `TS_BUILDS_TELEMETRY_URL` set, `ts-builds lint` sends each
