@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
-import { join } from "node:path"
+import { basename, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { describe, expect, it } from "vitest"
@@ -29,9 +29,9 @@ const cleanEnv = (): NodeJS.ProcessEnv =>
   )
 
 /** One error, one finding silenced by a directive, in a package that isn't a git repo. */
-function makeFixture(): string {
+function makeFixture(packageJson: Record<string, unknown> | null = { name: "@fixture/telemetry" }): string {
   const dir = mkdtempSync(join(tmpdir(), "ts-builds-lint-telemetry-"))
-  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "@fixture/telemetry", type: "module" }))
+  if (packageJson !== null) writeFileSync(join(dir, "package.json"), JSON.stringify({ ...packageJson, type: "module" }))
   writeFileSync(join(dir, "eslint.config.js"), 'export default [{ rules: { "no-unused-vars": "error" } }]')
   mkdirSync(join(dir, "src"))
   writeFileSync(
@@ -85,8 +85,11 @@ async function receiver(hang = false): Promise<{ url: string; bodies: unknown[];
   }
 }
 
-async function withFixture(body: (dir: string) => Promise<void>): Promise<void> {
-  const dir = makeFixture()
+async function withFixture(
+  body: (dir: string) => Promise<void>,
+  packageJson?: Record<string, unknown> | null,
+): Promise<void> {
+  const dir = makeFixture(packageJson)
   try {
     await body(dir)
   } finally {
@@ -94,7 +97,7 @@ async function withFixture(body: (dir: string) => Promise<void>): Promise<void> 
   }
 }
 
-const EXPECTED_RULES = { "no-unused-vars": { errors: 1, warnings: 0, silenced: 1, baselined: 0 } }
+const EXPECTED_RULES = { "no-unused-vars": { errors: 1, warnings: 0, silenced: 1 } }
 
 describe("lint telemetry (via built CLI)", () => {
   itIfBuilt("is silent when off, and the sidecar still records per-rule counts", async () => {
@@ -120,6 +123,15 @@ describe("lint telemetry (via built CLI)", () => {
       expect(payload.enabled).toEqual({}) // the fixture's config has only a core rule
       expect(json).not.toContain(dir)
     })
+  })
+
+  itIfBuilt("leaves out package, and never sends the folder name, when package.json has no name", async () => {
+    await withFixture(async (dir) => {
+      const run = await runCli(dir, { ...cleanEnv(), TS_BUILDS_TELEMETRY_DEBUG: "1" })
+      const json = run.stderr.slice(run.stderr.indexOf("{"))
+      expect(JSON.parse(json)).not.toHaveProperty("package")
+      expect(json).not.toContain(basename(dir))
+    }, {})
   })
 
   itIfBuilt("sends one payload when on, without changing the exit code", async () => {

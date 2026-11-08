@@ -29,7 +29,7 @@ import {
 const message = (ruleId: string | null, severity: 1 | 2, text = "a message"): Linter.LintMessage =>
   ({ ruleId, severity, message: text, line: 1, column: 1 }) as Linter.LintMessage
 
-const suppressed = (ruleId: string | null, kind: "directive" | "external"): Linter.SuppressedLintMessage =>
+const suppressed = (ruleId: string | null, kind: "directive" | "file"): Linter.SuppressedLintMessage =>
   ({ ...message(ruleId, 2), suppressions: [{ kind, justification: "" }] }) as Linter.SuppressedLintMessage
 
 function result(over: Partial<ESLint.LintResult>): ESLint.LintResult {
@@ -48,20 +48,20 @@ function result(over: Partial<ESLint.LintResult>): ESLint.LintResult {
 }
 
 describe("ruleStats", () => {
-  it("counts errors, warnings, silenced and baselined findings per rule", () => {
+  it("counts errors, warnings and silenced findings per rule", () => {
     const stats = ruleStats([
       result({
         messages: [message("functype/prefer-option", 2), message("functype/prefer-option", 1), message("no-var", 2)],
         suppressedMessages: [
           suppressed("functype/prefer-option", "directive"),
-          suppressed("functype/prefer-option", "external"),
+          suppressed("functype/prefer-option", "file"),
         ],
       }),
       result({ messages: [message("functype/prefer-option", 2)] }),
     ])
     expect(stats.rules).toEqual({
-      "functype/prefer-option": { errors: 2, warnings: 1, silenced: 1, baselined: 1 },
-      "no-var": { errors: 1, warnings: 0, silenced: 0, baselined: 0 },
+      "functype/prefer-option": { errors: 2, warnings: 1, silenced: 2 },
+      "no-var": { errors: 1, warnings: 0, silenced: 0 },
     })
     expect(stats.fatal).toBe(0)
   })
@@ -164,6 +164,8 @@ describe("pluginPackage", () => {
     ["functype/prefer-option", "eslint-plugin-functype"],
     ["@typescript-eslint/no-unused-vars", "@typescript-eslint/eslint-plugin"],
     ["@scope/name/rule", "@scope/eslint-plugin-name"],
+    ["@scope/rule", "@scope/eslint-plugin"],
+    ["a/b/c", "eslint-plugin-a"],
   ])("%s comes from %s", (ruleId, pkg) => {
     expect(pluginPackage(ruleId).orElse("none")).toBe(pkg)
   })
@@ -247,6 +249,14 @@ describe("activeConfig", () => {
     expect(activeConfig(calculated).enabled).toEqual({ "functype/no-let": "error", "functype/prefer-option": "warn" })
   })
 
+  it("ignores a meta name that isn't a package name, and a meta version that isn't semver", () => {
+    const active = activeConfig({
+      plugins: { local: { meta: { name: "/Users/someone/secret-plugin", version: "1.0.0-see-/Users/someone/x" } } },
+    })
+    expect(active.plugins.map((p) => p.name)).toEqual(["eslint-plugin-local"])
+    expect(active.plugins[0]?.metaVersion.isNone()).toBe(true)
+  })
+
   it("gives nothing for a config it can't read", () => {
     expect(activeConfig(undefined)).toEqual({ plugins: [], enabled: {} })
     expect(activeConfig({ plugins: 3, rules: "x" })).toEqual({ plugins: [], enabled: {} })
@@ -263,7 +273,7 @@ describe("buildTelemetryPayload", () => {
     ],
     fix: false,
     durationMs: 12.6,
-    pkg: "@fixture/pkg",
+    packageName: Option("@fixture/pkg"),
     eslintVersion: "10.0.0",
     dir: tmpdir(),
   }
@@ -279,7 +289,7 @@ describe("buildTelemetryPayload", () => {
       durationMs: 13,
       files: 1,
       fatal: 0,
-      rules: { "no-var": { errors: 1, warnings: 0, silenced: 0, baselined: 0 } },
+      rules: { "no-var": { errors: 1, warnings: 0, silenced: 0 } },
     })
     expect(payload.versions).toMatchObject({ node: process.versions.node, eslint: "10.0.0" })
     expect(payload.versions["ts-builds"]).toMatch(/^\d+\.\d+\.\d+/)
@@ -294,6 +304,10 @@ describe("buildTelemetryPayload", () => {
 
   it("leaves out agent when no agent is detected", () => {
     expect(buildTelemetryPayload(run, {})).not.toHaveProperty("agent")
+  })
+
+  it("leaves out package when package.json has no name", () => {
+    expect(buildTelemetryPayload({ ...run, packageName: Option.none<string>() }, {})).not.toHaveProperty("package")
   })
 
   it("leaves out enabled when the config couldn't be read", () => {
@@ -367,7 +381,7 @@ const samplePayload = (): TelemetryPayload =>
       results: [result({ messages: [message("no-var", 2)] })],
       fix: false,
       durationMs: 1,
-      pkg: "@fixture/pkg",
+      packageName: Option("@fixture/pkg"),
       eslintVersion: "10.0.0",
       dir: tmpdir(),
     },
@@ -419,7 +433,7 @@ describe("reportLintTelemetry", () => {
     results: [result({ messages: [message("no-var", 2)] })],
     fix: false,
     durationMs: 1,
-    pkg: "@fixture/pkg",
+    packageName: Option("@fixture/pkg"),
     eslintVersion: "10.0.0",
     dir: tmpdir(),
   }

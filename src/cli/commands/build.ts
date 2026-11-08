@@ -7,7 +7,7 @@ import { List, Map, Option, Set } from "functype"
 import { Fs } from "functype-os"
 
 import { loadConfig, type ResolvedConfig, targetDir } from "../config"
-import { buildLintReport, fatalLintReport, readPackageName, writeLintReport } from "../lint-report"
+import { buildLintReport, fatalLintReport, packageJsonName, readPackageName, writeLintReport } from "../lint-report"
 import { runCommand } from "../process"
 import { reportLintTelemetry } from "../telemetry"
 
@@ -313,7 +313,7 @@ export async function runLint(check = false): Promise<number> {
       results,
       fix,
       durationMs,
-      pkg,
+      packageName: packageJsonName(targetDir),
       eslintVersion: ESLint.version,
       dir: targetDir,
       configFor: () =>

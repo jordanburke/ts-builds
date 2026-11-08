@@ -9,7 +9,7 @@ conventional commits via `ts-builds changelog`.
 ### Features
 
 - **lint:** opt-in telemetry. With `TS_BUILDS_TELEMETRY=1` and `TS_BUILDS_TELEMETRY_URL` set, `ts-builds lint` sends each
-  run's per-rule counts to that URL: errors, warnings, and findings silenced by a comment or a suppressions file. It
+  run's per-rule counts to that URL: errors, warnings, and findings silenced by an `eslint-disable` comment. It
   also sends the plugin rules that are on and the toolchain and plugin versions. It sends no file paths, source or
   messages. It's off by default, `DO_NOT_TRACK=1` always turns it off, and env vars are
   the only way to turn it on. `TS_BUILDS_TELEMETRY_DEBUG=1` prints the payload instead of sending it. A send waits at

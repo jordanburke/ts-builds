@@ -255,15 +255,15 @@ aggregate a different root. Finding zero sidecars exits nonzero — an empty swe
 must not silently pass CI.
 
 The sidecar also has a `rules` field with per-rule counts: errors, warnings, findings
-silenced by an `eslint-disable` comment, and findings in ESLint's suppressions file
-(`eslint --suppress-all`).
+silenced by an `eslint-disable` comment.
 
 ### Lint telemetry (opt-in)
 
 `ts-builds lint` can send each run's per-rule counts to an endpoint you run. That shows which
 rules fire, which ones people silence, and how both change between releases. It's off unless you
-turn it on. It's set by env vars only, never by `ts-builds.config.json`, so a committed config
-can't turn it on for everyone who clones the repo.
+turn it on. ts-builds reads these settings from the environment only, so `ts-builds.config.json`
+has no switch for it. A committed script, workflow or config command that sets them still turns it
+on for everyone who runs it, so set them only where you mean to, such as your own CI.
 
 | Env var                       | Effect                                                                                                                     |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -293,12 +293,14 @@ Each run sends one JSON object:
     "eslint-plugin-functype": "2.125.1"
   },
   "enabled": { "functype/no-let": "error", "functype/prefer-option": "warn" },
-  "rules": { "functype/prefer-option": { "errors": 0, "warnings": 3, "silenced": 2, "baselined": 0 } }
+  "rules": { "functype/prefer-option": { "errors": 0, "warnings": 3, "silenced": 2 } }
 }
 ```
 
 - **Never sent:** file paths, source code or message text.
-- **Sent as-is:** the `package.json` name.
+- **Sent as-is:** the `package.json` name, left out when there isn't one, and rule ids as your config
+  names them. Plugin names and versions are sent only when they look like an npm package name and a
+  semver version.
 - **`project`:** a salted hash of the git remote, so one repo's packages group together. It's a
   stable pseudonym, not anonymity: anyone who knows the remote URL can compute it. It's left out
   when there's no remote.
@@ -324,8 +326,9 @@ env:
   TS_BUILDS_TELEMETRY_URL: ${{ vars.TS_BUILDS_TELEMETRY_URL }}
 ```
 
-Under Turbo's strict env mode, a task only sees the variables Turbo is told about. List these so
-`ts-builds lint` sees them:
+Under Turbo's strict env mode, a task only sees the variables Turbo is told about, plus a built-in
+set that includes `CI`. List these so `ts-builds lint` sees them. Adding `globalPassThroughEnv` also
+turns on strict mode for every task, so check that your other tasks still get the variables they need:
 
 ```jsonc
 // turbo.json
@@ -335,7 +338,6 @@ Under Turbo's strict env mode, a task only sees the variables Turbo is told abou
     "TS_BUILDS_TELEMETRY_URL",
     "TS_BUILDS_TELEMETRY_DEBUG",
     "DO_NOT_TRACK",
-    "CI",
     "GITHUB_ACTIONS",
     "CLAUDECODE",
   ],

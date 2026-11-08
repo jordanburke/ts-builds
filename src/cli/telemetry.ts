@@ -11,10 +11,10 @@ import { Option, Try } from "functype"
  * Opt-in lint telemetry: per-rule counts from a `ts-builds lint` run, sent to an endpoint you
  * choose so you can see which rules fire, which get silenced, and whether that changes over time.
  *
- * Off unless `TS_BUILDS_TELEMETRY=1` is set, and `DO_NOT_TRACK=1` always turns it off. It is
- * configured by env vars only, never by `ts-builds.config.json`, so a committed config can't turn
- * it on for everyone who clones a repo. It never sends file paths, source or messages, and it
- * never slows a run by more than `TELEMETRY_TIMEOUT_MS` or changes its exit code.
+ * Off unless `TS_BUILDS_TELEMETRY=1` is set, and `DO_NOT_TRACK=1` always turns it off. ts-builds
+ * reads these from the environment only. A committed script, workflow or config command that sets
+ * them still turns it on for everyone who runs it. It never sends file paths, source or messages,
+ * the send waits at most `TELEMETRY_TIMEOUT_MS`, and it never changes the run's exit code.
  */
 
 /** Bump when the payload's shape changes incompatibly, so the receiver can tell versions apart. */
@@ -33,8 +33,6 @@ export type RuleCounts = {
   readonly warnings: number
   /** Findings hidden by an `eslint-disable` comment. */
   readonly silenced: number
-  /** Findings hidden by ESLint's suppressions file (`eslint --suppress-all`). */
-  readonly baselined: number
 }
 
 export type RuleStats = {
@@ -46,8 +44,8 @@ export type RuleStats = {
 
 export type TelemetryPayload = {
   readonly schema: number
-  /** The linted package's `package.json` name, sent as-is. */
-  readonly package: string
+  /** The linted package's `package.json` name, sent as-is. Absent when `package.json` has no name. */
+  readonly package?: string
   /** A salted hash of the git remote, so packages from one repo group together without naming it. */
   readonly project?: string
   readonly ci: boolean
@@ -82,7 +80,7 @@ export type TelemetryMode =
 
 type CountField = keyof RuleCounts
 
-const NO_COUNTS: RuleCounts = { errors: 0, warnings: 0, silenced: 0, baselined: 0 }
+const NO_COUNTS: RuleCounts = { errors: 0, warnings: 0, silenced: 0 }
 
 const isOn = (value: string | undefined): boolean => value !== undefined && /^(1|true|yes)$/i.test(value.trim())
 
@@ -94,9 +92,7 @@ function hits(result: ESLint.LintResult): ReadonlyArray<Hit> {
     m.ruleId === null ? [] : [{ ruleId: m.ruleId, field: m.severity === 2 ? "errors" : "warnings" }],
   )
   const suppressed = result.suppressedMessages.flatMap((m): Hit[] =>
-    m.ruleId === null
-      ? []
-      : [{ ruleId: m.ruleId, field: m.suppressions.some((x) => x.kind === "external") ? "baselined" : "silenced" }],
+    m.ruleId === null ? [] : [{ ruleId: m.ruleId, field: "silenced" }],
   )
   return [...reported, ...suppressed]
 }
@@ -184,18 +180,25 @@ export function isCi(env: NodeJS.ProcessEnv): boolean {
 }
 
 /**
- * The npm package that provides a rule's plugin, from the rule id's prefix: `functype/x` is
- * `eslint-plugin-functype`, `@typescript-eslint/x` is `@typescript-eslint/eslint-plugin`, and
- * `@scope/name/x` is `@scope/eslint-plugin-name`. Core rules have no prefix and no plugin.
+ * The npm package that provides a rule's plugin, splitting the rule id the way ESLint does: at the
+ * first slash, or the second for a scoped plugin. `functype/x` is `eslint-plugin-functype`,
+ * `@typescript-eslint/x` is `@typescript-eslint/eslint-plugin`, `@scope/name/x` is
+ * `@scope/eslint-plugin-name`, and `a/b/c` is `eslint-plugin-a`. Core rules have no plugin.
  */
 export function pluginPackage(ruleId: string): Option<string> {
-  const slash = ruleId.lastIndexOf("/")
-  if (slash <= 0) return Option.none<string>()
-  const prefix = ruleId.slice(0, slash)
-  if (!prefix.startsWith("@")) return Option(`eslint-plugin-${prefix}`)
-  const [scope, ...name] = prefix.split("/")
-  return Option(name.length === 0 ? `${scope}/eslint-plugin` : `${scope}/eslint-plugin-${name.join("/")}`)
+  const parts = ruleId.split("/")
+  const first = parts.at(0) ?? ""
+  if (parts.length < 2 || first === "") return Option.none<string>()
+  if (!first.startsWith("@")) return Option(`eslint-plugin-${first}`)
+  const name = parts.length > 2 ? parts.at(1) : undefined
+  return Option(name === undefined ? `${first}/eslint-plugin` : `${first}/eslint-plugin-${name}`)
 }
+
+/** An npm package name, so a plugin's `meta.name` can't carry a path or other free text. */
+const NPM_NAME = /^(@[a-z0-9-~][a-z0-9-._~]*\/)?[a-z0-9-~][a-z0-9-._~]*$/
+
+/** A semver version, so a plugin's `meta.version` can't carry free text. */
+const SEMVER = /^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/
 
 const ancestors = (dir: string): ReadonlyArray<string> => {
   const parent = dirname(dir)
@@ -254,7 +257,8 @@ export type LintRun = {
   readonly results: readonly ESLint.LintResult[]
   readonly fix: boolean
   readonly durationMs: number
-  readonly pkg: string
+  /** The `package.json` name, when there is one. */
+  readonly packageName: Option<string>
   readonly eslintVersion: string
   /** The linted package's root. */
   readonly dir: string
@@ -286,8 +290,9 @@ export function activeConfig(calculated: unknown): ActiveConfig {
     .flatMap(([namespace, plugin]) => {
       const meta = asRecord(asRecord(plugin).meta)
       return asString(meta.name)
+        .filter((name) => name.length <= 214 && NPM_NAME.test(name))
         .or(pluginPackage(`${namespace}/rule`))
-        .map((name) => ({ name, metaVersion: asString(meta.version) }))
+        .map((name) => ({ name, metaVersion: asString(meta.version).filter((v) => SEMVER.test(v)) }))
         .toArray()
     })
   const enabled = Object.fromEntries(
@@ -350,7 +355,7 @@ export function buildTelemetryPayload(
   const agent = detectAgent(env)
   return {
     schema: TELEMETRY_SCHEMA_VERSION,
-    package: run.pkg,
+    ...run.packageName.map((name) => ({ package: name })).orElse({}),
     ...project.map((id) => ({ project: id })).orElse({}),
     ci: isCi(env),
     ...agent.map((name) => ({ agent: name })).orElse({}),
