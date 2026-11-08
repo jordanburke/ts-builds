@@ -6,12 +6,25 @@ import { showHelp, showInfo } from "./cli/commands/info"
 import { createConfig, init } from "./cli/commands/init"
 import { runLintSummary } from "./cli/commands/lint-summary"
 import { runSize } from "./cli/commands/size"
-import { escapingValidateCwdError, loadConfig } from "./cli/config"
-import { runCommand, runShellCommand } from "./cli/process"
-import { runValidate } from "./cli/runner"
+import { loadConfig } from "./cli/config"
+import { runCommand } from "./cli/process"
+import { builtinOverride, isBuiltinStepName, runConfiguredCommand, runValidate, stepName } from "./cli/runner"
 
 const command = process.argv[2] || "init"
 const subCommand = process.argv[3]
+
+// A chain or `commands` entry named after a built-in step replaces it here too, resolved as
+// runStep does inside a chain: chain, then command, then built-in. The config is read only for
+// built-in step names, so help and init work without one.
+const step = stepName(command, subCommand)
+if (isBuiltinStepName(step)) {
+  const config = loadConfig()
+  if (Object.hasOwn(config.chains, step)) process.exit(await runValidate(step))
+  await builtinOverride(step, config).fold(
+    () => Promise.resolve(),
+    async (cmd) => process.exit(await runConfiguredCommand(step, cmd)),
+  )
+}
 
 switch (command) {
   case "help":
@@ -99,14 +112,7 @@ switch (command) {
     if (config.chains[command]) {
       process.exit(await runValidate(command))
     } else if (config.commands[command]) {
-      const cmdDef = config.commands[command]
-      const cwdError = escapingValidateCwdError(command, cmdDef)
-      if (cwdError) {
-        console.error(cwdError)
-        process.exit(1)
-      }
-      const code = await runShellCommand(cmdDef.run, { cwd: cmdDef.cwd })
-      process.exit(code)
+      process.exit(await runConfiguredCommand(command, config.commands[command]))
     } else {
       console.error(`Unknown command: ${command}`)
       console.log("Run 'ts-builds help' for usage information.")

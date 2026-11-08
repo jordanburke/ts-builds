@@ -1,8 +1,9 @@
-import { Set } from "functype"
+import { Option, Set } from "functype"
 
 import { runBuild, runFormat, runLint } from "./commands/build"
 import type { CommandDef, ResolvedConfig } from "./config"
 import { escapingValidateCwdError, loadConfig } from "./config"
+import { forgetLintReport } from "./lint-report"
 import { runShellCommand } from "./process"
 
 export type { RunOptions } from "./process"
@@ -29,6 +30,64 @@ export type BuiltinCommand = CommandDef | RunFnCommand
  */
 function isRunFnCommand(cmd: CommandDef | RunFnCommand): cmd is RunFnCommand {
   return "runFn" in cmd
+}
+
+/** The built-in chain steps. A `commands` entry with one of these names replaces it, in a chain or run directly. */
+export const BUILTIN_STEP_NAMES = [
+  "format",
+  "format:check",
+  "lint",
+  "lint:check",
+  "typecheck",
+  "ts-types",
+  "test",
+  "test:watch",
+  "test:coverage",
+  "test:ui",
+  "build",
+  "build:watch",
+  "dev",
+  "preview",
+  "compile",
+] as const
+
+export type BuiltinStepName = (typeof BUILTIN_STEP_NAMES)[number]
+
+export const isBuiltinStepName = (name: string): name is BuiltinStepName =>
+  (BUILTIN_STEP_NAMES as readonly string[]).includes(name)
+
+/** The step a top-level command runs: `lint check` is `lint:check`, `test watch` is `test:watch`, `test run` is `test` */
+export function stepName(command: string, subCommand: string | undefined): string {
+  if ((command === "lint" || command === "format") && subCommand === "check") return `${command}:check`
+  if (command === "build" && subCommand === "watch") return "build:watch"
+  if (command === "test" && (subCommand === "watch" || subCommand === "coverage" || subCommand === "ui")) {
+    return `test:${subCommand}`
+  }
+  return command
+}
+
+/**
+ * The user's replacement for a built-in step, if their config has one. Run directly, a built-in
+ * resolves the same way it does inside a chain (`runStep`): `config.commands[step] ?? builtin`.
+ */
+export function builtinOverride(step: string, config: ResolvedConfig): Option<CommandDef> {
+  return Option(config.commands[step]).filter(() => isBuiltinStepName(step))
+}
+
+/** An override of `lint` or `lint:check` replaces ts-builds' lint, so its old report must go */
+function forgetLintReportIfLint(step: string): void {
+  if (step === "lint" || step === "lint:check") forgetLintReport()
+}
+
+/** Run a `commands` entry on its own: check its cwd, then run it through the shell */
+export async function runConfiguredCommand(name: string, cmdDef: CommandDef): Promise<number> {
+  const cwdError = escapingValidateCwdError(name, cmdDef)
+  if (cwdError) {
+    console.error(cwdError)
+    return 1
+  }
+  forgetLintReportIfLint(name)
+  return runShellCommand(cmdDef.run, { cwd: cmdDef.cwd })
 }
 
 export function getBuiltinCommands(config: ResolvedConfig): Record<string, BuiltinCommand> {
@@ -113,6 +172,7 @@ async function runStep(
     return 1
   }
 
+  if (Object.hasOwn(config.commands, step)) forgetLintReportIfLint(step)
   const cwdLabel = "cwd" in cmdDef && cmdDef.cwd ? ` (in ${cmdDef.cwd})` : ""
   console.log(`\n▶ Running ${step}...${cwdLabel}`)
 
