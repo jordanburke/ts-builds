@@ -221,6 +221,21 @@ npx ts-builds validate:core
 npx ts-builds validate:landing
 ```
 
+A `commands` entry named after a built-in step (`format`, `format:check`, `lint`, `lint:check`, `typecheck`,
+`test`, `test:watch`, `test:coverage`, `test:ui`, `build`, `build:watch`, `dev`, `preview`, `compile`)
+replaces that step everywhere: inside a chain, and when you run it directly (`ts-builds lint:check`, or
+`ts-builds lint check`). An override runs your command instead, so it writes no `.ts-builds/lint-report.json`
+and sends no lint telemetry.
+
+```json
+{
+  "commands": {
+    "lint": "eslint ./src ./test --fix --max-warnings=0",
+    "lint:check": "eslint ./src ./test --max-warnings=0"
+  }
+}
+```
+
 ### Aggregating lint results across a monorepo
 
 Under a task runner, `ts-builds` runs per-package, so each package's ESLint output
