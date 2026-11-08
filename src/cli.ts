@@ -13,11 +13,14 @@ import { builtinOverride, isBuiltinStepName, runConfiguredCommand, runValidate, 
 const command = process.argv[2] || "init"
 const subCommand = process.argv[3]
 
-// A `commands` entry named after a built-in step replaces it here too, as it does in a chain.
-// The config is read only for those commands, so help and init work without one.
+// A chain or `commands` entry named after a built-in step replaces it here too, resolved as
+// runStep does inside a chain: chain, then command, then built-in. The config is read only for
+// built-in step names, so help and init work without one.
 const step = stepName(command, subCommand)
 if (isBuiltinStepName(step)) {
-  await builtinOverride(step, loadConfig()).fold(
+  const config = loadConfig()
+  if (Object.hasOwn(config.chains, step)) process.exit(await runValidate(step))
+  await builtinOverride(step, config).fold(
     () => Promise.resolve(),
     async (cmd) => process.exit(await runConfiguredCommand(step, cmd)),
   )

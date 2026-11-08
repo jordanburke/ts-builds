@@ -3,6 +3,7 @@ import { Option, Set } from "functype"
 import { runBuild, runFormat, runLint } from "./commands/build"
 import type { CommandDef, ResolvedConfig } from "./config"
 import { escapingValidateCwdError, loadConfig } from "./config"
+import { forgetLintReport } from "./lint-report"
 import { runShellCommand } from "./process"
 
 export type { RunOptions } from "./process"
@@ -73,6 +74,11 @@ export function builtinOverride(step: string, config: ResolvedConfig): Option<Co
   return Option(config.commands[step]).filter(() => isBuiltinStepName(step))
 }
 
+/** An override of `lint` or `lint:check` replaces ts-builds' lint, so its old report must go */
+function forgetLintReportIfLint(step: string): void {
+  if (step === "lint" || step === "lint:check") forgetLintReport()
+}
+
 /** Run a `commands` entry on its own: check its cwd, then run it through the shell */
 export async function runConfiguredCommand(name: string, cmdDef: CommandDef): Promise<number> {
   const cwdError = escapingValidateCwdError(name, cmdDef)
@@ -80,6 +86,7 @@ export async function runConfiguredCommand(name: string, cmdDef: CommandDef): Pr
     console.error(cwdError)
     return 1
   }
+  forgetLintReportIfLint(name)
   return runShellCommand(cmdDef.run, { cwd: cmdDef.cwd })
 }
 
@@ -165,6 +172,7 @@ async function runStep(
     return 1
   }
 
+  if (Object.hasOwn(config.commands, step)) forgetLintReportIfLint(step)
   const cwdLabel = "cwd" in cmdDef && cmdDef.cwd ? ` (in ${cmdDef.cwd})` : ""
   console.log(`\n▶ Running ${step}...${cwdLabel}`)
 

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync, rmSync } from "node:fs"
 import { mkdir, rename, rm, writeFile } from "node:fs/promises"
 import { basename, join } from "node:path"
 
@@ -55,6 +55,14 @@ export interface LintReport {
 /** Absolute path to a package's lint sidecar. `dir` is the package root. */
 export function lintReportPath(dir: string = targetDir): string {
   return join(dir, ".ts-builds", "lint-report.json")
+}
+
+/**
+ * Remove the sidecar. When a `commands` override replaces `lint` or `lint:check`, ts-builds' own lint
+ * doesn't run and writes no report, so an old one would leave `lint:summary` reading stale counts.
+ */
+export function forgetLintReport(dir: string = targetDir): void {
+  rmSync(lintReportPath(dir), { force: true })
 }
 
 /** The `name` in `<dir>/package.json`, when the file exists, parses and has a non-empty name. */

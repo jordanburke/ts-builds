@@ -222,10 +222,12 @@ npx ts-builds validate:landing
 ```
 
 A `commands` entry named after a built-in step (`format`, `format:check`, `lint`, `lint:check`, `typecheck`,
-`test`, `test:watch`, `test:coverage`, `test:ui`, `build`, `build:watch`, `dev`, `preview`, `compile`)
-replaces that step everywhere: inside a chain, and when you run it directly (`ts-builds lint:check`, or
-`ts-builds lint check`). An override runs your command instead, so it writes no `.ts-builds/lint-report.json`
-and sends no lint telemetry.
+`ts-types`, `test`, `test:watch`, `test:coverage`, `test:ui`, `build`, `build:watch`, `dev`, `preview`) replaces
+that step everywhere: inside a chain, and when you run it directly (`ts-builds lint:check`, or
+`ts-builds lint check`). A chain with one of those names takes precedence over both, as it does inside a chain.
+`compile` can be overridden too, but only runs inside a chain. An override runs your command instead of
+ts-builds' lint, so it sends no lint telemetry, and an override of `lint` or `lint:check` removes any old
+`.ts-builds/lint-report.json`, so `lint:summary` can't read stale counts.
 
 ```json
 {

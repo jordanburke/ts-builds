@@ -8,12 +8,14 @@ conventional commits via `ts-builds changelog`.
 
 ### Bug Fixes
 
-- **cli:** a `commands` entry named after a built-in step (`lint`, `lint:check`, `build`, `typecheck`, `test`, …)
-  now replaces it when you run that command directly, not only inside `validate` and other chains. Before,
+- **cli:** a `commands` entry or chain named after a built-in step (`lint`, `lint:check`, `build`, `typecheck`,
+  `test`, …) now replaces it when you run that command directly, not only inside `validate` and other chains. Before,
   `ts-builds lint:check` ran the built-in lint even when the config replaced it, so a repo that overrode lint
   to add `--max-warnings=0` or lint its tests got a weaker check from `pnpm lint:check` than from
   `pnpm validate`. A repo whose `package.json` script runs `ts-builds <step>` and whose config overrides that
   step now runs the override from the script as well.
+- **lint:** an override of `lint` or `lint:check`, run directly or in a chain, removes any old
+  `.ts-builds/lint-report.json`. ts-builds' lint doesn't run then, so `lint:summary` would have read stale counts.
 - **process:** `runCommand` no longer triggers Node 24's DEP0190 deprecation warning ("Passing args to a child
   process with shell option true"), which every format, lint, test and build run printed. It builds the same
   command line Node did, so behaviour is unchanged.
