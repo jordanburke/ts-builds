@@ -5,6 +5,7 @@ import { basename, join } from "node:path"
 import type { ESLint } from "eslint"
 
 import { targetDir } from "./config"
+import { type RuleCounts, ruleStats } from "./telemetry"
 
 /**
  * Current sidecar schema version. Bump when the shape changes incompatibly so
@@ -42,6 +43,12 @@ export interface LintReport {
   fixableWarningCount: number
   fileCount: number
   files: LintReportFile[]
+  /**
+   * Per-rule counts, keyed by rule id and sorted: errors, warnings, findings silenced by an
+   * `eslint-disable` comment, and findings in ESLint's suppressions file. Added in 4.2; absent from a
+   * fatal report and from reports written before it, so read it as optional.
+   */
+  rules?: Record<string, RuleCounts>
 }
 
 /** Absolute path to a package's lint sidecar. `dir` is the package root. */
@@ -84,6 +91,7 @@ export function buildLintReport(results: readonly ESLint.LintResult[], fix: bool
     files: results
       .filter((r) => r.errorCount > 0 || r.warningCount > 0)
       .map((r) => ({ filePath: r.filePath, errorCount: r.errorCount, warningCount: r.warningCount })),
+    rules: ruleStats(results).rules,
   }
 }
 

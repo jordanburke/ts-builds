@@ -31,8 +31,12 @@ function makeFixture(config: string, files: Record<string, string>): string {
   return dir
 }
 
+/** The parent's env, minus the telemetry switches, so running these tests never sends anything. */
+const quietEnv = (): NodeJS.ProcessEnv =>
+  Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("TS_BUILDS_TELEMETRY")))
+
 function runCli(cwd: string, ...args: string[]): { status: number; stdout: string } {
-  const res = spawnSync(process.execPath, [cliPath, ...args], { cwd, encoding: "utf-8" })
+  const res = spawnSync(process.execPath, [cliPath, ...args], { cwd, encoding: "utf-8", env: quietEnv() })
   return { status: res.status ?? -1, stdout: res.stdout ?? "" }
 }
 
