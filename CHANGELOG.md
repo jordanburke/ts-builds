@@ -6,6 +6,8 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+## 4.3.0 (2026-11-08)
+
 ### Bug Fixes
 
 - **cli:** a `commands` entry or chain named after a built-in step (`lint`, `lint:check`, `build`, `typecheck`,
@@ -19,6 +21,11 @@ conventional commits via `ts-builds changelog`.
 - **process:** `runCommand` no longer triggers Node 24's DEP0190 deprecation warning ("Passing args to a child
   process with shell option true"), which every format, lint, test and build run printed. It builds the same
   command line Node did, so behaviour is unchanged.
+
+### Dependencies
+
+- ts-builds' own install overrides `minimatch` to `^11.0.1` for GHSA-g3hv-75wg-m249. pnpm overrides don't reach
+  consumers, so a repo that wants the same fix needs its own override.
 
 ## 4.2.0 (2026-11-08)
 
