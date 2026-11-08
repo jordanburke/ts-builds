@@ -22,9 +22,10 @@ function resolveEnv(env?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return env ? { ...process.env, ...env } : process.env
 }
 
-export function runCommand(command: string, args: string[], options: RunOptions = {}): Promise<number> {
+/** Spawn one shell command line; resolves with its exit code, or 1 if it can't start */
+function spawnShell(commandLine: string, label: string, options: RunOptions): Promise<number> {
   return new Promise((resolve) => {
-    const child = spawn(command, args, {
+    const child = spawn(commandLine, {
       cwd: resolveCwd(options.cwd),
       env: resolveEnv(options.env),
       stdio: "inherit",
@@ -36,30 +37,26 @@ export function runCommand(command: string, args: string[], options: RunOptions 
     })
 
     child.on("error", (err) => {
-      console.error(`Failed to run ${command}: ${err.message}`)
+      console.error(`Failed to run${label}: ${err.message}`)
       resolve(1)
     })
   })
 }
 
+/**
+ * Run `command` with `args` through the shell, so `.bin` shims (including
+ * Windows `.cmd` files) and commands such as `npx eslint` resolve. `args` are
+ * joined into the command line as given, not escaped: quote any argument that
+ * holds spaces or shell characters, as `prettierFormatArgs` does. Joining here
+ * rather than passing `args` to `spawn` gives the same command line Node built
+ * before, without its DEP0190 warning, which flags exactly that unescaped join.
+ */
+export function runCommand(command: string, args: string[], options: RunOptions = {}): Promise<number> {
+  return spawnShell([command, ...args].join(" "), ` ${command}`, options)
+}
+
 export function runShellCommand(shellCmd: string, options: RunOptions = {}): Promise<number> {
-  return new Promise((resolve) => {
-    const child = spawn(shellCmd, {
-      cwd: resolveCwd(options.cwd),
-      env: resolveEnv(options.env),
-      stdio: "inherit",
-      shell: true,
-    })
-
-    child.on("close", (code) => {
-      resolve(code ?? 1)
-    })
-
-    child.on("error", (err) => {
-      console.error(`Failed to run: ${err.message}`)
-      resolve(1)
-    })
-  })
+  return spawnShell(shellCmd, "", options)
 }
 
 export async function runSequence(commands: Array<{ name: string; cmd: string; args: string[] }>): Promise<number> {

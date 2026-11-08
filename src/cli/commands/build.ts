@@ -167,7 +167,7 @@ export function prettierConfigArg(): Option<string> {
  * no prettier config of their own (see `prettierConfigArg`), so we fill the gap without ever
  * overriding a config they wrote.
  *
- * Bundled paths are quoted because `runCommand` spawns with `shell: true` (the shell strips the
+ * Bundled paths are quoted because `runCommand` runs one shell command line (the shell strips the
  * quotes), keeping them correct when the install path contains spaces.
  */
 export function prettierFormatArgs(
