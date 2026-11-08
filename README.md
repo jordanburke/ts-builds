@@ -254,6 +254,99 @@ Wire-up:
 aggregate a different root. Finding zero sidecars exits nonzero — an empty sweep
 must not silently pass CI.
 
+The sidecar also has a `rules` field with per-rule counts: errors, warnings, findings
+silenced by an `eslint-disable` comment.
+
+### Lint telemetry (opt-in)
+
+`ts-builds lint` can send each run's per-rule counts to an endpoint you run. That shows which
+rules fire, which ones people silence, and how both change between releases. It's off unless you
+turn it on. ts-builds reads these settings from the environment only, so `ts-builds.config.json`
+has no switch for it. A committed script, workflow or config command that sets them still turns it
+on for everyone who runs it, so set them only where you mean to, such as your own CI.
+
+| Env var                       | Effect                                                                                                                     |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `TS_BUILDS_TELEMETRY=1`       | Turns it on.                                                                                                               |
+| `TS_BUILDS_TELEMETRY_URL`     | Where to POST. Must be `https`, or `http` to localhost. With telemetry on and no URL, `lint` warns once and sends nothing. |
+| `TS_BUILDS_TELEMETRY_DEBUG=1` | Prints the payload to stderr and sends nothing, whether or not telemetry is on.                                            |
+| `DO_NOT_TRACK=1`              | Turns it off, whatever else is set.                                                                                        |
+
+Each run sends one JSON object:
+
+```json
+{
+  "schema": 1,
+  "package": "@acme/api",
+  "project": "3f9c2a1b7d4e6f80",
+  "ci": true,
+  "agent": "claude-code",
+  "fix": false,
+  "durationMs": 1840,
+  "files": 212,
+  "fatal": 0,
+  "versions": {
+    "node": "24.20.0",
+    "ts-builds": "4.2.0",
+    "eslint": "10.14.0",
+    "typescript": "6.0.3",
+    "eslint-plugin-functype": "2.125.1"
+  },
+  "enabled": { "functype/no-let": "error", "functype/prefer-option": "warn" },
+  "rules": { "functype/prefer-option": { "errors": 0, "warnings": 3, "silenced": 2 } }
+}
+```
+
+- **Never sent:** file paths, source code or message text.
+- **Sent as-is:** the `package.json` name, left out when there isn't one, and rule ids as your config
+  names them. Plugin names and versions are sent only when they look like an npm package name and a
+  semver version.
+- **`project`:** a salted hash of the git remote, so one repo's packages group together. It's a
+  stable pseudonym, not anonymity: anyone who knows the remote URL can compute it. It's left out
+  when there's no remote.
+- **`agent`:** set when a coding agent runs the lint. Today that's Claude Code, from `CLAUDECODE=1`.
+- **`versions`:** Node, ts-builds, ESLint, TypeScript, and each configured plugin. A plugin's
+  installed version wins over the `meta.version` it declares, which is hand-written and can go stale.
+  When the installed package can't be found, the `meta.version` is used.
+- **`enabled`:** the plugin rules that are on, with their severity, read from the first linted file's
+  config. It tells a rule with no findings apart from a rule that's off. Core rules are left out.
+
+It never changes a run's result. It sends after lint finishes and its output is printed, waits at
+most 2 seconds, and ignores every error, so the exit code and output stay the same. A run that
+fails before linting, such as one with a broken config, sends nothing.
+
+It doesn't cover `lint.useProjectEslint`, which spawns your own ESLint so ts-builds never sees the
+results. It also doesn't cover scripts that call `eslint` directly instead of `ts-builds lint`.
+
+To turn it on in GitHub Actions, set both variables on the job:
+
+```yaml
+env:
+  TS_BUILDS_TELEMETRY: "1"
+  TS_BUILDS_TELEMETRY_URL: ${{ vars.TS_BUILDS_TELEMETRY_URL }}
+```
+
+Under Turbo's strict env mode, a task only sees the variables Turbo is told about, plus a built-in
+set that includes `CI`. List these so `ts-builds lint` sees them. Adding `globalPassThroughEnv` also
+turns on strict mode for every task, so check that your other tasks still get the variables they need:
+
+```jsonc
+// turbo.json
+{
+  "globalPassThroughEnv": [
+    "TS_BUILDS_TELEMETRY",
+    "TS_BUILDS_TELEMETRY_URL",
+    "TS_BUILDS_TELEMETRY_DEBUG",
+    "DO_NOT_TRACK",
+    "GITHUB_ACTIONS",
+    "CLAUDECODE",
+  ],
+}
+```
+
+Pass-through variables don't change Turbo's cache key. A cached lint task doesn't run, so it sends
+nothing.
+
 ## Extendable Configs
 
 ts-builds exports base configurations you can extend:

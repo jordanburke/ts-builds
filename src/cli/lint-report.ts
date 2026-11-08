@@ -3,8 +3,10 @@ import { mkdir, rename, rm, writeFile } from "node:fs/promises"
 import { basename, join } from "node:path"
 
 import type { ESLint } from "eslint"
+import { Option, Try } from "functype"
 
 import { targetDir } from "./config"
+import { type RuleCounts, ruleStats } from "./telemetry"
 
 /**
  * Current sidecar schema version. Bump when the shape changes incompatibly so
@@ -42,6 +44,12 @@ export interface LintReport {
   fixableWarningCount: number
   fileCount: number
   files: LintReportFile[]
+  /**
+   * Per-rule counts, keyed by rule id and sorted: errors, warnings, and findings silenced by an
+   * `eslint-disable` comment. Added in 4.2; absent from a fatal report and from reports written
+   * before it, so read it as optional.
+   */
+  rules?: Record<string, RuleCounts>
 }
 
 /** Absolute path to a package's lint sidecar. `dir` is the package root. */
@@ -49,18 +57,18 @@ export function lintReportPath(dir: string = targetDir): string {
   return join(dir, ".ts-builds", "lint-report.json")
 }
 
-/** Package name from `<dir>/package.json`, falling back to the directory name. */
-export function readPackageName(dir: string = targetDir): string {
+/** The `name` in `<dir>/package.json`, when the file exists, parses and has a non-empty name. */
+export function packageJsonName(dir: string = targetDir): Option<string> {
   const pkgPath = join(dir, "package.json")
-  if (existsSync(pkgPath)) {
-    try {
-      const { name } = JSON.parse(readFileSync(pkgPath, "utf-8")) as { name?: string }
-      if (typeof name === "string" && name.length > 0) return name
-    } catch {
-      // fall through to basename
-    }
-  }
-  return basename(dir)
+  if (!existsSync(pkgPath)) return Option.none<string>()
+  return Try(() => (JSON.parse(readFileSync(pkgPath, "utf-8")) as { name?: unknown }).name)
+    .toOption()
+    .flatMap((name) => (typeof name === "string" && name.length > 0 ? Option(name) : Option.none<string>()))
+}
+
+/** Package name from `<dir>/package.json`, falling back to the directory name. For local use only. */
+export function readPackageName(dir: string = targetDir): string {
+  return packageJsonName(dir).orElse(basename(dir))
 }
 
 /** Build a report from ESLint results. */
@@ -84,6 +92,7 @@ export function buildLintReport(results: readonly ESLint.LintResult[], fix: bool
     files: results
       .filter((r) => r.errorCount > 0 || r.warningCount > 0)
       .map((r) => ({ filePath: r.filePath, errorCount: r.errorCount, warningCount: r.warningCount })),
+    rules: ruleStats(results).rules,
   }
 }
 

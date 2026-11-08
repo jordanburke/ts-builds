@@ -7,8 +7,9 @@ import { List, Map, Option, Set } from "functype"
 import { Fs } from "functype-os"
 
 import { loadConfig, type ResolvedConfig, targetDir } from "../config"
-import { buildLintReport, fatalLintReport, readPackageName, writeLintReport } from "../lint-report"
+import { buildLintReport, fatalLintReport, packageJsonName, readPackageName, writeLintReport } from "../lint-report"
 import { runCommand } from "../process"
+import { reportLintTelemetry } from "../telemetry"
 
 const TRANSIENT_RM_ERRORS = Set.of("EBUSY", "EPERM", "ENOTEMPTY", "EMFILE")
 const RETRY_DELAYS_MS = [100, 250, 500, 1000]
@@ -277,8 +278,10 @@ export async function runLint(check = false): Promise<number> {
   try {
     const { ESLint } = await import("eslint")
     const eslint = new ESLint({ fix, cwd: targetDir })
+    const startedAt = performance.now()
     const results = await eslint.lintFiles(lintTargets(config, targetDir))
     if (fix) await ESLint.outputFixes(results)
+    const durationMs = performance.now() - startedAt
 
     // Persist the sidecar BEFORE printing: a broken pipe (`ts-builds lint | head`)
     // must not lose an already-computed report or downgrade a real result to fatal.
@@ -303,6 +306,19 @@ export async function runLint(check = false): Promise<number> {
     } catch {
       // report is saved; the exit code below is authoritative
     }
+
+    // Opt-in, and off unless TS_BUILDS_TELEMETRY=1. Never throws or changes the exit code.
+    const firstFile = results.at(0)?.filePath
+    await reportLintTelemetry({
+      results,
+      fix,
+      durationMs,
+      packageName: packageJsonName(targetDir),
+      eslintVersion: ESLint.version,
+      dir: targetDir,
+      configFor: () =>
+        firstFile === undefined ? Promise.resolve(undefined) : eslint.calculateConfigForFile(firstFile),
+    })
 
     return report.errorCount > 0 ? 1 : 0
   } catch (err) {
