@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
-import { dirname, join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import type { ESLint } from "eslint"
@@ -210,10 +210,17 @@ const readJson = (path: string): Option<PackageJson> =>
 const versionIn = (path: string): Option<string> =>
   readJson(path).flatMap((pkg) => (typeof pkg.version === "string" ? Option(pkg.version) : Option.none<string>()))
 
-/** A package's installed version, found the way Node finds it: `node_modules/<name>` up from `fromDir`. */
+/**
+ * A package's installed version, found the way Node finds it: `node_modules/<name>` in `fromDir` or
+ * any ancestor. Inside a `node_modules` folder it also checks `<name>` beside it, which is where pnpm
+ * puts a package's dependencies (`.pnpm/ts-builds@x/node_modules/eslint-plugin-x`).
+ */
 export function installedVersion(name: string, fromDir: string): Option<string> {
   const found = ancestors(fromDir)
-    .map((dir) => join(dir, "node_modules", name, "package.json"))
+    .flatMap((dir) => [
+      join(dir, "node_modules", name, "package.json"),
+      ...(basename(dir) === "node_modules" ? [join(dir, name, "package.json")] : []),
+    ])
     .find((path) => existsSync(path))
   return found === undefined ? Option.none<string>() : versionIn(found)
 }

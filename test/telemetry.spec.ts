@@ -203,6 +203,16 @@ describe("installedVersion", () => {
     expect(installedVersion("eslint-plugin-x", join(root, "packages", "a")).orElse("none")).toBe("2.3.4")
     expect(installedVersion("eslint-plugin-missing", join(root, "packages", "a")).isNone()).toBe(true)
   })
+
+  it("finds a dependency beside a package in pnpm's layout", () => {
+    const root = mkdtempSync(join(tmpdir(), "ts-builds-telemetry-"))
+    dirs.push(root)
+    const store = join(root, "node_modules", ".pnpm", "ts-builds@4.2.0", "node_modules")
+    mkdirSync(join(store, "ts-builds"), { recursive: true })
+    mkdirSync(join(store, "eslint-plugin-y"), { recursive: true })
+    writeFileSync(join(store, "eslint-plugin-y", "package.json"), JSON.stringify({ version: "5.6.7" }))
+    expect(installedVersion("eslint-plugin-y", join(store, "ts-builds")).orElse("none")).toBe("5.6.7")
+  })
 })
 
 describe("activeConfig", () => {

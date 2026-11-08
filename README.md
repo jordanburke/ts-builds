@@ -285,8 +285,15 @@ Each run sends one JSON object:
   "durationMs": 1840,
   "files": 212,
   "fatal": 0,
-  "versions": { "node": "24.20.0", "ts-builds": "4.2.0", "eslint": "10.14.0", "typescript": "6.0.3" },
-  "rules": { "no-unused-vars": { "errors": 1, "warnings": 0, "silenced": 2, "baselined": 0 } }
+  "versions": {
+    "node": "24.20.0",
+    "ts-builds": "4.2.0",
+    "eslint": "10.14.0",
+    "typescript": "6.0.3",
+    "eslint-plugin-functype": "2.125.1"
+  },
+  "enabled": { "functype/no-let": "error", "functype/prefer-option": "warn" },
+  "rules": { "functype/prefer-option": { "errors": 0, "warnings": 3, "silenced": 2, "baselined": 0 } }
 }
 ```
 
@@ -296,11 +303,15 @@ Each run sends one JSON object:
   stable pseudonym, not anonymity: anyone who knows the remote URL can compute it. It's left out
   when there's no remote.
 - **`agent`:** set when a coding agent runs the lint. Today that's Claude Code, from `CLAUDECODE=1`.
-- **`versions`:** Node, ts-builds, ESLint, TypeScript, and the package of each plugin whose rules
-  reported.
+- **`versions`:** Node, ts-builds, ESLint, TypeScript, and each configured plugin. A plugin's
+  installed version wins over the `meta.version` it declares, which is hand-written and can go stale.
+  When the installed package can't be found, the `meta.version` is used.
+- **`enabled`:** the plugin rules that are on, with their severity, read from the first linted file's
+  config. It tells a rule with no findings apart from a rule that's off. Core rules are left out.
 
 It never changes a run's result. It sends after lint finishes and its output is printed, waits at
-most 2 seconds, and ignores every error, so the exit code and output stay the same.
+most 2 seconds, and ignores every error, so the exit code and output stay the same. A run that
+fails before linting, such as one with a broken config, sends nothing.
 
 It doesn't cover `lint.useProjectEslint`, which spawns your own ESLint so ts-builds never sees the
 results. It also doesn't cover scripts that call `eslint` directly instead of `ts-builds lint`.
