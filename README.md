@@ -300,7 +300,7 @@ Each run sends one JSON object:
 - **Never sent:** file paths, source code or message text.
 - **Sent as-is:** the `package.json` name, left out when there isn't one, and rule ids as your config
   names them. A plugin's declared name is used only when it looks like an npm package name, and
-  otherwise is replaced by the name derived from its rule prefix (`eslint-plugin-<prefix>`). Its
+  otherwise is replaced by the name derived from its rule prefix, such as `eslint-plugin-<prefix>`. Its
   declared version is used only when it's semver.
 - **`project`:** a salted hash of the git remote, so one repo's packages group together. It's a
   stable pseudonym, not anonymity: anyone who knows the remote URL can compute it. It's left out
