@@ -299,8 +299,9 @@ Each run sends one JSON object:
 
 - **Never sent:** file paths, source code or message text.
 - **Sent as-is:** the `package.json` name, left out when there isn't one, and rule ids as your config
-  names them. Plugin names and versions are sent only when they look like an npm package name and a
-  semver version.
+  names them. A plugin's declared name is used only when it looks like an npm package name, and
+  otherwise is replaced by the name derived from its rule prefix, such as `eslint-plugin-<prefix>`. Its
+  declared version is used only when it's semver.
 - **`project`:** a salted hash of the git remote, so one repo's packages group together. It's a
   stable pseudonym, not anonymity: anyone who knows the remote URL can compute it. It's left out
   when there's no remote.
@@ -311,8 +312,8 @@ Each run sends one JSON object:
 - **`enabled`:** the plugin rules that are on, with their severity, read from the first linted file's
   config. It tells a rule with no findings apart from a rule that's off. Core rules are left out.
 
-It never changes a run's result. It sends after lint finishes and its output is printed, waits at
-most 2 seconds, and ignores every error, so the exit code and output stay the same. A run that
+It never changes a run's result. It sends after lint finishes and its output is printed, the send
+waits at most 2 seconds, and it ignores every error, so the exit code and output stay the same. A run that
 fails before linting, such as one with a broken config, sends nothing.
 
 It doesn't cover `lint.useProjectEslint`, which spawns your own ESLint so ts-builds never sees the
