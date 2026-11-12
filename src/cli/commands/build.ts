@@ -152,6 +152,44 @@ export function prettierConfigArg(): Option<string> {
   return consumerHasPrettierConfig() ? Option.none<string>() : bundledPrettierConfigPath()
 }
 
+/** True when `dir` is a workspace root: it has `pnpm-workspace.yaml`, or a package.json with `workspaces`. */
+function isWorkspaceRoot(dir: string): boolean {
+  if (Fs.existsSync(join(dir, "pnpm-workspace.yaml"))) return true
+  return Fs.readFileSync(join(dir, "package.json"))
+    .toOption()
+    .flatMap((content) => {
+      try {
+        return Option((JSON.parse(content) as { workspaces?: unknown }).workspaces)
+      } catch {
+        return Option.none<unknown>()
+      }
+    })
+    .fold(
+      () => false,
+      () => true,
+    )
+}
+
+/**
+ * The enclosing workspace root's `.prettierignore`, when `startDir` is a package inside a workspace
+ * and that file exists. Exported for testing.
+ *
+ * `format` runs prettier from the package's own directory, and prettier reads `.prettierignore` only
+ * from there. So an ignore rule a monorepo states once at its root (a generated file, a vendored
+ * snapshot) applied when the repo was formatted from the root and NOT when each package formatted
+ * itself: the per-package `format` rewrote the generated file and `format:check` failed on it. Only
+ * strict ancestors are searched, because a package that is itself the root already passes its own
+ * `./.prettierignore`. Patterns in an `--ignore-path` file resolve relative to that file (prettier 3),
+ * so the root's patterns mean the same thing from inside a package.
+ */
+export function workspacePrettierIgnorePath(startDir: string = targetDir): Option<string> {
+  return ancestorDirs(startDir)
+    .drop(1)
+    .find((dir) => isWorkspaceRoot(dir))
+    .map((root) => join(root, ".prettierignore"))
+    .filter((path) => Fs.existsSync(path))
+}
+
 /**
  * prettier CLI args for `format` / `format:check`.
  *
@@ -162,6 +200,9 @@ export function prettierConfigArg(): Option<string> {
  * compose additively, and a missing consumer file is tolerated silently. Net — lockfiles/build
  * output are ignored for every consumer with no per-repo `.prettierignore` needed, while the
  * consumer's own entries still apply.
+ *
+ * `workspaceIgnore` adds the enclosing workspace root's `.prettierignore` the same additive way, so a
+ * package ignores what its monorepo ignores (see `workspacePrettierIgnorePath`).
  *
  * `bundledConfig` is the same idea for style rather than ignores: Some only when the consumer has
  * no prettier config of their own (see `prettierConfigArg`), so we fill the gap without ever
@@ -174,11 +215,18 @@ export function prettierFormatArgs(
   check: boolean,
   bundledIgnore: string | null = bundledPrettierIgnorePath(),
   bundledConfig: Option<string> = prettierConfigArg(),
+  workspaceIgnore: Option<string> = workspacePrettierIgnorePath(),
 ): string[] {
   const base = List([check ? "--check" : "--write", "."])
-  const ignoreArgs = bundledIgnore
-    ? List(["--ignore-path", `"${bundledIgnore}"`, "--ignore-path", ".prettierignore"])
-    : List.empty<string>()
+  // Any explicit --ignore-path turns off prettier's own discovery of ./.prettierignore, so once one
+  // is passed the consumer's must be passed too.
+  const explicit = List([Option(bundledIgnore), workspaceIgnore]).flatMap((path) =>
+    path.fold(
+      () => List.empty<string>(),
+      (p) => List(["--ignore-path", `"${p}"`]),
+    ),
+  )
+  const ignoreArgs = explicit.isEmpty ? explicit : explicit.concat(List(["--ignore-path", ".prettierignore"]))
   const configArgs = bundledConfig.fold(
     () => List.empty<string>(),
     (path) => List(["--config", `"${path}"`]),

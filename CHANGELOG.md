@@ -6,6 +6,14 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- **format:** `format` and `format:check` in a workspace package now also read the workspace root's
+  `.prettierignore` (the nearest ancestor with `pnpm-workspace.yaml`, or a `package.json` with `workspaces`).
+  prettier reads `.prettierignore` only from the directory it runs in, so a rule a monorepo states once at its
+  root, such as a generated file, applied when formatting from the root and not when each package formatted
+  itself: per-package `format` rewrote the file, and `ts-builds ci`'s `format:check` failed on it.
+
 ## 4.4.0 (2026-11-11)
 
 ### Features
