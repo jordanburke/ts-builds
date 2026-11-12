@@ -210,9 +210,14 @@ npx ts-builds ci                 # one package
 pnpm -r exec ts-builds ci        # every package in a pnpm workspace, in dependency order
 ```
 
+As a package script, run it with `pnpm run ci` or `npm run ci`. **Not `pnpm ci` or `npm ci`:** those are the
+package managers' own clean-install commands, so they reinstall, exit 0, and check nothing.
+
 There is no second list to keep in step: add `test` to `validate` and `ci` runs it too. A nested chain is
-derived the same way. Your own `commands` run as written, so if `validate` runs a command that writes
-files, give `ci` its own chain, which replaces the derived one:
+derived the same way. If you replace `format` or `lint`, replace `format:check` or `lint:check` too:
+otherwise `ci` would check with ts-builds' own tool instead of yours, so it fails and says so. Other
+commands of your own run as written, so if `validate` runs one that writes files, give `ci` its own chain.
+A `chains.ci` or `commands.ci` of your own replaces the derived one:
 
 ```json
 {

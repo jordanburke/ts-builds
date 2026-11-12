@@ -201,6 +201,51 @@ describe("ci (end-to-end)", () => {
     })
   })
 
+  it("runs an existing commands.ci instead of deriving a chain over it", () => {
+    withConfig({ commands: { ...markers, ci: "echo RAN-MY-OWN-CI" }, chains: { validate: ["lint"] } }, (dir) => {
+      const { status, out } = runCli(["ci"], dir)
+      expect(status).toBe(0)
+      expect(out).toMatch(/RAN-MY-OWN-CI/)
+      expect(out).not.toMatch(/RAN-LINT/)
+    })
+  })
+
+  it("refuses to check a replaced format with ts-builds' own check, and names the fix", () => {
+    withConfig(
+      {
+        commands: { format: "echo RAN-OTHER-FORMATTER", test: "echo RAN-TEST" },
+        chains: { validate: ["format", "test"] },
+      },
+      (dir) => {
+        const { status, out } = runCli(["ci"], dir)
+        expect(status).toBe(1)
+        expect(out).toMatch(/replaces "format" but not "format:check"/)
+        expect(out).toMatch(/chains\.ci/)
+        expect(out).not.toMatch(/RAN-TEST|RAN-OTHER-FORMATTER/)
+      },
+    )
+  })
+
+  it("accepts a replaced lint when its lint:check is replaced too", () => {
+    withConfig({ commands: markers, chains: { validate: ["lint", "test"] } }, (dir) => {
+      const { status, out } = runCli(["ci"], dir)
+      expect(status).toBe(0)
+      expect(out).toMatch(/RAN-LINT-CHECK[\s\S]*RAN-TEST/)
+    })
+  })
+
+  it("derives a nested chain end to end", () => {
+    withConfig(
+      { commands: markers, chains: { validate: ["validate:core"], "validate:core": ["format", "typecheck"] } },
+      (dir) => {
+        const { status, out } = runCli(["ci"], dir)
+        expect(status).toBe(0)
+        expect(out).toMatch(/RAN-FORMAT-CHECK[\s\S]*RAN-TYPECHECK/)
+        expect(out).not.toMatch(/RAN-FORMAT-WRITE/)
+      },
+    )
+  })
+
   it("fails when a step fails, like validate", () => {
     withConfig({ commands: { ...markers, "lint:check": "exit 3" }, chains: { validate: ["lint", "test"] } }, (dir) => {
       const { status, out } = runCli(["ci"], dir)

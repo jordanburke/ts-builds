@@ -16,6 +16,7 @@ function baseConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConfig {
     changelog: {},
     commands: {},
     chains: {},
+    ciProblems: [],
     ...overrides,
   }
 }

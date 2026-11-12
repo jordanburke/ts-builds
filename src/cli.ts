@@ -109,6 +109,10 @@ switch (command) {
 
   default: {
     const config = loadConfig()
+    if (command === "ci" && config.ciProblems.length > 0) {
+      config.ciProblems.forEach((problem) => console.error(problem))
+      process.exit(1)
+    }
     if (config.chains[command]) {
       process.exit(await runValidate(command))
     } else if (config.commands[command]) {

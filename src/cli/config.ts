@@ -86,6 +86,8 @@ export interface ResolvedConfig {
   changelog: ChangelogConfig
   commands: Record<string, CommandDef>
   chains: Record<string, string[]>
+  /** Why the derived `ci` chain can't be trusted, one message per cause; empty when it can. See `ciProblems`. */
+  ciProblems: string[]
 }
 
 export const defaultChains: Record<string, string[]> = {
@@ -107,8 +109,8 @@ export const CHECK_TWINS: Readonly<Record<string, string>> = {
  * from drifting: add `test` to `validate` and `ci` runs it too.
  *
  * A step that names another chain is derived the same way, inline. A chain already being expanded is
- * left as a reference, so `runChain` reports the cycle. Your own `commands` run as written, so a command
- * that writes files still writes under `ci`; set `chains.ci` yourself in that case.
+ * left as a reference, so `runChain` reports the cycle. Your own commands that aren't `format` or `lint`
+ * run as written, so one that writes files still writes under `ci`; set `chains.ci` yourself in that case.
  */
 export function deriveCiChain(
   chain: readonly string[],
@@ -122,6 +124,45 @@ export function deriveCiChain(
     if (nested === undefined || expanding.includes(step)) return [step]
     return deriveCiChain(nested, chains, [...expanding, step])
   })
+}
+
+/** The steps in `CHECK_TWINS` that `chain` reaches, directly or through nested chains. */
+function writersReached(
+  chain: readonly string[],
+  chains: Readonly<Record<string, string[]>>,
+  expanding: readonly string[] = [],
+): string[] {
+  return chain.flatMap((step) => {
+    if (CHECK_TWINS[step] !== undefined) return [step]
+    const nested = chains[step]
+    if (nested === undefined || expanding.includes(step)) return []
+    return writersReached(nested, chains, [...expanding, step])
+  })
+}
+
+/**
+ * Why the derived `ci` chain would check with a different tool than `validate` fixes with.
+ *
+ * A config that replaces `format` (a command or a chain) without replacing `format:check` would make
+ * `ci` run ts-builds' own Prettier check against a project that formats with something else: a check of
+ * the wrong thing, or a crash. Failing with the fix is better than either. The same goes for `lint`.
+ */
+export function ciProblems(
+  validate: readonly string[],
+  chains: Readonly<Record<string, string[]>>,
+  commands: Readonly<Record<string, CommandDef>>,
+): string[] {
+  const replaced = (step: string): boolean => commands[step] !== undefined || chains[step] !== undefined
+  return writersReached(validate, chains)
+    .filter((writer, i, all) => all.indexOf(writer) === i)
+    .filter((writer) => replaced(writer) && !replaced(CHECK_TWINS[writer] ?? writer))
+    .map((writer) => {
+      const twin = CHECK_TWINS[writer] ?? writer
+      return (
+        `✗ ts-builds ci can't check "${writer}": your config replaces "${writer}" but not "${twin}", so ci ` +
+        `would run ts-builds' own ${twin} instead of your tool. Add a "${twin}" command, or set "chains.ci".`
+      )
+    })
 }
 
 function readUserConfig(configPath: string): TsBuildsConfig {
@@ -152,8 +193,10 @@ export function loadConfig(): ResolvedConfig {
     Object.assign(chains, userConfig.chains)
   }
   // Derived last, from the resolved `validate`, so `validateChain` and `chains.validate` both reach it.
-  // A `chains.ci` of your own wins.
-  if (userConfig.chains?.ci === undefined) {
+  // A `chains.ci` or `commands.ci` of your own wins: chains shadow commands at the top level, so deriving
+  // over a `commands.ci` would silently stop it running.
+  const derivesCi = userConfig.chains?.ci === undefined && userConfig.commands?.ci === undefined
+  if (derivesCi) {
     chains.ci = deriveCiChain(chains.validate ?? [], chains)
   }
 
@@ -169,5 +212,6 @@ export function loadConfig(): ResolvedConfig {
     changelog: userConfig.changelog ?? {},
     commands,
     chains,
+    ciProblems: derivesCi ? ciProblems(chains.validate ?? [], chains, commands) : [],
   }
 }

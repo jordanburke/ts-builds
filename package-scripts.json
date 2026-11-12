@@ -8,7 +8,7 @@
     },
     "ci": {
       "command": "ts-builds ci",
-      "description": "Check-only validate for CI: the validate chain with format and lint as checks, never writing",
+      "description": "Check-only validate for CI: the validate chain with format and lint as checks, never writing. Run it as `pnpm run ci` / `npm run ci`; `pnpm ci` and `npm ci` are clean installs that check nothing",
       "required": false
     },
     "format": {
