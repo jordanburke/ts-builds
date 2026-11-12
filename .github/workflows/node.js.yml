@@ -36,6 +36,14 @@ jobs:
       # `ci`, not `validate`: the same chain with format and lint as checks, so CI never rewrites the tree.
       - name: Validate package (check only)
         run: pnpm ci:bootstrap
+        # Dogfood ts-builds' own lint telemetry: per-rule and per-message counts, plus
+        # the trace (this public repo's name, the commit, each finding's file and line),
+        # never source. Node 24 only, so each commit is counted once, not per matrix leg.
+        # Receiver: https://github.com/jordanburke/lint-telemetry
+        env:
+          TS_BUILDS_TELEMETRY: ${{ matrix.node-version == '24.x' && '1' || '' }}
+          TS_BUILDS_TELEMETRY_URL: https://otel.tsnpm.com/v1/lint
+          TS_BUILDS_TELEMETRY_TRACE: "1"
 
       - name: Test npm pack
         run: |
