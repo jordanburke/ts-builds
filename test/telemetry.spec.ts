@@ -14,9 +14,11 @@ import {
   activeConfig,
   buildTelemetryPayload,
   detectAgent,
+  fitTrace,
   gitTrace,
   installedVersion,
   isCi,
+  isTraceRepo,
   MAX_TRACE_FINDINGS,
   messageStats,
   normalizeRemote,
@@ -512,6 +514,24 @@ describe("messageStats", () => {
     expect(Object.keys(stats)).toEqual(["x/a", "x/b"])
   })
 
+  it("counts ids named like Object prototype members, and leaves out ids that aren't identifiers", () => {
+    const stats = messageStats([
+      result({
+        messages: [
+          withId("x/a", 1, "constructor"),
+          withId("x/a", 1, "toString"),
+          withId("x/a", 1, "has space: /Users/x"),
+        ],
+      }),
+    ])
+    expect(stats).toEqual({
+      "x/a": {
+        constructor: { errors: 0, warnings: 1, silenced: 0 },
+        toString: { errors: 0, warnings: 1, silenced: 0 },
+      },
+    })
+  })
+
   it("is empty when no finding has a message id", () => {
     expect(messageStats([result({ messages: [message("no-var", 2)] })])).toEqual({})
   })
@@ -532,6 +552,34 @@ describe("traceCandidates", () => {
       { rule: "x/a", message: "m", kind: "silenced", file: "src/a.ts", line: 3 },
       { rule: "x/a", message: "m", kind: "warning", file: "src/b.ts", line: 9 },
     ])
+  })
+
+  it("keeps a directory whose name starts with two dots", () => {
+    const root = join(tmpdir(), "repo")
+    const found = traceCandidates(
+      [result({ filePath: join(root, "..cache", "a.ts"), messages: [message("x/a", 1)] })],
+      root,
+    )
+    expect(found.map((f) => f.file)).toEqual(["..cache/a.ts"])
+  })
+})
+
+describe("isTraceRepo", () => {
+  it("accepts host/owner/repo with a domain host", () => {
+    expect(isTraceRepo("github.com/owner/repo")).toBe(true)
+    expect(isTraceRepo("gitlab.example.com/group/sub/repo")).toBe(true)
+  })
+
+  it("rejects path remotes and dot segments", () => {
+    for (const repo of [
+      "../mirrors/team/repo",
+      "./a/b/c",
+      "repos/a/b",
+      "/srv/git/x",
+      "github.com/x/..",
+      "github.com/./.",
+    ])
+      expect(isTraceRepo(repo)).toBe(false)
   })
 })
 
@@ -599,6 +647,34 @@ describe("gitTrace", () => {
     expect(gitTrace([finding(root, "clean.ts")], root).isEmpty).toBe(true)
   })
 
+  it("gives no trace for a relative-path remote", () => {
+    const root = repo("../mirrors/team/repo.git")
+    expect(gitTrace([finding(root, "clean.ts")], root).isEmpty).toBe(true)
+  })
+
+  it.skipIf(process.platform === "win32")("drops every finding when git can't say what changed", () => {
+    const root = repo("https://github.com/a/b")
+    const realGit = execFileSync("sh", ["-c", "command -v git"], { encoding: "utf-8" }).trim()
+    const shim = realpathSync(mkdtempSync(join(tmpdir(), "ts-builds-gitshim-")))
+    roots.push(shim)
+    writeFileSync(
+      join(shim, "git"),
+      `#!/bin/sh\nfor a in "$@"; do [ "$a" = diff ] && exit 128; done\nexec "${realGit}" "$@"\n`,
+      { mode: 0o755 },
+    )
+    const path = process.env.PATH
+    process.env.PATH = `${shim}:${path ?? ""}`
+    try {
+      const trace = gitTrace([finding(root, "clean.ts"), finding(root, "edited.ts")], root).orThrow(
+        new Error("no trace"),
+      )
+      expect(trace.findings).toEqual([])
+      expect(trace.dropped).toBe(2)
+    } finally {
+      process.env.PATH = path
+    }
+  })
+
   it("gives no trace outside a git repo", () => {
     const dir = realpathSync(mkdtempSync(join(tmpdir(), "ts-builds-nogit-")))
     roots.push(dir)
@@ -623,5 +699,45 @@ describe("gitTrace", () => {
     expect(traced.trace?.findings).toEqual([
       { rule: "x/a", message: "m", kind: "warning", file: "pkg/src/clean.ts", line: 1 },
     ])
+  })
+})
+
+describe("fitTrace", () => {
+  const payload: TelemetryPayload = {
+    schema: 1,
+    ci: true,
+    fix: false,
+    durationMs: 1,
+    files: 1,
+    fatal: 0,
+    versions: {},
+    rules: {},
+  }
+  const findings = Array.from({ length: 200 }, (_, i) => ({
+    rule: "functype/prefer-option",
+    message: "preferOption",
+    kind: "warning" as const,
+    file: `packages/some/deeply/nested/directory/structure/file-${i}.ts`,
+    line: i + 1,
+  }))
+  const trace = { repo: "github.com/a/b", commit: "a".repeat(40), findings, dropped: 3 }
+
+  it("keeps every finding when they fit", () => {
+    expect(fitTrace(payload, trace, 1_000_000)).toEqual(trace)
+  })
+
+  it("keeps findings in order until the payload would pass the cap, and counts the rest", () => {
+    const fitted = fitTrace(payload, trace, 5_000)
+    expect(fitted.findings.length).toBeGreaterThan(0)
+    expect(fitted.findings.length).toBeLessThan(200)
+    expect(fitted.findings).toEqual(findings.slice(0, fitted.findings.length))
+    expect(fitted.dropped).toBe(3 + 200 - fitted.findings.length)
+    expect(Buffer.byteLength(JSON.stringify({ ...payload, trace: fitted }))).toBeLessThanOrEqual(5_000)
+  })
+
+  it("sends no findings, but still the counts, when the payload alone is near the cap", () => {
+    const fitted = fitTrace(payload, trace, 100)
+    expect(fitted.findings).toEqual([])
+    expect(fitted.dropped).toBe(203)
   })
 })

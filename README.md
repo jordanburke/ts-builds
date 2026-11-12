@@ -393,13 +393,17 @@ the commit that was linted:
 - **Turn it on only for repos whose names and file paths you're happy to send.** That's why it's a
   separate flag.
 - **Lines match the commit.** A finding in an untracked file, or in one that differs from `HEAD`
-  because it was edited or rewritten by `--fix`, is left out and counted in `dropped`. So is
-  anything past the first 200 findings, sorted by file and line.
+  because it was edited or rewritten by `--fix`, is left out and counted in `dropped`. If git can't
+  say which files are tracked or changed, every finding is left out.
+- **Size is capped.** Findings are sorted by file and line. The first 200 are kept, and fewer if
+  the payload would pass 60 KB, so a large run still sends its counts. The rest count in `dropped`.
 - **No trace** when the directory isn't in a git repo, has no `HEAD`, or its remote isn't
-  `host/owner/repo`, such as a local path.
+  `host/owner/repo` with a domain name as the host. A local or relative path isn't traced.
+- **Message ids** that aren't plain identifiers (letters, digits, `_ . : -`, at most 64) are left
+  out of `messages` and the trace.
 
 It never changes a run's result. It sends after lint finishes and its output is printed, the send
-waits at most 2 seconds, and it ignores every error, so the exit code and output stay the same. A run that
+waits at most 2 seconds (the trace's git calls can add a few more), and it ignores every error, so the exit code and output stay the same. A run that
 fails before linting, such as one with a broken config, sends nothing.
 
 It doesn't cover `lint.useProjectEslint`, which spawns your own ESLint so ts-builds never sees the
