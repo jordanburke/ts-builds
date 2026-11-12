@@ -299,10 +299,29 @@ describe("workspacePrettierIgnorePath", () => {
     }
   })
 
+  it("uses the NEAREST workspace root, even when an outer one also has a .prettierignore", () => {
+    const outer = makeTempDir()
+    try {
+      const inner = join(outer, "vendor", "inner")
+      const pkg = join(inner, "apps", "web")
+      mkdirSync(pkg, { recursive: true })
+      writeFileSync(join(outer, "pnpm-workspace.yaml"), "packages:\n  - vendor/*\n")
+      writeFileSync(join(outer, ".prettierignore"), "outer\n")
+      writeFileSync(
+        join(inner, "package.json"),
+        JSON.stringify({ name: "inner", workspaces: { packages: ["apps/*"] } }),
+      )
+      writeFileSync(join(inner, ".prettierignore"), "inner\n")
+      expect(workspacePrettierIgnorePath(pkg).orNull()).toBe(join(inner, ".prettierignore"))
+    } finally {
+      rmSync(outer, { recursive: true, force: true })
+    }
+  })
+
   it("does not return the root's own file when run at the root, which already passes ./.prettierignore", () => {
     const { root } = workspace("pnpm")
     try {
-      expect(workspacePrettierIgnorePath(root).orNull()).not.toBe(join(root, ".prettierignore"))
+      expect(workspacePrettierIgnorePath(root).isNone()).toBe(true)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -311,7 +330,7 @@ describe("workspacePrettierIgnorePath", () => {
   it("returns nothing for the workspace when its root has no .prettierignore", () => {
     const { root, pkg } = workspace("pnpm", false)
     try {
-      expect(workspacePrettierIgnorePath(pkg).orNull()).not.toBe(join(root, ".prettierignore"))
+      expect(workspacePrettierIgnorePath(pkg).isNone()).toBe(true)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

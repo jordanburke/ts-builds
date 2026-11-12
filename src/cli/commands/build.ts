@@ -218,8 +218,9 @@ export function prettierFormatArgs(
   workspaceIgnore: Option<string> = workspacePrettierIgnorePath(),
 ): string[] {
   const base = List([check ? "--check" : "--write", "."])
-  // Any explicit --ignore-path turns off prettier's own discovery of ./.prettierignore, so once one
-  // is passed the consumer's must be passed too.
+  // Any explicit --ignore-path turns off prettier's own discovery of ./.prettierignore (and of
+  // ./.gitignore, which ts-builds has never re-added), so once one is passed the consumer's
+  // ./.prettierignore must be passed too.
   const explicit = List([Option(bundledIgnore), workspaceIgnore]).flatMap((path) =>
     path.fold(
       () => List.empty<string>(),
