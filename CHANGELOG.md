@@ -6,6 +6,8 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+## 4.4.0 (2026-11-11)
+
 ### Features
 
 - **cli:** `ts-builds ci` runs the package's `validate` chain with each step that writes swapped for its
