@@ -6,6 +6,21 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+## 4.5.0 (2026-11-12)
+
+### Features
+
+- **telemetry:** each run's payload adds `messages`, every rule's counts split by the message id it
+  reported, such as `preferOption`. A message id is a fixed name in the rule's code, not the message
+  text. It shows which of a rule's messages fires or gets silenced. Left out when no finding had one.
+- **telemetry:** opt-in trace to file and line (#235). With `TS_BUILDS_TELEMETRY_TRACE=1` as well, the
+  payload adds `trace`: the repo from the git remote as `host/owner/repo`, the commit (`HEAD`), and
+  each finding's rule, message id, kind, file and line. It never sends code. A finding in an untracked
+  file, or in one that differs from `HEAD`, is left out and counted in `dropped`, so every line
+  matches the commit; if git can't tell, every finding is left out. The trace keeps at most 200
+  findings and keeps the payload under 60 KB. A local or relative-path remote isn't traced. Turn it on
+  only for repos whose names and file paths you're happy to send.
+
 ## 4.4.1 (2026-11-12)
 
 ### Bug Fixes
