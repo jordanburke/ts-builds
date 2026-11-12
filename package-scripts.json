@@ -6,6 +6,11 @@
       "description": "Run all checks before committing (format, lint, test, build)",
       "required": true
     },
+    "ci": {
+      "command": "ts-builds ci",
+      "description": "Check-only validate for CI: the validate chain with format and lint as checks, never writing",
+      "required": false
+    },
     "format": {
       "command": "prettier --write .",
       "description": "Format all code with Prettier",

@@ -6,6 +6,13 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+### Features
+
+- **cli:** `ts-builds ci` runs the package's `validate` chain with each step that writes swapped for its
+  check (`format` → `format:check`, `lint` → `lint:check`), for CI, where nothing should rewrite the tree. It
+  is derived from `validate`, so the two can't drift, and a `chains.ci` in `ts-builds.config.json` replaces
+  it. ts-builds' own CI now runs it.
+
 ## 4.3.0 (2026-11-08)
 
 ### Bug Fixes

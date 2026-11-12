@@ -13,6 +13,7 @@ This is a TypeScript library template designed to be cloned/forked for creating 
 ### Pre-Checkin Command
 
 - `pnpm validate` - **Main command**: Format, lint, test, and build everything for checkin
+- `pnpm run ci` - The same chain check-only (`format:check`, `lint:check`), never writing; what CI runs. `ts-builds ci` derives it from `validate` (`deriveCiChain` in `src/cli/config.ts`)
 
 ### Formatting
 

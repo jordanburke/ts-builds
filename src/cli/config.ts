@@ -92,6 +92,38 @@ export const defaultChains: Record<string, string[]> = {
   validate: ["format", "lint", "typecheck", "test", "build"],
 }
 
+/** The built-in steps that rewrite files, each with the step that checks the same thing without writing. */
+export const CHECK_TWINS: Readonly<Record<string, string>> = {
+  format: "format:check",
+  lint: "lint:check",
+}
+
+/**
+ * The `ci` chain: `validate`'s steps with every step that rewrites files swapped for its check twin.
+ *
+ * `validate` makes the tree right on a developer's machine; CI has to prove the tree is right without
+ * changing it. A check that runs after a fixer inspects an already-repaired tree and passes no matter
+ * what was committed. Deriving `ci` from `validate`, instead of asking for a second list, keeps the two
+ * from drifting: add `test` to `validate` and `ci` runs it too.
+ *
+ * A step that names another chain is derived the same way, inline. A chain already being expanded is
+ * left as a reference, so `runChain` reports the cycle. Your own `commands` run as written, so a command
+ * that writes files still writes under `ci`; set `chains.ci` yourself in that case.
+ */
+export function deriveCiChain(
+  chain: readonly string[],
+  chains: Readonly<Record<string, string[]>>,
+  expanding: readonly string[] = [],
+): string[] {
+  return chain.flatMap((step) => {
+    const twin = CHECK_TWINS[step]
+    if (twin !== undefined) return [twin]
+    const nested = chains[step]
+    if (nested === undefined || expanding.includes(step)) return [step]
+    return deriveCiChain(nested, chains, [...expanding, step])
+  })
+}
+
 function readUserConfig(configPath: string): TsBuildsConfig {
   if (!existsSync(configPath)) return {}
   try {
@@ -118,6 +150,11 @@ export function loadConfig(): ResolvedConfig {
   }
   if (userConfig.chains) {
     Object.assign(chains, userConfig.chains)
+  }
+  // Derived last, from the resolved `validate`, so `validateChain` and `chains.validate` both reach it.
+  // A `chains.ci` of your own wins.
+  if (userConfig.chains?.ci === undefined) {
+    chains.ci = deriveCiChain(chains.validate ?? [], chains)
   }
 
   return {
