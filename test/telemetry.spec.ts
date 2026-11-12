@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { execFileSync } from "node:child_process"
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
 import { tmpdir } from "node:os"
@@ -13,8 +14,11 @@ import {
   activeConfig,
   buildTelemetryPayload,
   detectAgent,
+  gitTrace,
   installedVersion,
   isCi,
+  MAX_TRACE_FINDINGS,
+  messageStats,
   normalizeRemote,
   pluginPackage,
   projectId,
@@ -24,6 +28,8 @@ import {
   TELEMETRY_SCHEMA_VERSION,
   type TelemetryPayload,
   telemetryMode,
+  traceCandidates,
+  traceOn,
 } from "../src/cli/telemetry"
 
 const message = (ruleId: string | null, severity: 1 | 2, text = "a message"): Linter.LintMessage =>
@@ -479,5 +485,143 @@ describe("reportLintTelemetry", () => {
     } finally {
       await server.close()
     }
+  })
+})
+
+const withId = (ruleId: string, severity: 1 | 2, messageId: string, line = 1): Linter.LintMessage =>
+  ({ ...message(ruleId, severity), messageId, line }) as Linter.LintMessage
+
+const silencedWithId = (ruleId: string, messageId: string, line = 1): Linter.SuppressedLintMessage =>
+  ({
+    ...withId(ruleId, 2, messageId, line),
+    suppressions: [{ kind: "directive", justification: "" }],
+  }) as Linter.SuppressedLintMessage
+
+describe("messageStats", () => {
+  it("splits each rule's counts by message id, sorted", () => {
+    const stats = messageStats([
+      result({
+        messages: [withId("x/b", 1, "two"), withId("x/b", 2, "one"), withId("x/a", 1, "only"), message("x/a", 1)],
+        suppressedMessages: [silencedWithId("x/b", "one")],
+      }),
+    ])
+    expect(stats).toEqual({
+      "x/a": { only: { errors: 0, warnings: 1, silenced: 0 } },
+      "x/b": { one: { errors: 1, warnings: 0, silenced: 1 }, two: { errors: 0, warnings: 1, silenced: 0 } },
+    })
+    expect(Object.keys(stats)).toEqual(["x/a", "x/b"])
+  })
+
+  it("is empty when no finding has a message id", () => {
+    expect(messageStats([result({ messages: [message("no-var", 2)] })])).toEqual({})
+  })
+})
+
+describe("traceCandidates", () => {
+  it("makes paths relative to the root, sorts them, and leaves out files outside it", () => {
+    const root = join(tmpdir(), "repo")
+    const found = traceCandidates(
+      [
+        result({ filePath: join(root, "src", "b.ts"), messages: [withId("x/a", 1, "m", 9)] }),
+        result({ filePath: join(root, "src", "a.ts"), suppressedMessages: [silencedWithId("x/a", "m", 3)] }),
+        result({ filePath: join(tmpdir(), "elsewhere.ts"), messages: [message("x/a", 2)] }),
+      ],
+      root,
+    )
+    expect(found).toEqual([
+      { rule: "x/a", message: "m", kind: "silenced", file: "src/a.ts", line: 3 },
+      { rule: "x/a", message: "m", kind: "warning", file: "src/b.ts", line: 9 },
+    ])
+  })
+})
+
+describe("traceOn", () => {
+  it("needs TS_BUILDS_TELEMETRY_TRACE", () => {
+    expect(traceOn({})).toBe(false)
+    expect(traceOn({ TS_BUILDS_TELEMETRY_TRACE: "1" })).toBe(true)
+  })
+})
+
+describe("gitTrace", () => {
+  const roots: string[] = []
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
+  })
+
+  const repo = (remote: string): string => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "ts-builds-trace-")))
+    roots.push(root)
+    const run = (...args: string[]): void => {
+      execFileSync("git", args, { cwd: root, stdio: "ignore" })
+    }
+    run("init", "-q")
+    run("config", "user.email", "test@example.com")
+    run("config", "user.name", "test")
+    run("config", "commit.gpgsign", "false")
+    run("remote", "add", "origin", remote)
+    mkdirSync(join(root, "pkg", "src"), { recursive: true })
+    for (const file of ["clean.ts", "edited.ts", "[slug].ts"]) writeFileSync(join(root, "pkg", "src", file), "x\n")
+    run("add", ".")
+    run("commit", "-q", "-m", "init")
+    writeFileSync(join(root, "pkg", "src", "edited.ts"), "changed\n")
+    writeFileSync(join(root, "pkg", "src", "new.ts"), "x\n")
+    return root
+  }
+
+  const finding = (root: string, file: string): ESLint.LintResult =>
+    result({ filePath: join(root, "pkg", "src", file), messages: [withId("x/a", 1, "m", 1)] })
+
+  it("traces findings in committed, unchanged files, with the repo and HEAD", () => {
+    const root = repo("git@github.com:Owner/Repo.git")
+    const results = ["clean.ts", "edited.ts", "new.ts", "[slug].ts"].map((f) => finding(root, f))
+    const trace = gitTrace(results, join(root, "pkg")).orThrow(new Error("no trace"))
+    const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf-8" }).trim()
+    expect(trace.repo).toBe("github.com/owner/repo")
+    expect(trace.commit).toBe(head)
+    expect(trace.findings.map((f) => f.file)).toEqual(["pkg/src/[slug].ts", "pkg/src/clean.ts"])
+    expect(trace.dropped).toBe(2)
+    expect(JSON.stringify(trace)).not.toContain(root)
+  })
+
+  it("caps findings and counts the rest as dropped", () => {
+    const root = repo("https://github.com/a/b")
+    const many = result({
+      filePath: join(root, "pkg", "src", "clean.ts"),
+      messages: Array.from({ length: MAX_TRACE_FINDINGS + 5 }, (_, i) => withId("x/a", 1, "m", i + 1)),
+    })
+    const trace = gitTrace([many], root).orThrow(new Error("no trace"))
+    expect(trace.findings).toHaveLength(MAX_TRACE_FINDINGS)
+    expect(trace.dropped).toBe(5)
+  })
+
+  it("gives no trace for a remote that isn't host/owner/repo", () => {
+    const root = repo("/srv/git/local-only")
+    expect(gitTrace([finding(root, "clean.ts")], root).isEmpty).toBe(true)
+  })
+
+  it("gives no trace outside a git repo", () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "ts-builds-nogit-")))
+    roots.push(dir)
+    expect(gitTrace([], dir).isEmpty).toBe(true)
+  })
+
+  it("is only in the payload with TS_BUILDS_TELEMETRY_TRACE", () => {
+    const root = repo("https://github.com/a/b")
+    const run = {
+      results: [finding(root, "clean.ts")],
+      fix: false,
+      durationMs: 1,
+      packageName: Option("pkg"),
+      eslintVersion: "10.0.0",
+      dir: root,
+    }
+    const plain = buildTelemetryPayload(run, {})
+    expect(plain).not.toHaveProperty("trace")
+    expect(JSON.stringify(plain)).not.toContain("clean.ts")
+    expect(plain.messages).toEqual({ "x/a": { m: { errors: 0, warnings: 1, silenced: 0 } } })
+    const traced = buildTelemetryPayload(run, { TS_BUILDS_TELEMETRY_TRACE: "1" })
+    expect(traced.trace?.findings).toEqual([
+      { rule: "x/a", message: "m", kind: "warning", file: "pkg/src/clean.ts", line: 1 },
+    ])
   })
 })
