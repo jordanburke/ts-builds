@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import { existsSync, readFileSync } from "node:fs"
-import { basename, dirname, join } from "node:path"
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import type { ESLint } from "eslint"
@@ -13,8 +13,12 @@ import { Option, Try } from "functype"
  *
  * Off unless `TS_BUILDS_TELEMETRY=1` is set, and `DO_NOT_TRACK=1` always turns it off. ts-builds
  * reads these from the environment only. A committed script, workflow or config command that sets
- * them still turns it on for everyone who runs it. It never sends file paths, source or messages,
- * the send waits at most `TELEMETRY_TIMEOUT_MS`, and it never changes the run's exit code.
+ * them still turns it on for everyone who runs it. It never sends source or message text, the send
+ * waits at most `TELEMETRY_TIMEOUT_MS`, and it never changes the run's exit code.
+ *
+ * File paths and the repo's name go out only with a second flag, `TS_BUILDS_TELEMETRY_TRACE=1`. The
+ * trace adds the git remote, the commit and each finding's repo-relative file and line, so a finding
+ * can be opened at that commit, where the repo's own access rules still apply.
  */
 
 /** Bump when the payload's shape changes incompatibly, so the receiver can tell versions apart. */
@@ -28,6 +32,26 @@ const PROJECT_SALT = "ts-builds-telemetry-v1"
 
 const LOG_PREFIX = "[ts-builds telemetry]"
 
+/** Findings in one trace. The receiver takes up to 300. */
+export const MAX_TRACE_FINDINGS = 200
+
+/**
+ * The largest payload, in bytes, a trace may grow to. The receiver rejects bodies over 64 KB and
+ * drops the whole run, counts included, so findings that would pass this are dropped instead.
+ */
+export const MAX_PAYLOAD_BYTES = 60_000
+
+/** The receiver's message id pattern. Ids outside it aren't sent at all. */
+const MESSAGE_ID = /^[A-Za-z0-9_.:-]{1,64}$/
+
+const messageIdOf = (message: { readonly messageId?: string }): Option<string> =>
+  typeof message.messageId === "string" && MESSAGE_ID.test(message.messageId)
+    ? Option(message.messageId)
+    : Option.none<string>()
+
+const own = <T>(record: Readonly<Record<string, T>>, key: string): Option<T> =>
+  Object.hasOwn(record, key) ? Option(record[key] as T) : Option.none<T>()
+
 export type RuleCounts = {
   readonly errors: number
   readonly warnings: number
@@ -40,6 +64,29 @@ export type RuleStats = {
   readonly rules: Readonly<Record<string, RuleCounts>>
   /** Messages with no rule id: parse errors and other fatal problems. */
   readonly fatal: number
+}
+
+export type FindingKind = "error" | "warning" | "silenced"
+
+/** One finding, at a file and line of the traced commit. `file` is relative to the repo root, with `/`. */
+export type TraceFinding = {
+  readonly rule: string
+  /** The rule's message id, when it reports one. Never the message text. */
+  readonly message?: string
+  readonly kind: FindingKind
+  readonly file: string
+  readonly line: number
+}
+
+/** Where a run's findings can be opened. Only sent with `TS_BUILDS_TELEMETRY_TRACE=1`. */
+export type Trace = {
+  /** The git remote, normalized to `host/owner/repo`. */
+  readonly repo: string
+  /** `HEAD` when the lint ran. */
+  readonly commit: string
+  readonly findings: ReadonlyArray<TraceFinding>
+  /** Findings left out: over `MAX_TRACE_FINDINGS`, or in a file that isn't committed as linted. */
+  readonly dropped: number
 }
 
 export type TelemetryPayload = {
@@ -62,6 +109,9 @@ export type TelemetryPayload = {
    */
   readonly enabled?: Readonly<Record<string, Severity>>
   readonly rules: Readonly<Record<string, RuleCounts>>
+  /** Each rule's counts split by the message id it reported. Absent when no finding had one. */
+  readonly messages?: Readonly<Record<string, Readonly<Record<string, RuleCounts>>>>
+  readonly trace?: Trace
 }
 
 export type Severity = "warn" | "error"
@@ -110,6 +160,68 @@ export function ruleStats(results: readonly ESLint.LintResult[]): RuleStats {
   )
   const fatal = results.reduce((n, r) => n + r.messages.filter((m) => m.ruleId === null).length, 0)
   return { rules, fatal }
+}
+
+type Tagged = { readonly message: ESLint.LintResult["messages"][number]; readonly kind: FindingKind }
+
+/** Every message with a rule id, reported or silenced, tagged with how it counts. */
+const tagged = (result: ESLint.LintResult): ReadonlyArray<Tagged> => [
+  ...result.messages.flatMap((m): Tagged[] =>
+    m.ruleId === null ? [] : [{ message: m, kind: m.severity === 2 ? "error" : "warning" }],
+  ),
+  ...result.suppressedMessages.flatMap((m): Tagged[] => (m.ruleId === null ? [] : [{ message: m, kind: "silenced" }])),
+]
+
+const FIELD: Readonly<Record<FindingKind, CountField>> = { error: "errors", warning: "warnings", silenced: "silenced" }
+
+const sortKeys = <T>(record: Readonly<Record<string, T>>): Record<string, T> =>
+  Object.fromEntries(Object.entries(record).toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)))
+
+/**
+ * Per-rule counts split by message id, for the findings that have one. A rule with several messages,
+ * such as one that suggests different fixes, then shows which message fires or gets silenced.
+ * Message ids are fixed identifiers in the rule, not the message text. An id that doesn't look like
+ * one (letters, digits, `_ . : -`, at most 64) is left out. Pure and key-sorted.
+ */
+export function messageStats(results: readonly ESLint.LintResult[]): Record<string, Record<string, RuleCounts>> {
+  const nested = results
+    .flatMap(tagged)
+    .reduce<Record<string, Record<string, RuleCounts>>>((acc, { message, kind }) => {
+      const rule = message.ruleId ?? ""
+      if (rule === "") return acc
+      return messageIdOf(message)
+        .map((id) => {
+          const byId = own(acc, rule).orElse({})
+          const current = own(byId, id).orElse(NO_COUNTS)
+          return { ...acc, [rule]: { ...byId, [id]: { ...current, [FIELD[kind]]: current[FIELD[kind]] + 1 } } }
+        })
+        .orElse(acc)
+    }, {})
+  return sortKeys(Object.fromEntries(Object.entries(nested).map(([rule, byId]) => [rule, sortKeys(byId)])))
+}
+
+/**
+ * Every finding as a trace entry, with its file relative to `root` and `/`-separated, sorted by file,
+ * line and rule. A file outside `root` has no repo path, so its findings are left out, and not
+ * counted in `dropped`.
+ */
+export function traceCandidates(results: readonly ESLint.LintResult[], root: string): ReadonlyArray<TraceFinding> {
+  return results
+    .flatMap((result) => {
+      const rel = relative(root, result.filePath)
+      if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return []
+      const file = rel.split(sep).join("/")
+      return tagged(result).map(({ message, kind }) => ({
+        rule: message.ruleId ?? "",
+        ...messageIdOf(message)
+          .map((id) => ({ message: id }))
+          .orElse({}),
+        kind,
+        file,
+        line: Math.max(1, message.line),
+      }))
+    })
+    .toSorted((a, b) => (a.file < b.file ? -1 : a.file > b.file ? 1 : a.line - b.line || (a.rule < b.rule ? -1 : 1)))
 }
 
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"]
@@ -173,6 +285,11 @@ export function projectId(remote: string): string {
 /** The coding agent driving this run, when its env marker is set. */
 export function detectAgent(env: NodeJS.ProcessEnv): Option<string> {
   return env.CLAUDECODE === "1" ? Option("claude-code") : Option.none<string>()
+}
+
+/** Whether to add the trace: repo, commit, and each finding's file and line. */
+export function traceOn(env: NodeJS.ProcessEnv): boolean {
+  return isOn(env.TS_BUILDS_TELEMETRY_TRACE)
 }
 
 export function isCi(env: NodeJS.ProcessEnv): boolean {
@@ -239,18 +356,93 @@ function tsBuildsRoot(): Option<string> {
   return root === undefined ? Option.none<string>() : Option(root)
 }
 
-/** The git remote of the repo holding `dir`, if there is one. */
-function gitRemote(dir: string): Option<string> {
+/** A git command's stdout in `dir`, or none when it fails. */
+function git(dir: string, args: ReadonlyArray<string>): Option<string> {
   return Try(() =>
-    execFileSync("git", ["config", "--get", "remote.origin.url"], {
+    execFileSync("git", [...args], {
       cwd: dir,
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 2000,
-    }).trim(),
+      maxBuffer: 16 * 1024 * 1024,
+    }),
+  ).toOption()
+}
+
+const trimmed = (out: Option<string>): Option<string> => out.map((s) => s.trim()).filter((s) => s !== "")
+
+/** The git remote of the repo holding `dir`, if there is one. */
+function gitRemote(dir: string): Option<string> {
+  return trimmed(git(dir, ["config", "--get", "remote.origin.url"]))
+}
+
+/**
+ * `host/owner/repo`, where the host is a domain name. A path remote, relative or absolute, doesn't
+ * match, so it isn't traced. No segment may be `.` or `..`, which a link would resolve.
+ */
+const TRACE_REPO_SHAPE = /^[a-z0-9][a-z0-9-]*(\.[a-z0-9-]+)+(\/[a-z0-9._-]{1,100}){2,5}$/
+export const isTraceRepo = (repo: string): boolean =>
+  repo.length <= 300 && TRACE_REPO_SHAPE.test(repo) && repo.split("/").every((s) => s !== "." && s !== "..")
+const COMMIT = /^([0-9a-f]{40}|[0-9a-f]{64})$/
+
+/** NUL-separated paths from `git ... -z`, as a set. */
+const pathSet = (out: string): ReadonlySet<string> => new Set(out.split("\0").filter((p) => p !== ""))
+
+/**
+ * The trace for a run: the repo, `HEAD`, and findings in files that are committed as linted. A
+ * finding in an untracked file, or in one that differs from `HEAD` (edited, or rewritten by
+ * `--fix`), is dropped, because its line wouldn't match the commit. If git can't say which files
+ * are tracked or changed, every finding is dropped rather than risk a wrong line. Paths are passed to
+ * git literally, so a name like `[slug].astro` isn't read as a pattern.
+ */
+export function gitTrace(results: readonly ESLint.LintResult[], dir: string): Option<Trace> {
+  const root = trimmed(git(dir, ["rev-parse", "--show-toplevel"]))
+  const repo = gitRemote(dir).map(normalizeRemote).filter(isTraceRepo)
+  const commit = trimmed(git(dir, ["rev-parse", "HEAD"])).filter((c) => COMMIT.test(c))
+  return root.flatMap((top) =>
+    repo.flatMap((name) =>
+      commit.map((sha) => {
+        const candidates = traceCandidates(results, top)
+        const capped = candidates.slice(0, MAX_TRACE_FINDINGS)
+        const files = [...new Set(capped.map((f) => f.file))]
+        const listed = (args: ReadonlyArray<string>): Option<ReadonlySet<string>> =>
+          files.length === 0
+            ? Option<ReadonlySet<string>>(new Set())
+            : git(top, ["--literal-pathspecs", ...args, "--", ...files]).map(pathSet)
+        const tracked = listed(["ls-files", "-z"])
+        const changed = listed(["diff", "--name-only", "-z", "HEAD"])
+        const findings = tracked
+          .flatMap((t) => changed.map((c) => capped.filter((f) => t.has(f.file) && !c.has(f.file))))
+          .orElse([])
+        return { repo: name, commit: sha, findings, dropped: candidates.length - findings.length }
+      }),
+    ),
   )
-    .toOption()
-    .filter((out) => out !== "")
+}
+
+const bytes = (value: unknown): number => Buffer.byteLength(JSON.stringify(value))
+
+/**
+ * Keep the trace's findings, in order, while the whole payload stays within `maxBytes`. The rest
+ * are counted in `dropped`, so a large run still sends its counts rather than being rejected.
+ */
+export function fitTrace(payload: TelemetryPayload, trace: Trace, maxBytes: number = MAX_PAYLOAD_BYTES): Trace {
+  const empty: Trace = { ...trace, findings: [], dropped: trace.dropped + trace.findings.length }
+  // The `dropped` count can grow by a few digits as findings are dropped; 16 bytes covers it.
+  const budget = maxBytes - bytes({ ...payload, trace: empty }) - 16
+  const kept = trace.findings.reduce<{ readonly used: number; readonly n: number; readonly full: boolean }>(
+    (acc, f) => {
+      if (acc.full) return acc
+      const size = bytes(f) + 1
+      return acc.used + size > budget ? { ...acc, full: true } : { used: acc.used + size, n: acc.n + 1, full: false }
+    },
+    { used: 0, n: 0, full: false },
+  ).n
+  return {
+    ...trace,
+    findings: trace.findings.slice(0, kept),
+    dropped: trace.dropped + (trace.findings.length - kept),
+  }
 }
 
 export type LintRun = {
@@ -344,7 +536,10 @@ function versionsFor(
   }
 }
 
-/** The payload for one lint run. Holds counts and versions only: no file paths, source or messages. */
+/**
+ * The payload for one lint run. Holds counts and versions, and no source or message text. File
+ * paths and the repo go in `trace`, only with `TS_BUILDS_TELEMETRY_TRACE=1`.
+ */
 export function buildTelemetryPayload(
   run: LintRun,
   env: NodeJS.ProcessEnv,
@@ -353,7 +548,9 @@ export function buildTelemetryPayload(
   const stats = ruleStats(run.results)
   const project = gitRemote(run.dir).map(projectId)
   const agent = detectAgent(env)
-  return {
+  const messages = messageStats(run.results)
+  const trace = traceOn(env) ? gitTrace(run.results, run.dir) : Option.none<Trace>()
+  const payload: TelemetryPayload = {
     schema: TELEMETRY_SCHEMA_VERSION,
     ...run.packageName.map((name) => ({ package: name })).orElse({}),
     ...project.map((id) => ({ project: id })).orElse({}),
@@ -366,7 +563,9 @@ export function buildTelemetryPayload(
     versions: versionsFor(run, stats.rules, active),
     ...active.map((a) => ({ enabled: a.enabled })).orElse({}),
     rules: stats.rules,
+    ...(Object.keys(messages).length > 0 ? { messages } : {}),
   }
+  return trace.map((t) => ({ ...payload, trace: fitTrace(payload, t) })).orElse(payload)
 }
 
 /**

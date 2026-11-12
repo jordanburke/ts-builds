@@ -319,6 +319,7 @@ on for everyone who runs it, so set them only where you mean to, such as your ow
 | `TS_BUILDS_TELEMETRY=1`       | Turns it on.                                                                                                               |
 | `TS_BUILDS_TELEMETRY_URL`     | Where to POST. Must be `https`, or `http` to localhost. With telemetry on and no URL, `lint` warns once and sends nothing. |
 | `TS_BUILDS_TELEMETRY_DEBUG=1` | Prints the payload to stderr and sends nothing, whether or not telemetry is on.                                            |
+| `TS_BUILDS_TELEMETRY_TRACE=1` | Adds `trace`: the repo, the commit, and each finding's file and line. See below.                                           |
 | `DO_NOT_TRACK=1`              | Turns it off, whatever else is set.                                                                                        |
 
 Each run sends one JSON object:
@@ -342,11 +343,17 @@ Each run sends one JSON object:
     "eslint-plugin-functype": "2.125.1"
   },
   "enabled": { "functype/no-let": "error", "functype/prefer-option": "warn" },
-  "rules": { "functype/prefer-option": { "errors": 0, "warnings": 3, "silenced": 2 } }
+  "rules": { "functype/prefer-option": { "errors": 0, "warnings": 3, "silenced": 2 } },
+  "messages": {
+    "functype/prefer-option": {
+      "preferOption": { "errors": 0, "warnings": 3, "silenced": 0 },
+      "preferWireForThreeStates": { "errors": 0, "warnings": 0, "silenced": 2 }
+    }
+  }
 }
 ```
 
-- **Never sent:** file paths, source code or message text.
+- **Never sent:** source code or message text. File paths only in `trace`, below.
 - **Sent as-is:** the `package.json` name, left out when there isn't one, and rule ids as your config
   names them. A plugin's declared name is used only when it looks like an npm package name, and
   otherwise is replaced by the name derived from its rule prefix, such as `eslint-plugin-<prefix>`. Its
@@ -360,9 +367,43 @@ Each run sends one JSON object:
   When the installed package can't be found, the `meta.version` is used.
 - **`enabled`:** the plugin rules that are on, with their severity, read from the first linted file's
   config. It tells a rule with no findings apart from a rule that's off. Core rules are left out.
+- **`messages`:** each rule's counts split by the message id it reported. A message id is a fixed
+  name in the rule's code, such as `preferOption`, not the message text. It shows which of a rule's
+  messages fires or gets silenced. Left out when no finding had one.
+
+#### Tracing findings to a line
+
+With `TS_BUILDS_TELEMETRY_TRACE=1` as well, the payload adds `trace`, so each finding can be opened at
+the commit that was linted:
+
+```json
+"trace": {
+  "repo": "github.com/acme/api",
+  "commit": "d53e02a1c9b4e8f7a6b5c4d3e2f1a0b9c8d7e6f5",
+  "findings": [
+    { "rule": "functype/prefer-option", "message": "preferOption", "kind": "silenced", "file": "src/user.ts", "line": 42 }
+  ],
+  "dropped": 0
+}
+```
+
+- **What it names:** the repo, from the git remote as `host/owner/repo`, the commit (`HEAD`), and
+  each finding's file relative to the repo root and line. It doesn't send code. The code is read at
+  the host, under the repo's own access rules.
+- **Turn it on only for repos whose names and file paths you're happy to send.** That's why it's a
+  separate flag.
+- **Lines match the commit.** A finding in an untracked file, or in one that differs from `HEAD`
+  because it was edited or rewritten by `--fix`, is left out and counted in `dropped`. If git can't
+  say which files are tracked or changed, every finding is left out.
+- **Size is capped.** Findings are sorted by file and line. The first 200 are kept, and fewer if
+  the payload would pass 60 KB, so a large run still sends its counts. The rest count in `dropped`.
+- **No trace** when the directory isn't in a git repo, has no `HEAD`, or its remote isn't
+  `host/owner/repo` with a domain name as the host. A local or relative path isn't traced.
+- **Message ids** that aren't plain identifiers (letters, digits, `_ . : -`, at most 64) are left
+  out of `messages` and the trace.
 
 It never changes a run's result. It sends after lint finishes and its output is printed, the send
-waits at most 2 seconds, and it ignores every error, so the exit code and output stay the same. A run that
+waits at most 2 seconds (the trace's git calls can add a few more), and it ignores every error, so the exit code and output stay the same. A run that
 fails before linting, such as one with a broken config, sends nothing.
 
 It doesn't cover `lint.useProjectEslint`, which spawns your own ESLint so ts-builds never sees the
