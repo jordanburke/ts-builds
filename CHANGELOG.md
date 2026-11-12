@@ -6,6 +6,8 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+## 4.4.1 (2026-11-12)
+
 ### Bug Fixes
 
 - **format:** `format` and `format:check` in a workspace package now also read the workspace root's
