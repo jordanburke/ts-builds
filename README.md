@@ -57,6 +57,7 @@ npx ts-builds help           # Show all commands
 
 ```bash
 npx ts-builds validate       # Run full validation chain
+npx ts-builds ci             # Check-only validate for CI (never writes)
 npx ts-builds format         # Format with Prettier
 npx ts-builds format:check   # Check formatting only
 npx ts-builds lint           # Lint with ESLint (--fix)
@@ -192,6 +193,37 @@ With `buildMode: "vite"`:
   "changelog": {
     "types": { "feat": "Features", "fix": "Bug Fixes" },
     "exclude": ["chore", "ci"]
+  }
+}
+```
+
+### CI: `ts-builds ci`
+
+`validate` makes the tree right: it formats with `--write` and lints with `--fix`. That is what you
+want before a commit, and wrong in CI, where a check that runs after a fixer inspects a repaired tree and
+passes whatever was committed. `ts-builds ci` runs your `validate` chain with each step that writes
+swapped for its check: `format` becomes `format:check` and `lint` becomes `lint:check`. Every other step
+runs as written.
+
+```bash
+npx ts-builds ci                 # one package
+pnpm -r exec ts-builds ci        # every package in a pnpm workspace, in dependency order
+```
+
+As a package script, run it with `pnpm run ci` or `npm run ci`. **Not `pnpm ci` or `npm ci`:** those are the
+package managers' own clean-install commands, so they reinstall, exit 0, and check nothing.
+
+There is no second list to keep in step: add `test` to `validate` and `ci` runs it too. A nested chain is
+derived the same way. If you replace `format` or `lint`, replace `format:check` or `lint:check` too:
+otherwise `ci` would check with ts-builds' own tool instead of yours, so it fails and says so. Other
+commands of your own run as written, so if `validate` runs one that writes files, give `ci` its own chain.
+A `chains.ci` or `commands.ci` of your own replaces the derived one:
+
+```json
+{
+  "chains": {
+    "validate": ["format", "lint", "codegen", "test"],
+    "ci": ["format:check", "lint:check", "codegen:check", "test"]
   }
 }
 ```

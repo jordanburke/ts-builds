@@ -31,6 +31,7 @@ SETUP COMMANDS:
 
 SCRIPT COMMANDS:
   validate      Run full validation chain (configurable)
+  ci            Check-only validate for CI: format and lint check, never write
   format        Format code with Prettier (--write)
   format:check  Check formatting without writing
   lint          Lint and fix with ESLint

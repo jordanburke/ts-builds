@@ -101,6 +101,8 @@
     "bootstrap": "rimraf dist && tsdown",
     "validate": "node dist/cli.js validate",
     "validate:bootstrap": "pnpm bootstrap && pnpm validate",
+    "ci": "node dist/cli.js ci",
+    "ci:bootstrap": "pnpm bootstrap && pnpm run ci",
     "format": "node dist/cli.js format",
     "format:check": "node dist/cli.js format:check",
     "lint": "node dist/cli.js lint",

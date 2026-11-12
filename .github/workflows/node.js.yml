@@ -33,8 +33,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Validate package
-        run: pnpm validate:bootstrap
+      # `ci`, not `validate`: the same chain with format and lint as checks, so CI never rewrites the tree.
+      - name: Validate package (check only)
+        run: pnpm ci:bootstrap
 
       - name: Test npm pack
         run: |
