@@ -38,10 +38,12 @@ jobs:
         run: pnpm ci:bootstrap
         # Dogfood ts-builds' own lint telemetry: per-rule and per-message counts, plus
         # the trace (this public repo's name, the commit, each finding's file and line),
-        # never source. Node 24 only, so each commit is counted once, not per matrix leg.
+        # never source. Sent once per commit on main: Node 24 only, and on pushes only,
+        # because a PR run would count each change twice and trace a temporary merge
+        # commit whose links can stop working.
         # Receiver: https://github.com/jordanburke/lint-telemetry
         env:
-          TS_BUILDS_TELEMETRY: ${{ matrix.node-version == '24.x' && '1' || '' }}
+          TS_BUILDS_TELEMETRY: ${{ github.event_name == 'push' && matrix.node-version == '24.x' && '1' || '' }}
           TS_BUILDS_TELEMETRY_URL: https://otel.tsnpm.com/v1/lint
           TS_BUILDS_TELEMETRY_TRACE: "1"
 
