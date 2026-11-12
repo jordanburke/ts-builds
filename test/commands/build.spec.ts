@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { mkdir } from "node:fs/promises"
 import { tmpdir } from "node:os"
+import { execFileSync } from "node:child_process"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
@@ -10,6 +11,7 @@ import {
   cleanDir,
   consumerHasPrettierConfig,
   prettierFormatArgs,
+  workspacePrettierIgnorePath,
   pruneOrphans,
   snapshotMtimes,
 } from "../../src/cli/commands/build"
@@ -139,18 +141,20 @@ describe("prettierFormatArgs", () => {
   const ignore = "/pkg/ts-builds/.prettierignore"
   const config = "/pkg/ts-builds/prettier-config.cjs"
   const noConfig = Option.none<string>()
+  const noWorkspace = Option.none<string>()
+  const workspace = "/repo/.prettierignore"
 
   it("check mode targets the whole tree", () => {
-    expect(prettierFormatArgs(true, null, noConfig)[0]).toBe("--check")
-    expect(prettierFormatArgs(false, null, noConfig)[0]).toBe("--write")
-    expect(prettierFormatArgs(true, null, noConfig)).toContain(".")
+    expect(prettierFormatArgs(true, null, noConfig, noWorkspace)[0]).toBe("--check")
+    expect(prettierFormatArgs(false, null, noConfig, noWorkspace)[0]).toBe("--write")
+    expect(prettierFormatArgs(true, null, noConfig, noWorkspace)).toContain(".")
   })
 
   it("passes BOTH the bundled ignore and the consumer's ./.prettierignore (additive, quoted)", () => {
     // Explicit --ignore-path overrides prettier's default discovery, so the consumer's own
     // ./.prettierignore must be passed too or their entries would be silently dropped. The
     // bundled path is quoted so a spaced install path survives shell:true.
-    expect(prettierFormatArgs(true, ignore, noConfig)).toEqual([
+    expect(prettierFormatArgs(true, ignore, noConfig, noWorkspace)).toEqual([
       "--check",
       ".",
       "--ignore-path",
@@ -160,18 +164,48 @@ describe("prettierFormatArgs", () => {
     ])
   })
 
+  it("adds the workspace root's .prettierignore, quoted, before the consumer's own", () => {
+    expect(prettierFormatArgs(true, ignore, noConfig, Option(workspace))).toEqual([
+      "--check",
+      ".",
+      "--ignore-path",
+      `"${ignore}"`,
+      "--ignore-path",
+      `"${workspace}"`,
+      "--ignore-path",
+      ".prettierignore",
+    ])
+  })
+
+  it("still passes the consumer's ./.prettierignore when only the workspace ignore is found", () => {
+    // Any explicit --ignore-path turns off prettier's own discovery of ./.prettierignore.
+    expect(prettierFormatArgs(false, null, noConfig, Option(workspace))).toEqual([
+      "--write",
+      ".",
+      "--ignore-path",
+      `"${workspace}"`,
+      "--ignore-path",
+      ".prettierignore",
+    ])
+  })
+
   it("falls back to bare args when the bundled ignore can't be located", () => {
-    expect(prettierFormatArgs(false, null, noConfig)).toEqual(["--write", "."])
+    expect(prettierFormatArgs(false, null, noConfig, noWorkspace)).toEqual(["--write", "."])
   })
 
   it("appends the quoted bundled --config when the consumer has none", () => {
-    expect(prettierFormatArgs(false, null, Option(config))).toEqual(["--write", ".", "--config", `"${config}"`])
+    expect(prettierFormatArgs(false, null, Option(config), noWorkspace)).toEqual([
+      "--write",
+      ".",
+      "--config",
+      `"${config}"`,
+    ])
   })
 
   it("omits --config entirely when the consumer has their own", () => {
     // An explicit --config disables prettier's discovery, so passing ours would silently override
     // a config the consumer deliberately wrote.
-    expect(prettierFormatArgs(false, null, noConfig)).not.toContain("--config")
+    expect(prettierFormatArgs(false, null, noConfig, noWorkspace)).not.toContain("--config")
   })
 })
 
@@ -232,6 +266,105 @@ describe("consumerHasPrettierConfig", () => {
       expect(() => consumerHasPrettierConfig(dir)).not.toThrow()
     } finally {
       rmSync(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("workspacePrettierIgnorePath", () => {
+  function workspace(marker: "pnpm" | "npm", withIgnore = true): { root: string; pkg: string } {
+    const root = makeTempDir()
+    const pkg = join(root, "apps", "web")
+    mkdirSync(pkg, { recursive: true })
+    if (marker === "pnpm") writeFileSync(join(root, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n")
+    else writeFileSync(join(root, "package.json"), JSON.stringify({ name: "root", workspaces: ["apps/*"] }))
+    if (withIgnore) writeFileSync(join(root, ".prettierignore"), "**/gen.ts\n")
+    return { root, pkg }
+  }
+
+  it("finds the .prettierignore of an enclosing pnpm workspace", () => {
+    const { root, pkg } = workspace("pnpm")
+    try {
+      expect(workspacePrettierIgnorePath(pkg).orNull()).toBe(join(root, ".prettierignore"))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("finds the .prettierignore of an enclosing npm/yarn workspace", () => {
+    const { root, pkg } = workspace("npm")
+    try {
+      expect(workspacePrettierIgnorePath(pkg).orNull()).toBe(join(root, ".prettierignore"))
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("uses the NEAREST workspace root, even when an outer one also has a .prettierignore", () => {
+    const outer = makeTempDir()
+    try {
+      const inner = join(outer, "vendor", "inner")
+      const pkg = join(inner, "apps", "web")
+      mkdirSync(pkg, { recursive: true })
+      writeFileSync(join(outer, "pnpm-workspace.yaml"), "packages:\n  - vendor/*\n")
+      writeFileSync(join(outer, ".prettierignore"), "outer\n")
+      writeFileSync(
+        join(inner, "package.json"),
+        JSON.stringify({ name: "inner", workspaces: { packages: ["apps/*"] } }),
+      )
+      writeFileSync(join(inner, ".prettierignore"), "inner\n")
+      expect(workspacePrettierIgnorePath(pkg).orNull()).toBe(join(inner, ".prettierignore"))
+    } finally {
+      rmSync(outer, { recursive: true, force: true })
+    }
+  })
+
+  it("does not return the root's own file when run at the root, which already passes ./.prettierignore", () => {
+    const { root } = workspace("pnpm")
+    try {
+      expect(workspacePrettierIgnorePath(root).isNone()).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("returns nothing for the workspace when its root has no .prettierignore", () => {
+    const { root, pkg } = workspace("pnpm", false)
+    try {
+      expect(workspacePrettierIgnorePath(pkg).isNone()).toBe(true)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("format:check inside a workspace package (end-to-end)", () => {
+  const cliPath = join(process.cwd(), "dist/cli.js")
+
+  function formatCheck(cwd: string): number {
+    try {
+      execFileSync("node", [cliPath, "format:check"], { cwd, stdio: "pipe" })
+      return 0
+    } catch (err) {
+      return (err as { status?: number }).status ?? 1
+    }
+  }
+
+  it("honours the workspace root's .prettierignore for a file prettier would reject", () => {
+    const root = makeTempDir()
+    try {
+      const pkg = join(root, "apps", "web")
+      mkdirSync(join(pkg, "src"), { recursive: true })
+      writeFileSync(join(root, "pnpm-workspace.yaml"), "packages:\n  - apps/*\n")
+      // Prettier-clean, so the only file the check can object to is gen.ts.
+      writeFileSync(join(pkg, "package.json"), '{\n  "name": "web"\n}\n')
+      // Generated-style code prettier would reformat (single quotes, semicolons).
+      writeFileSync(join(pkg, "src", "gen.ts"), "export const a = 'x';\n")
+      // Control: no root ignore, so the check fails on gen.ts.
+      expect(formatCheck(pkg)).not.toBe(0)
+      writeFileSync(join(root, ".prettierignore"), "**/gen.ts\n")
+      expect(formatCheck(pkg)).toBe(0)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
     }
   })
 })
