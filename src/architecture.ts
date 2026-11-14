@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
 import { isAbsolute, join, normalize, relative, sep } from "node:path"
 
-import { Set } from "functype"
+import { Set, Try } from "functype"
 
 import { isListedPackage, readWorkspacePackageGlobs } from "./pnpm-workspace-yaml"
 
@@ -121,13 +121,36 @@ function workspaceProblems(rootDir: string, name: string, policy: WorkspacePolic
   if (!listed.has(dir)) {
     return [`${name}: dir "${policy.dir}" is not a workspace the root's pnpm-workspace.yaml lists`]
   }
-  const pkgName = readPackageJson(join(rootDir, dir)).name
+  const read = Try(() => readPackageJson(join(rootDir, dir)))
+  if (read.isFailure())
+    return [
+      `${dir}/package.json can't be read: ${read.fold(
+        (error) => error.message,
+        () => "",
+      )}`,
+    ]
+  const pkgName = read.orThrow().name
   return [
     ...(pkgName === name ? [] : [`${name}: ${dir}/package.json is named "${pkgName ?? "(no name)"}", not "${name}"`]),
     ...(isDirectory(join(rootDir, dir, "src"))
       ? []
       : [`${name}: ${dir} has no src directory. Boundary rules check src and test, so code elsewhere is unchecked`]),
   ]
+}
+
+function denyProblems(
+  name: string,
+  policy: WorkspacePolicy,
+  entries: ReadonlyArray<[string, WorkspacePolicy]>,
+): string[] {
+  return (policy.deny ?? []).flatMap((pattern) => {
+    const workspaces = entries.filter(([other]) => matchesPackagePattern(pattern, other)).map(([other]) => other)
+    return workspaces.length === 0
+      ? []
+      : [
+          `${name}: deny entry "${pattern}" matches the workspace ${workspaces.join(", ")}. deny is for external packages; leave a workspace out of allow instead`,
+        ]
+  })
 }
 
 function allowProblems(
@@ -185,6 +208,11 @@ function resolveWorkspace(
  * policy must stop ESLint from starting rather than lint against a wrong one.
  */
 export function defineArchitecture(input: ArchitectureInput): Architecture {
+  // A runtime guard for JavaScript callers, whom the types don't bind.
+  const workspacesInput: unknown = input.workspaces
+  if (typeof workspacesInput !== "object" || workspacesInput === null) {
+    throw new ArchitectureError(["workspaces is required: map each workspace package name to its policy"])
+  }
   if (!isAbsolute(input.rootDir)) {
     throw new ArchitectureError([`rootDir "${input.rootDir}" must be an absolute path. Pass import.meta.dirname`])
   }
@@ -192,18 +220,24 @@ export function defineArchitecture(input: ArchitectureInput): Architecture {
   const wsFile = join(rootDir, "pnpm-workspace.yaml")
   if (!isFile(wsFile)) throw new ArchitectureError([`rootDir ${rootDir} holds no pnpm-workspace.yaml`])
 
-  const listed = Set(listedWorkspaceDirs(rootDir, readWorkspacePackageGlobs(readFileSync(wsFile, "utf-8"))))
+  const globs = readWorkspacePackageGlobs(readFileSync(wsFile, "utf-8"))
+  if (globs.length === 0) throw new ArchitectureError([`${wsFile} has no packages: list, so it is not a monorepo root`])
+  const listed = Set(listedWorkspaceDirs(rootDir, globs))
   const entries = Object.entries(input.workspaces)
   const classifiedDirs = Set(entries.map(([, policy]) => normalizeDir(policy.dir)))
   const problems = [
     ...entries.flatMap(([name, policy]) => [
       ...workspaceProblems(rootDir, name, policy, listed),
       ...allowProblems(name, policy, entries),
+      ...denyProblems(name, policy, entries),
     ]),
     ...listed
       .toArray()
       .filter((dir) => !classifiedDirs.has(dir))
-      .map((dir) => `${dir} is a workspace (${readPackageJson(join(rootDir, dir)).name ?? "no name"}) with no policy`),
+      .map((dir) => {
+        const pkgName = Try(() => readPackageJson(join(rootDir, dir)).name).orElse(undefined)
+        return `${dir} is a workspace (${pkgName ?? "no name"}) with no policy`
+      }),
   ]
   if (problems.length > 0) throw new ArchitectureError(problems)
 

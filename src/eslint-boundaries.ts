@@ -1,9 +1,10 @@
-import { createRequire } from "node:module"
+import { builtinModules, createRequire } from "node:module"
 
 import type { Linter, Rule } from "eslint"
 import boundaries from "eslint-plugin-boundaries"
+import { List, Option } from "functype"
 
-import type { Architecture, ResolvedWorkspace } from "./architecture"
+import { type Architecture, matchesPackagePattern, type ResolvedWorkspace } from "./architecture"
 
 /**
  * Every source file a workspace can hold, under `src` or `test`. The glob is not
@@ -33,6 +34,34 @@ const toExternal = (source: readonly string[]): Record<string, unknown> => ({
   to: { module: { origin: "external", source: [...source] } },
 })
 
+const CORE_MODULES = builtinModules.map((name) => name.replace(/^node:/, ""))
+
+/**
+ * A `deny` list as module sources. The plugin matches a core module by its literal
+ * spelling, so an entry naming one, or a glob matching some, also gets the other spelling:
+ * `fs` adds `node:fs`, and `node:o*` adds `os` and `node:os`.
+ */
+export function denySources(deny: readonly string[]): string[] {
+  const core = deny.flatMap((entry) => {
+    const bare = entry.replace(/^node:/, "")
+    return CORE_MODULES.filter((name) => matchesPackagePattern(bare, name)).flatMap((name) => [name, `node:${name}`])
+  })
+  return List([...deny, ...core])
+    .distinct()
+    .toArray()
+}
+
+/**
+ * The packages a declared `@types/*` package describes: `@types/lodash` describes `lodash`,
+ * and `@types/babel__core` describes `@babel/core`.
+ */
+export function typedPackages(declared: readonly string[]): string[] {
+  return declared
+    .filter((name) => name.startsWith("@types/"))
+    .map((name) => name.slice("@types/".length))
+    .map((name) => (name.includes("__") ? `@${name.replace("__", "/")}` : name))
+}
+
 /**
  * The policies for one workspace, in the order the plugin reads them: later policies
  * override earlier ones, so `deny` comes last and wins over a declared dependency.
@@ -40,6 +69,9 @@ const toExternal = (source: readonly string[]): Record<string, unknown> => ({
 function workspacePolicies(ws: ResolvedWorkspace, testExternals: readonly string[]): Policy[] {
   const label = `${ws.name} (${ws.type})`
   const deny = ws.deny ?? []
+  // A type-only import is erased, so it may come from a devDependency, or from a package
+  // only its @types package declares.
+  const typeOnly = [...ws.devDependencies, ...typedPackages([...ws.dependencies, ...ws.devDependencies])]
   return [
     // A test file importing ../src crosses from the test element to the src one.
     { from: fromWorkspace(ws), allow: { to: { element: { type: ws.name } } } },
@@ -47,16 +79,27 @@ function workspacePolicies(ws: ResolvedWorkspace, testExternals: readonly string
       ? [{ from: fromWorkspace(ws), allow: { to: { element: { type: [...ws.allowedWorkspaces] } } } }]
       : []),
     ...(ws.dependencies.length > 0 ? [{ from: fromWorkspace(ws), allow: toExternal(ws.dependencies) }] : []),
+    ...(typeOnly.length > 0
+      ? [{ from: fromWorkspace(ws), allow: { ...toExternal(typeOnly), dependency: { kind: "type" } } }]
+      : []),
     {
       from: fromWorkspaceTests(ws),
       allow: toExternal([...ws.dependencies, ...ws.devDependencies, ...testExternals]),
     },
     { from: fromWorkspace(ws), allow: { to: { module: { origin: "core" } } } },
+    // Source files may not import test files, in this workspace or another. A workspace's
+    // own test files may import each other, such as a shared test helper.
+    {
+      from: fromWorkspace(ws),
+      disallow: { to: { file: { categories: ["test"] } } },
+      message: `${label}: source files may not import test files`,
+    },
+    { from: fromWorkspaceTests(ws), allow: { to: { element: { type: ws.name }, file: { categories: ["test"] } } } },
     ...(deny.length > 0
       ? [
           {
             from: fromWorkspace(ws),
-            disallow: { to: { module: { origin: ["external", "core"], source: [...deny] } } },
+            disallow: { to: { module: { origin: ["external", "core"], source: denySources(deny) } } },
             message: `${label} denies imports of ${deny.join(", ")} in its architecture policy`,
           },
         ]
@@ -64,21 +107,67 @@ function workspacePolicies(ws: ResolvedWorkspace, testExternals: readonly string
   ]
 }
 
-const DIRECTIVE = /^\s*eslint-disable(?:-next-line|-line)?(?:\s+([^]*?))?\s*(?:--[^]*)?$/
+const GUARD_RULE = "ts-builds/no-boundaries-disable"
+
+// `eslint-disable`, `eslint-disable-line` and `eslint-disable-next-line`, with an
+// optional rule list and `-- reason`.
+const DISABLE_DIRECTIVE = /^\s*eslint-disable(-next-line|-line)?(?:\s+([^]*?))?\s*(?:--[^]*)?$/
+// `/* eslint rule: "off", … */`, which reconfigures rules for the whole file.
+const CONFIG_DIRECTIVE = /^\s*eslint\s+([^]*?)\s*(?:--[^]*)?$/
+
+const isGuarded = (rule: string): boolean => rule.startsWith("boundaries/") || rule === GUARD_RULE
+
+type Directive = { kind: "block" | "line" | "next-line" | "config"; rules: string[] }
+
+function parseDirective(comment: { type: string; value: string }): Option<Directive> {
+  const disable = DISABLE_DIRECTIVE.exec(comment.value)
+  if (disable !== null) {
+    const rules = (disable.at(2) ?? "")
+      .split(",")
+      .map((rule) => rule.trim())
+      .filter((rule) => rule.length > 0)
+    const suffix = disable.at(1)
+    return Option({ kind: suffix === "-line" ? "line" : suffix === "-next-line" ? "next-line" : "block", rules })
+  }
+  // Config comments are only read from block comments.
+  const config = comment.type === "Block" ? CONFIG_DIRECTIVE.exec(comment.value) : null
+  if (config === null) return Option.none<Directive>()
+  const rules = (config.at(1) ?? "").split(",").flatMap((entry) => {
+    const name = entry.split(":")[0]?.trim() ?? ""
+    return name.length > 0 && !name.includes(" ") ? [name] : []
+  })
+  return Option({ kind: "config", rules })
+}
 
 /**
- * Reports an `eslint-disable` comment that names a `boundaries/*` rule, or names no
- * rule at all, since a blanket disable silences the boundary rules too.
+ * The line to report a directive on: one its own range doesn't cover, where there is one.
+ * A `-next-line` directive covers the line after it, a `-line` directive its own line, and
+ * a block directive everything from the comment on.
+ */
+function reportLine(kind: Directive["kind"], line: number, column: number, lastLine: number): number {
+  if (kind === "line") return line < lastLine ? line + 1 : Math.max(1, line - 1)
+  if (kind === "block") return line > 1 || column > 0 ? 1 : line
+  return line
+}
+
+/**
+ * Reports a comment that could silence the boundary rules:
  *
- * A blanket disable is reported at line 1, ahead of the comment, so the comment can't
- * silence the report itself. One at the very top of a file still silences everything,
- * this rule included; that is how ESLint applies directives.
+ * - an `eslint-disable` directive that names a `boundaries/*` rule or this rule;
+ * - a blanket `eslint-disable` with no rule list, which silences every rule;
+ * - an `/* eslint … *\/` config comment that names a `boundaries/*` rule or this rule.
+ *
+ * Each is reported on a line its own range doesn't cover, so the directive can't silence
+ * the report. That is impossible in three cases, which ESLint's directive handling leaves
+ * open to any rule: a block directive at the very start of a file, a `-line` directive in a
+ * one-line file, and a config comment that turns this rule itself off. Only a lint run with
+ * inline config off (`--no-inline-config`) closes those.
  */
 export const noBoundariesDisable: Rule.RuleModule = {
   meta: {
     type: "problem",
     schema: [],
-    docs: { description: "Disallow eslint-disable comments that silence the boundary rules" },
+    docs: { description: "Disallow eslint-disable and eslint config comments that silence the boundary rules" },
     messages: {
       named: "Disabling {{rules}} is not allowed. Boundary rules have no inline escape: change the policy instead.",
       blanket: "A blanket eslint-disable also silences the boundary rules. Name the rules you mean to disable.",
@@ -86,21 +175,21 @@ export const noBoundariesDisable: Rule.RuleModule = {
   },
   create(context) {
     return {
-      Program() {
+      Program(program) {
+        const lastLine = program.loc?.end.line ?? 1
         context.sourceCode.getAllComments().forEach((comment) => {
-          const match = DIRECTIVE.exec(comment.value)
-          if (match === null || comment.loc === null || comment.loc === undefined) return
-          const rules = (match.at(1) ?? "")
-            .split(",")
-            .map((rule) => rule.trim())
-            .filter((rule) => rule.length > 0)
-          if (rules.length === 0) {
-            context.report({ loc: { line: 1, column: 0 }, messageId: "blanket" })
-            return
-          }
-          const named = rules.filter((rule) => rule.startsWith("boundaries/"))
-          if (named.length > 0)
-            context.report({ loc: comment.loc, messageId: "named", data: { rules: named.join(", ") } })
+          if (comment.loc === null || comment.loc === undefined) return
+          const { start } = comment.loc
+          parseDirective(comment).forEach((directive) => {
+            const line = reportLine(directive.kind, start.line, start.column, lastLine)
+            const loc = { line, column: 0 }
+            if (directive.kind !== "config" && directive.rules.length === 0) {
+              context.report({ loc, messageId: "blanket" })
+              return
+            }
+            const named = directive.rules.filter(isGuarded)
+            if (named.length > 0) context.report({ loc, messageId: "named", data: { rules: named.join(", ") } })
+          })
         })
       },
     }
@@ -139,10 +228,12 @@ export function createBoundaries(architecture: Architecture): BoundariesConfig {
       { type: ws.name, pattern: `${ws.dir}/src` },
       { type: ws.name, pattern: `${ws.dir}/test` },
     ]),
-    "boundaries/files": [
-      { pattern: "**/test/**", category: "test" },
-      { pattern: "**/*.{test,spec}.*", category: "test" },
-    ],
+    // Scoped to each workspace, so a workspace under a directory named test, or a
+    // src/test directory, isn't tagged as tests wholesale.
+    "boundaries/files": workspaces.flatMap((ws) => [
+      { pattern: `${ws.dir}/test/**`, category: "test" },
+      { pattern: `${ws.dir}/src/**/*.{test,spec}.*`, category: "test" },
+    ]),
     "import/resolver": {
       [TYPESCRIPT_RESOLVER]: {
         ...(tsconfigs.length > 0 ? { project: tsconfigs } : {}),

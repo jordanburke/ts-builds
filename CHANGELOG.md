@@ -13,11 +13,18 @@ conventional commits via `ts-builds changelog`.
   says which workspaces may import which. `createBoundaries` from `ts-builds/eslint-boundaries`
   turns it into an eslint-plugin-boundaries config. The config forces each plugin default that
   passes silently: an absolute root path, elements at each workspace's `src` and `test`, the
-  TypeScript resolver, disallow by default for every origin, and an error for an unknown file or
-  a `boundaries/*` disable comment. A workspace may import only the externals its own
-  `package.json` declares, and a policy's `deny` wins over a declared one. Opt-in: nothing
-  changes unless you import the new exports. New dependencies, pinned exactly:
-  `eslint-plugin-boundaries` 7.4.3 and `eslint-import-resolver-typescript` 4.4.5.
+  TypeScript resolver, disallow by default for every origin, and an error for an unknown file, an
+  unknown local import, or a comment that would silence a `boundaries/*` rule. A workspace may
+  import only the externals its own `package.json` declares, type-only imports may also come from
+  its `devDependencies` and `@types` packages, and source files may not import test files. A
+  policy's `deny` wins over a declared dependency, and a core-module entry covers both spellings
+  (`fs` and `node:fs`). The rules only take effect when you import the new exports.
+- **dependencies:** three new runtime dependencies, which every consumer installs:
+  `eslint-plugin-boundaries` 7.4.3 and `eslint-import-resolver-typescript` 4.4.5, both pinned
+  exactly, and `unrs-resolver` `^1.13.0`. Nothing imports the last one; it keeps the resolver off
+  `unrs-resolver` 1.12.x, whose `postinstall` script fails pnpm's strict build check
+  (`ERR_PNPM_IGNORED_BUILDS`) on every pnpm version. Install size grows by about 35 packages,
+  including a native resolver binding.
 
 ### Dependencies
 

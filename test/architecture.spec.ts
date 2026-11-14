@@ -7,7 +7,8 @@ import { Linter } from "eslint"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import { ArchitectureError, defineArchitecture, type ArchitectureInput } from "../src/architecture"
-import { noBoundariesDisable } from "../src/eslint-boundaries"
+import { denySources, noBoundariesDisable, typedPackages } from "../src/eslint-boundaries"
+import { describeFinding, DENY_MESSAGE, EXPECTED, type Finding, lintFixture as lintFrom } from "./architecture-expected"
 
 /**
  * The on-disk pnpm fixture in test/fixtures/architecture is linted through the built
@@ -19,55 +20,12 @@ import { noBoundariesDisable } from "../src/eslint-boundaries"
 const fixture = join(process.cwd(), "test", "fixtures", "architecture")
 const WORKSPACE_DIRS = ["packages/types", "packages/rules", "packages/db", "packages/shared", "apps/api"]
 
-type Finding = { file: string; line: number; rule: string; message: string }
-
-function lintFixture(cwd: string, probe?: "--classify" | "--cwd-root"): Finding[] {
-  const result = spawnSync(process.execPath, [join(fixture, "lint.mjs"), ...(probe === undefined ? [] : [probe])], {
-    cwd: join(fixture, cwd),
-    encoding: "utf-8",
-  })
-  if (result.status !== 0) throw new Error(`lint.mjs exited ${result.status}:\n${result.stderr}`)
-  return JSON.parse(result.stdout) as Finding[]
-}
-
+const lintFixture = (cwd: string, probe?: "--classify" | "--cwd-root"): Finding[] => lintFrom(fixture, cwd, probe)
 const summary = (findings: Finding[]): string[] => findings.map((f) => `${f.file}:${f.line} ${f.rule}`)
-
-const DENIED = "boundaries/dependencies (denied)"
-const NO_POLICY = "boundaries/dependencies (no policy)"
-const violation = (file: string, kind: string): string => `packages/rules/src/violations/${file}:1 ${kind}`
-
-// One violation per file, each on line 1. Every other file in the fixture is clean.
-const EXPECTED = [
-  "apps/api/src/undeclared.ts:1 boundaries/dependencies (no policy)",
-  violation("denied-declared.ts", DENIED),
-  violation("denied-glob.ts", DENIED),
-  violation("denied-subpath.ts", DENIED),
-  violation("dev-dependency-in-src.ts", NO_POLICY),
-  violation("disable-comment.ts", "ts-builds/no-boundaries-disable"),
-  violation("dynamic-import.ts", DENIED),
-  violation("import-equals.cts", DENIED),
-  violation("reexport-star.ts", DENIED),
-  violation("reexport.ts", NO_POLICY),
-  violation("relative-across.ts", NO_POLICY),
-  violation("require.cts", DENIED),
-  violation("type-only.ts", DENIED),
-  violation("undeclared-hoisted.ts", NO_POLICY),
-  violation("workspace-subpath.ts", NO_POLICY),
-  violation("workspace.ts", NO_POLICY),
-]
-
-const DENY_MESSAGE = "@fx/rules (pure) denies imports of db-client, @ai/* in its architecture policy"
 
 /** The root run's findings for files under `cwd`: what a run from `cwd` must report. */
 const under = (findings: Finding[], cwd: string): Finding[] =>
   findings.filter((f) => cwd === "." || f.file.startsWith(`${cwd}/`))
-
-/** Tells a deny-policy finding from a no-policy one by its message. */
-function classifyFinding(finding: Finding): string {
-  if (finding.rule !== "boundaries/dependencies") return `${finding.file}:${finding.line} ${finding.rule}`
-  const kind = finding.message === DENY_MESSAGE ? DENIED : NO_POLICY
-  return `${finding.file}:${finding.line} ${kind}`
-}
 
 describe("architecture boundaries on the pnpm fixture", () => {
   let rootFindings: Finding[] = []
@@ -86,7 +44,7 @@ describe("architecture boundaries on the pnpm fixture", () => {
   }, 120_000)
 
   it("reports exactly the seeded violations, each once", () => {
-    expect(rootFindings.map(classifyFinding)).toEqual(EXPECTED)
+    expect(rootFindings.map(describeFinding)).toEqual(EXPECTED)
   })
 
   it("names the policy and its reason in a deny finding", () => {
@@ -164,7 +122,7 @@ describe("defineArchitecture", () => {
     const rules = workspaces["@fx/rules"]
     expect(rules?.allowedWorkspaces).toEqual(["@fx/types"])
     expect(rules?.dependencies).toEqual(["db-client", "@ai/openai"])
-    expect(rules?.devDependencies).toEqual(["test-helper"])
+    expect(rules?.devDependencies).toEqual(["test-helper", "@types/typed-lib"])
     expect(rules?.tsconfig).toBe(join(fixture, "packages/rules/tsconfig.json"))
     expect(workspaces["@fx/api"]?.allowedWorkspaces).toEqual(["@fx/types", "@fx/rules", "@fx/db", "@fx/shared"])
   })
@@ -215,18 +173,94 @@ describe("defineArchitecture", () => {
     ])
   })
 
-  it("throws for a workspace with no src directory", () => {
+  it("throws for a deny entry that matches a workspace, which the plugin would ignore", () => {
+    const api = { ...FIXTURE_POLICY["@fx/api"]!, deny: ["@fx/db"] }
+    expect(problemsOf({ rootDir: fixture, workspaces: { ...FIXTURE_POLICY, "@fx/api": api } })).toEqual([
+      '@fx/api: deny entry "@fx/db" matches the workspace @fx/db. deny is for external packages; leave a workspace out of allow instead',
+    ])
+  })
+
+  /** A scratch workspace root: `files` maps a path to its contents. */
+  function scratchRoot(files: Record<string, string>, run: (root: string) => void): void {
     const root = mkdtempSync(join(tmpdir(), "ts-builds-architecture-"))
     try {
-      writeFileSync(join(root, "pnpm-workspace.yaml"), "packages:\n  - 'packages/*'\n")
-      mkdirSync(join(root, "packages", "a", "lib"), { recursive: true })
-      writeFileSync(join(root, "packages", "a", "package.json"), JSON.stringify({ name: "@x/a" }))
-      expect(problemsOf({ rootDir: root, workspaces: { "@x/a": { dir: "packages/a", type: "lib" } } })).toEqual([
-        "@x/a: packages/a has no src directory. Boundary rules check src and test, so code elsewhere is unchecked",
-      ])
+      Object.entries(files).forEach(([path, contents]) => {
+        mkdirSync(join(root, path, ".."), { recursive: true })
+        writeFileSync(join(root, path), contents)
+      })
+      run(root)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  }
+
+  it("throws for a workspace with no src directory", () => {
+    const files = {
+      "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
+      "packages/a/package.json": JSON.stringify({ name: "@x/a" }),
+      "packages/a/lib/index.ts": "",
+    }
+    scratchRoot(files, (root) => {
+      expect(problemsOf({ rootDir: root, workspaces: { "@x/a": { dir: "packages/a", type: "lib" } } })).toEqual([
+        "@x/a: packages/a has no src directory. Boundary rules check src and test, so code elsewhere is unchecked",
+      ])
+    })
+  })
+
+  it("reads a flow-style packages list", () => {
+    const files = {
+      "pnpm-workspace.yaml": "packages: ['packages/*', \"apps/*\"]\n",
+      "packages/a/package.json": JSON.stringify({ name: "@x/a" }),
+      "packages/a/src/index.ts": "",
+    }
+    scratchRoot(files, (root) => {
+      const { workspaces } = defineArchitecture({
+        rootDir: root,
+        workspaces: { "@x/a": { dir: "packages/a", type: "lib" } },
+      })
+      expect(Object.keys(workspaces)).toEqual(["@x/a"])
+    })
+  })
+
+  it("throws for a root whose pnpm-workspace.yaml lists no packages", () => {
+    scratchRoot({ "pnpm-workspace.yaml": "minimumReleaseAge: 1440\n" }, (root) => {
+      expect(problemsOf({ rootDir: root, workspaces: {} })).toEqual([
+        `${join(root, "pnpm-workspace.yaml")} has no packages: list, so it is not a monorepo root`,
+      ])
+    })
+  })
+
+  it("reports an unreadable package.json as a problem, not a raw SyntaxError", () => {
+    const files = {
+      "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
+      "packages/a/package.json": "{ not json",
+      "packages/a/src/index.ts": "",
+    }
+    scratchRoot(files, (root) => {
+      const problems = problemsOf({ rootDir: root, workspaces: { "@x/a": { dir: "packages/a", type: "lib" } } })
+      expect(problems).toHaveLength(1)
+      expect(problems[0]).toMatch(/^packages\/a\/package\.json can't be read: /)
+    })
+  })
+
+  it("throws a clear error when workspaces is missing", () => {
+    expect(problemsOf({ rootDir: fixture } as unknown as ArchitectureInput)).toEqual([
+      "workspaces is required: map each workspace package name to its policy",
+    ])
+  })
+})
+
+describe("deny and @types helpers", () => {
+  it("adds the other spelling of a denied core module, including through a glob", () => {
+    expect(denySources(["fs", "node:child_process", "pg"])).toEqual(
+      expect.arrayContaining(["fs", "node:fs", "child_process", "node:child_process", "pg"]),
+    )
+    expect(denySources(["node:o*"])).toEqual(expect.arrayContaining(["os", "node:os"]))
+    expect(denySources(["@ai-sdk/*"])).toEqual(["@ai-sdk/*"])
+  })
+
+  it("maps @types packages to the packages they describe", () => {
+    expect(typedPackages(["@types/lodash", "@types/babel__core", "react"])).toEqual(["lodash", "@babel/core"])
   })
 })
 
@@ -253,8 +287,35 @@ describe("no-boundaries-disable", () => {
     expect(lint("const a = 1\n/* eslint-disable */\nconst b = 2")).toEqual([{ line: 1, messageId: "blanket" }])
   })
 
-  it("is itself silenced by a blanket disable at the very top of a file (a known limit)", () => {
-    expect(lint("/* eslint-disable */\nconst a = 1")).toEqual([])
+  it.each([
+    ["a config comment turning a boundaries rule off", 'const a = 1\n/* eslint boundaries/dependencies: "off" */', 2],
+    [
+      "a same-line disable that also names this rule",
+      "const a = 1 // eslint-disable-line boundaries/dependencies, ts-builds/no-boundaries-disable\nconst b = 2",
+      2,
+    ],
+    [
+      "a mid-file block disable that also names this rule",
+      "const a = 1\n/* eslint-disable boundaries/dependencies, ts-builds/no-boundaries-disable */\nconst b = 2",
+      1,
+    ],
+  ])("reports %s on a line the comment doesn't cover", (_label, code, line) => {
+    expect(lint(code)).toEqual([{ line, messageId: "named" }])
+  })
+
+  it("reports a blanket same-line disable on line 1 at line 2", () => {
+    expect(lint("const a = 1 // eslint-disable-line\nconst b = 2")).toEqual([{ line: 2, messageId: "blanket" }])
+  })
+
+  it.each([
+    ["a blanket block disable at the very start of a file", "/* eslint-disable */\nconst a = 1"],
+    ["a config comment that turns this rule itself off", '/* eslint ts-builds/no-boundaries-disable: "off" */'],
+    [
+      "a same-line disable naming this rule in a one-line file",
+      "const a = 1 // eslint-disable-line ts-builds/no-boundaries-disable",
+    ],
+  ])("can't report %s (a known limit)", (_label, code) => {
+    expect(lint(code)).toEqual([])
   })
 
   it("leaves a disable of an unrelated rule alone", () => {

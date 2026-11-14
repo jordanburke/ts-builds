@@ -5,12 +5,15 @@ import { join } from "node:path"
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
+import { describeFinding, EXPECTED, lintFixture } from "./architecture-expected"
+
 /**
  * The in-repo fixture can't prove how ts-builds resolves its own dependencies: Node
  * walks up from the fixture into this repo's node_modules, which has everything. So
  * this spec packs ts-builds, installs the tarball into a copy of the fixture outside
  * the repo, hoists only what a consumer's config imports by name, and expects the
- * same findings. Runs after the build, as validate:bootstrap does.
+ * same findings. It doesn't touch the in-repo fixture's install, so it runs on its own.
+ * Runs after the build, as validate:bootstrap does.
  */
 const repo = process.cwd()
 const fixture = join(repo, "test", "fixtures", "architecture")
@@ -41,7 +44,17 @@ describe("architecture boundaries from a packed install", () => {
     const pkg = JSON.parse(readFileSync(join(consumer, "package.json"), "utf-8")) as Record<string, unknown>
     writeFileSync(
       join(consumer, "package.json"),
-      JSON.stringify({ ...pkg, devDependencies: { "ts-builds": `file:${join(scratch, tarball)}` } }, null, 2),
+      JSON.stringify(
+        {
+          ...pkg,
+          devDependencies: {
+            ...(pkg.devDependencies as Record<string, string>),
+            "ts-builds": `file:${join(scratch, tarball)}`,
+          },
+        },
+        null,
+        2,
+      ),
     )
     // Hoist only the two packages the consumer's own files import by name. The
     // resolver and the plugin must load from ts-builds' dependencies.
@@ -56,17 +69,14 @@ describe("architecture boundaries from a packed install", () => {
     if (scratch !== "") rmSync(scratch, { recursive: true, force: true })
   })
 
-  it("can't require the resolver by name, so it must load by path", () => {
+  it("leaves the resolver out of the consumer's reach, so ts-builds must load it", () => {
     const check = spawnSync(process.execPath, ["-e", 'require.resolve("eslint-import-resolver-typescript")'], {
       cwd: consumer,
     })
     expect(check.status).not.toBe(0)
   })
 
-  it("reports the same findings as the in-repo fixture", () => {
-    const packed = run(process.execPath, [join(consumer, "lint.mjs")], consumer)
-    const inRepo = run(process.execPath, [join(fixture, "lint.mjs")], fixture)
-    expect(JSON.parse(packed)).toEqual(JSON.parse(inRepo))
-    expect((JSON.parse(packed) as unknown[]).length).toBeGreaterThan(0)
+  it("reports exactly the seeded violations, as the in-repo fixture does", () => {
+    expect(lintFixture(consumer, ".").map(describeFinding)).toEqual(EXPECTED)
   }, 60_000)
 })

@@ -21,8 +21,21 @@ export function blockLines(yaml: string, header: RegExp): string[] {
 // A YAML list item: `- entry`, `- 'entry'` or `- "entry"`, optionally followed by a `# comment`.
 const YAML_LIST_ENTRY = /^\s*-\s*(["']?)([^"'\s#]+)\1\s*(?:#.*)?$/
 
-/** The unquoted items of the top-level list block whose header matches `header`. */
+/**
+ * The unquoted items of the top-level list whose header matches `header`: a block list
+ * (`- item` lines below it) or a flow list on the header line (`key: [a, 'b']`).
+ */
 export function readListBlock(yaml: string, header: RegExp): string[] {
+  const flow = yaml
+    .split("\n")
+    .find((line) => header.test(line))
+    ?.match(/:\s*\[([^\]]*)\]/)
+  if (flow?.[1] !== undefined) {
+    return flow[1]
+      .split(",")
+      .map((item) => item.trim().replace(/^(["'])(.*)\1$/, "$2"))
+      .filter((item) => item.length > 0)
+  }
   return blockLines(yaml, header)
     .map((line) => YAML_LIST_ENTRY.exec(line)?.[2])
     .filter((entry): entry is string => entry !== undefined)

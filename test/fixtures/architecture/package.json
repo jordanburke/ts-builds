@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "ts-builds": "link:../../.."
+    "ts-builds": "link:../../..",
+    "test-runner": "file:./vendor/test-runner"
   },
   "packageManager": "pnpm@12.15.0"
 }

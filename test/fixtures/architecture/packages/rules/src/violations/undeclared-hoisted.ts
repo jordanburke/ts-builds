@@ -1,3 +1,3 @@
-import Pool from "db-pool"
+import { test } from "test-runner"
 
-export const p = Pool
+export const t = test

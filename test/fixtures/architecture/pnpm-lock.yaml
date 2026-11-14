@@ -191,6 +191,9 @@ importers:
 
   .:
     devDependencies:
+      test-runner:
+        specifier: file:./vendor/test-runner
+        version: file:vendor/test-runner
       ts-builds:
         specifier: link:../../..
         version: link:../../..
@@ -228,6 +231,9 @@ importers:
         specifier: file:../../vendor/db-client
         version: file:vendor/db-client
     devDependencies:
+      '@types/typed-lib':
+        specifier: file:../../vendor/types-typed-lib
+        version: file:vendor/types-typed-lib
       test-helper:
         specifier: file:../../vendor/test-helper
         version: file:vendor/test-helper
@@ -245,6 +251,9 @@ packages:
   '@ai/openai@file:vendor/ai-openai':
     resolution: {directory: vendor/ai-openai, type: directory}
 
+  '@types/typed-lib@file:vendor/types-typed-lib':
+    resolution: {directory: vendor/types-typed-lib, type: directory}
+
   db-client@file:vendor/db-client:
     resolution: {directory: vendor/db-client, type: directory}
 
@@ -254,9 +263,14 @@ packages:
   test-helper@file:vendor/test-helper:
     resolution: {directory: vendor/test-helper, type: directory}
 
+  test-runner@file:vendor/test-runner:
+    resolution: {directory: vendor/test-runner, type: directory}
+
 snapshots:
 
   '@ai/openai@file:vendor/ai-openai': {}
+
+  '@types/typed-lib@file:vendor/types-typed-lib': {}
 
   db-client@file:vendor/db-client:
     dependencies:
@@ -265,3 +279,5 @@ snapshots:
   db-pool@file:vendor/db-pool: {}
 
   test-helper@file:vendor/test-helper: {}
+
+  test-runner@file:vendor/test-runner: {}

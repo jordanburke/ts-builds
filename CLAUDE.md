@@ -364,24 +364,39 @@ externals and tsconfig. `ts-builds/eslint-boundaries` (`src/eslint-boundaries.ts
 `ts-builds/no-boundaries-disable` rule. The `pnpm-workspace.yaml` readers both use live in
 `src/pnpm-workspace-yaml.ts`, shared with the pnpm 11 doctor checks.
 
-Each forced setting exists because its default passes silently. Every one was reproduced in a
-scratch workspace, and each is guarded by a test that fails when the setting is mutated:
+Each forced setting exists because its default passes silently, reproduced in a scratch
+workspace first. Mutating each one in `src/eslint-boundaries.ts` and rebuilding makes the specs
+fail, with one exception, noted under the resolver:
 
 - **`boundaries/root-path`** is the absolute `rootDir`. The default is `process.cwd()`: run from a
   workspace, `boundaries/dependencies` reported nothing.
 - **Elements** are `<dir>/src` and `<dir>/test`. At the workspace root, a declared external in the
   workspace's own `node_modules` counted as inside the element.
-- **The TypeScript resolver** is keyed by its absolute path from `createRequire`. By name,
-  `eslint-module-utils` resolves it from the consumer, where pnpm doesn't hoist it. The default
-  resolver classified every workspace import as external.
+- **The TypeScript resolver** gets every workspace's tsconfig, so `paths` aliases resolve; the
+  fixture's `apps/api` alias guards it. The default resolver classified every workspace import as
+  external. `noWarnOnMultipleProjects` keeps the resolver quiet, and the spec fails on its
+  "Multiple projects found" warning.
+- **The resolver is keyed by its absolute path** from `createRequire`, so it never depends on the
+  consumer being able to require it by name. This is the one mutation that survives: a bare
+  `typescript` key also works under pnpm, because pnpm's built-in compatibility database links
+  `eslint-import-resolver-*` packages into `eslint-module-utils` as optional peers. The absolute key
+  doesn't rely on that.
 - **`files`** is `BOUNDARY_FILES`, unanchored. A root-anchored glob stops matching when a
   workspace's own `eslint.config.js` re-exports the root, since ESLint resolves `files` against
   the loading config's directory.
 - **`default: "disallow"`, `checkAllOrigins` and `checkUnknownLocals`** are on. With the default
-  resolver and `checkAllOrigins` off, the fixture reported nothing at all.
-- **Tests:** `boundaries/files` tags `**/test/**` and `**/*.{test,spec}.*` with the category
-  `test`. v7 deprecates element `mode`, and a file glob in folder mode doesn't match.
-- **Policy order:** later policies override earlier ones, so each workspace's `deny` comes last.
+  resolver and `checkAllOrigins` off, the fixture reported nothing at all. `checkUnknownLocals`
+  catches an import of a local file outside every workspace.
+- **Tests:** `boundaries/files` tags `<dir>/test/**` and `<dir>/src/**/*.{test,spec}.*` with the
+  category `test`, scoped per workspace so a `src/test/` directory isn't tagged. v7 deprecates
+  element `mode`, and a file glob in folder mode doesn't match. A `disallow` keeps source files
+  from importing test files.
+- **`deny`** expands a core-module entry to both spellings (`fs` and `node:fs`), because the plugin
+  matches a module source literally. It's placed last, since later policies override earlier ones.
+- **`unrs-resolver` `^1.13.0`** is a direct dependency, though nothing imports it. The resolver
+  asks for `^1.7.11`, and 1.12.x has a `postinstall` script, so an install that lands on 1.12.x
+  fails every pnpm version's strict build check with `ERR_PNPM_IGNORED_BUILDS`. 1.13.0 has no
+  script, and the direct dependency pulls it into the graph.
 
 `test/fixtures/architecture` is an on-disk pnpm workspace. Its "registry" packages are local
 `file:` packages, so installing it needs no network. `test/architecture.spec.ts` installs it
@@ -395,9 +410,12 @@ An in-process `cwd` option doesn't move `process.cwd()` and gave a false green. 
 - a `--cwd-root` harness check that the working directory really varies.
 
 `test/architecture-packed.spec.ts` packs ts-builds and installs the tarball into a copy of the
-fixture outside the repo. Inside it, Node walks up into this repo's `node_modules` and hides
-resolution bugs. The root `vitest.config.ts` excludes `test/fixtures/**`, since fixture test files
-are data.
+fixture outside the repo, hoisting only `eslint` and `typescript-eslint`. Inside the repo, Node
+walks up into this repo's `node_modules`, so only the packed install shows a consumer needs
+nothing else. Both specs check against `EXPECTED` in `test/architecture-expected.ts`, so the
+packed spec doesn't depend on the in-repo install. Its consumer install has no lockfile and
+resolves ts-builds' dependencies on every run, from the store when they're cached. The root
+`vitest.config.ts` excludes `test/fixtures/**`, since fixture test files are data.
 
 ### Cross-package `validate:*` commands (removed in 4.0)
 
