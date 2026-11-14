@@ -41,6 +41,26 @@ Push the tag from a local or PAT credential. A tag pushed by GitHub Actions' `GI
 does **not** trigger `publish.yml` (GitHub's recursion guard), so an automated bump-and-tag
 would never publish.
 
+## Prereleases
+
+A version with a prerelease part publishes to a dist-tag named after it and never moves
+`latest`. The first identifier after the `-` is the tag:
+
+| Version        | npm dist-tag | GitHub release |
+| -------------- | ------------ | -------------- |
+| `4.6.0`        | `latest`     | release        |
+| `4.6.0-next.0` | `next`       | prerelease     |
+| `4.6.0-rc.1`   | `rc`         | prerelease     |
+
+```bash
+npm version 4.6.0-next.0 -m "chore: bump version to %s"
+git push --follow-tags
+```
+
+Consumers opt in with `pnpm add ts-builds@next`. The publish job fails before validating when the
+git tag doesn't match `package.json`'s version, or when the prerelease has no named identifier
+(`4.6.0-0`): npm refuses a prerelease without `--tag`, and a numeric tag is not allowed.
+
 ## What Happens on Release
 
 1. **Validation**: Runs `pnpm validate` (format, build, test)

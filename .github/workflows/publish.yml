@@ -17,6 +17,31 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      # A prerelease such as 4.6.0-next.0 publishes to the `next` dist-tag and never
+      # moves `latest`. npm refuses a prerelease without --tag, and a mismatched tag
+      # would publish package.json's version, so both are checked before anything runs.
+      - name: Pick the npm dist-tag
+        id: dist-tag
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+          case "$version" in
+            *-*) prerelease=${version#*-}; tag=${prerelease%%.*} ;;
+            *) tag=latest ;;
+          esac
+          case "$tag" in
+            [a-z]*) ;;
+            *)
+              echo "::error::Prerelease $version needs a named identifier for its dist-tag, such as ${version%%-*}-next.0"
+              exit 1
+              ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "Publishing $version to dist-tag $tag"
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
 
@@ -39,11 +64,14 @@ jobs:
           npm pack --dry-run
 
       - name: Publish to npm
-        run: npm publish --provenance --access public
+        run: npm publish --provenance --access public --tag "$DIST_TAG"
+        env:
+          DIST_TAG: ${{ steps.dist-tag.outputs.tag }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
+          prerelease: ${{ steps.dist-tag.outputs.tag != 'latest' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
