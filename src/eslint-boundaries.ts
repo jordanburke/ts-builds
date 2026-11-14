@@ -107,37 +107,40 @@ function workspacePolicies(ws: ResolvedWorkspace, testExternals: readonly string
   ]
 }
 
-const GUARD_RULE = "ts-builds/no-boundaries-disable"
-
 // `eslint-disable`, `eslint-disable-line` and `eslint-disable-next-line`, with an
 // optional rule list and `-- reason`.
 const DISABLE_DIRECTIVE = /^\s*eslint-disable(-next-line|-line)?(?:\s+([^]*?))?\s*(?:--[^]*)?$/
 // `/* eslint rule: "off", … */`, which reconfigures rules for the whole file.
 const CONFIG_DIRECTIVE = /^\s*eslint\s+([^]*?)\s*(?:--[^]*)?$/
 
-const isGuarded = (rule: string): boolean => rule.startsWith("boundaries/") || rule === GUARD_RULE
+// Any mention of a boundary rule or the guard, however the comment is written. ESLint's own
+// directive parser accepts more shapes (quotes, no commas, braces, arrays) than a re-parse
+// would track, so the comment text is scanned instead of parsed.
+const GUARDED_NAME = /(?:boundaries\/[\w-]+|ts-builds\/no-boundaries-disable)/g
 
-type Directive = { kind: "block" | "line" | "next-line" | "config"; rules: string[] }
+const guardedNames = (text: string): string[] =>
+  List([...text.matchAll(GUARDED_NAME)].map((match) => match[0]))
+    .distinct()
+    .toArray()
+
+/**
+ * `blanket` is a disable directive with no rule list; `names` are the boundary and guard
+ * rules the comment mentions anywhere in its rule list or config body.
+ */
+type Directive = { kind: "block" | "line" | "next-line" | "config"; blanket: boolean; names: string[] }
 
 function parseDirective(comment: { type: string; value: string }): Option<Directive> {
   const disable = DISABLE_DIRECTIVE.exec(comment.value)
   if (disable !== null) {
-    const rules = (disable.at(2) ?? "")
-      .split(",")
-      .map((rule) => rule.trim())
-      .filter((rule) => rule.length > 0)
+    const list = (disable.at(2) ?? "").trim()
     const suffix = disable.at(1)
-    return Option({ kind: suffix === "-line" ? "line" : suffix === "-next-line" ? "next-line" : "block", rules })
+    const kind = suffix === "-line" ? "line" : suffix === "-next-line" ? "next-line" : "block"
+    return Option({ kind, blanket: list.length === 0, names: guardedNames(list) })
   }
   // Config comments are only read from block comments.
   const config = comment.type === "Block" ? CONFIG_DIRECTIVE.exec(comment.value) : null
   if (config === null) return Option.none<Directive>()
-  const rules = (config.at(1) ?? "").split(",").flatMap((entry) => {
-    // A rule name may be quoted: `/* eslint "boundaries/dependencies": "off" */`.
-    const name = (entry.split(":")[0]?.trim() ?? "").replace(/^(["'])(.*)\1$/, "$2")
-    return name.length > 0 && !name.includes(" ") ? [name] : []
-  })
-  return Option({ kind: "config", rules })
+  return Option({ kind: "config" as const, blanket: false, names: guardedNames(config.at(1) ?? "") })
 }
 
 /**
@@ -185,12 +188,13 @@ export const noBoundariesDisable: Rule.RuleModule = {
           parseDirective(comment).forEach((directive) => {
             const line = reportLine(directive.kind, start.line, start.column, lastLine)
             const loc = { line, column: 0 }
-            if (directive.kind !== "config" && directive.rules.length === 0) {
+            if (directive.blanket) {
               context.report({ loc, messageId: "blanket" })
               return
             }
-            const named = directive.rules.filter(isGuarded)
-            if (named.length > 0) context.report({ loc, messageId: "named", data: { rules: named.join(", ") } })
+            if (directive.names.length > 0) {
+              context.report({ loc, messageId: "named", data: { rules: directive.names.join(", ") } })
+            }
           })
         })
       },

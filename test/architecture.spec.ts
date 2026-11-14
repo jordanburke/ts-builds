@@ -300,6 +300,27 @@ describe("no-boundaries-disable", () => {
       2,
     ],
     [
+      "a config comment with no comma between entries",
+      'const a = 1\n/* eslint no-console: 0 "boundaries/dependencies": 0 */',
+      2,
+    ],
+    [
+      "a config comment with unquoted entries and no comma",
+      "const a = 1\n/* eslint no-console: 0 boundaries/dependencies: 0 */",
+      2,
+    ],
+    [
+      "a config comment split over lines with no comma",
+      "const a = 1\n/* eslint no-console: 0\n  boundaries/dependencies: 0 */\nconst b = 2",
+      2,
+    ],
+    [
+      "a config comment after an array value",
+      'const a = 1\n/* eslint no-console: [0] "boundaries/dependencies": 0 */',
+      2,
+    ],
+    ["a config comment wrapped in braces", 'const a = 1\n/* eslint {"boundaries/dependencies": 0} */', 2],
+    [
       "a mid-file block disable naming only this rule",
       "const a = 1\n/* eslint-disable ts-builds/no-boundaries-disable */\nconst b = 2",
       1,
