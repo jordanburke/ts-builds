@@ -6,7 +6,13 @@ export default defineConfig([
   // an IDE type-checking `import { tsdown } from "ts-builds/tsdown"` reports
   // TS7016 / TS2307. test/package-exports.spec.ts checks they exist.
   {
-    entry: ["src/tsdown.config.base.ts", "src/vitest.config.base.ts", "src/vite.config.base.ts"],
+    entry: [
+      "src/tsdown.config.base.ts",
+      "src/vitest.config.base.ts",
+      "src/vite.config.base.ts",
+      "src/architecture.ts",
+      "src/eslint-boundaries.ts",
+    ],
     format: ["esm"],
     dts: true,
     clean: true,

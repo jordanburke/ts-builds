@@ -1,0 +1,14 @@
+{
+  "name": "@fx/shared",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@fx/db": "workspace:*"
+  },
+  "devDependencies": {}
+}

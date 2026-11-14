@@ -1,0 +1,9 @@
+{
+  "name": "architecture-fixture",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "ts-builds": "link:../../.."
+  },
+  "packageManager": "pnpm@12.15.0"
+}

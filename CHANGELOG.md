@@ -6,6 +6,19 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+### Features
+
+- **architecture (preview):** architecture boundaries for pnpm monorepos (#239, first part). One
+  policy module in your repo, `defineArchitecture` from the new `ts-builds/architecture` export,
+  says which workspaces may import which. `createBoundaries` from `ts-builds/eslint-boundaries`
+  turns it into an eslint-plugin-boundaries config. The config forces each plugin default that
+  passes silently: an absolute root path, elements at each workspace's `src` and `test`, the
+  TypeScript resolver, disallow by default for every origin, and an error for an unknown file or
+  a `boundaries/*` disable comment. A workspace may import only the externals its own
+  `package.json` declares, and a policy's `deny` wins over a declared one. Opt-in: nothing
+  changes unless you import the new exports. New dependencies, pinned exactly:
+  `eslint-plugin-boundaries` 7.4.3 and `eslint-import-resolver-typescript` 4.4.5.
+
 ### Dependencies
 
 - raise bundled dependency ranges to their newest installable releases (#240): `functype` /
