@@ -8,11 +8,20 @@ conventional commits via `ts-builds changelog`.
 
 ### Dependencies
 
-- update bundled dependencies to latest and raise their ranges to match (#240): `functype` /
+- raise bundled dependency ranges to their newest installable releases (#240): `functype` /
   `functype-os` `^1.26.0`, `eslint-plugin-functype` / `eslint-config-functype` `^2.126.0`,
-  `typescript-eslint` `^8.72.2`, `prettier` `^3.10.1`, `eslint` `^10.14.0`, `vitest` and the
-  `@vitest/*` packages `^5.1.0`. A consumer's install now resolves at least these versions.
-  TypeScript stays on 6.0, because `typescript-eslint` 8.72.2 supports only `typescript <6.1.0`.
+  `typescript-eslint` `^8.72.2`, `prettier` `^3.10.1`, `eslint` `^10.14.0`, `eslint-plugin-prettier`
+  `^5.5.7`, `globals` `^17.14.0`, and `vitest` and the `@vitest/*` packages `^5.1.0`. A consumer's
+  install now resolves at least these versions. Two are held:
+  - TypeScript stays on 6.0, because `typescript-eslint` 8.72.2, its newest release, supports only
+    `typescript <6.1.0`.
+  - `eslint` 10.15.0 was under a day old, so pnpm's one-day `minimumReleaseAge` kept the floor at
+    10.14.0. The `^10.14.0` range already admits it.
+- **lint (`ts-builds/eslint-functype`):** `eslint-plugin-functype` 2.126.0 changes how
+  `functype/prefer-option` reports, still as a warning. A three-state type such as `a?: T | null`
+  now reports under a new message id, `preferWireForThreeStates`, with no suggestions. A nested
+  union such as `(string | null) | undefined` reports once instead of twice, so warning counts can
+  drop. Lint telemetry, which splits counts by message id, shows the new id.
 
 ## 4.5.0 (2026-11-12)
 
