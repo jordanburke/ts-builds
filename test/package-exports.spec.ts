@@ -24,8 +24,14 @@ const builtEntries = Object.entries(pkg.exports).filter(([, target]) => {
 })
 
 describe("package exports", () => {
-  it("covers the three config entries", () => {
-    expect(builtEntries.map(([name]) => name).sort()).toEqual(["./tsdown", "./vite", "./vitest"])
+  it("covers the three config entries and the two architecture entries", () => {
+    expect(builtEntries.map(([name]) => name).sort()).toEqual([
+      "./architecture",
+      "./eslint-boundaries",
+      "./tsdown",
+      "./vite",
+      "./vitest",
+    ])
   })
 
   it.each(builtEntries)("%s declares its types", (_name, target) => {
@@ -45,5 +51,11 @@ describe("package exports", () => {
     expect(dts("tsdown.config.base")).toMatch(/export declare const tsdown: UserConfig/)
     expect(dts("vite.config.base")).toMatch(/export \{ vite as default \}/)
     expect(dts("vitest.config.base")).toMatch(/export \{ _default as default \}/)
+    expect(dts("architecture")).toMatch(
+      /export declare function defineArchitecture\(input: ArchitectureInput\): Architecture/,
+    )
+    expect(dts("eslint-boundaries")).toMatch(
+      /export declare function createBoundaries\(architecture: Architecture\): BoundariesConfig/,
+    )
   })
 })

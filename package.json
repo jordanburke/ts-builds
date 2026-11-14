@@ -45,6 +45,14 @@
       "types": "./dist/vite.config.base.d.ts",
       "default": "./dist/vite.config.base.js"
     },
+    "./architecture": {
+      "types": "./dist/architecture.d.ts",
+      "default": "./dist/architecture.js"
+    },
+    "./eslint-boundaries": {
+      "types": "./dist/eslint-boundaries.d.ts",
+      "default": "./dist/eslint-boundaries.js"
+    },
     "./scripts": "./package-scripts.json",
     "./package.json": "./package.json"
   },
@@ -68,6 +76,8 @@
     "eslint": "^10.14.0",
     "eslint-config-functype": "^2.126.0",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-import-resolver-typescript": "4.4.5",
+    "eslint-plugin-boundaries": "7.4.3",
     "eslint-plugin-functype": "^2.126.0",
     "eslint-plugin-prettier": "^5.5.7",
     "eslint-plugin-simple-import-sort": "^14.0.0",
@@ -78,6 +88,7 @@
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.72.2",
+    "unrs-resolver": "^1.13.0",
     "vitest": "^5.1.0"
   },
   "devDependencies": {

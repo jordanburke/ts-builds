@@ -1,0 +1,20 @@
+{
+  "name": "@fx/rules",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "dependencies": {
+    "@fx/types": "workspace:*",
+    "@fx/shared": "workspace:*",
+    "db-client": "file:../../vendor/db-client",
+    "@ai/openai": "file:../../vendor/ai-openai"
+  },
+  "devDependencies": {
+    "test-helper": "file:../../vendor/test-helper",
+    "@types/typed-lib": "file:../../vendor/types-typed-lib"
+  }
+}

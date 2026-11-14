@@ -1,0 +1,13 @@
+{
+  "name": "db-client",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./utils": "./utils.js"
+  },
+  "dependencies": {
+    "db-pool": "file:../db-pool"
+  }
+}

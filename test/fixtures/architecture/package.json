@@ -1,0 +1,10 @@
+{
+  "name": "architecture-fixture",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "ts-builds": "link:../../..",
+    "test-runner": "file:./vendor/test-runner"
+  },
+  "packageManager": "pnpm@12.15.0"
+}

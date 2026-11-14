@@ -355,6 +355,75 @@ Both `--fix` additions preserve existing `pnpm-workspace.yaml` content, never
 duplicate a top-level key, and are idempotent. The release-age detection lives
 behind an injectable probe (`PnpmReleaseAgeProbe`) for testability.
 
+### Architecture boundaries (#239, preview)
+
+`ts-builds/architecture` (`src/architecture.ts`) exports `defineArchitecture`, which validates
+a consumer's policy against the disk and resolves each workspace's allowed workspaces, declared
+externals and tsconfig. `ts-builds/eslint-boundaries` (`src/eslint-boundaries.ts`) exports
+`createBoundaries`, which turns it into eslint-plugin-boundaries 7 flat config, plus the
+`ts-builds/no-boundaries-disable` rule. The `pnpm-workspace.yaml` readers both use live in
+`src/pnpm-workspace-yaml.ts`, shared with the pnpm 11 doctor checks.
+
+Each forced setting exists because its default passes silently, reproduced in a scratch
+workspace first. Mutating each one in `src/eslint-boundaries.ts` and rebuilding makes the specs
+fail, with one exception, noted under the resolver:
+
+- **`boundaries/root-path`** is the absolute `rootDir`. The default is `process.cwd()`: run from a
+  workspace, `boundaries/dependencies` reported nothing.
+- **Elements** are `<dir>/src` and `<dir>/test`. At the workspace root, a declared external in the
+  workspace's own `node_modules` counted as inside the element.
+- **The TypeScript resolver** gets every workspace's tsconfig, so `paths` aliases resolve; the
+  fixture's `apps/api` alias guards it. The default resolver classified every workspace import as
+  external. `noWarnOnMultipleProjects` keeps the resolver quiet, and the spec fails on its
+  "Multiple projects found" warning.
+- **The resolver is keyed by its absolute path** from `createRequire`, so it never depends on the
+  consumer being able to require it by name. This is the one mutation that survives: a bare
+  `typescript` key also works under pnpm, because pnpm's built-in compatibility database links
+  `eslint-import-resolver-*` packages into `eslint-module-utils` as optional peers. The absolute key
+  doesn't rely on that.
+- **`files`** is `BOUNDARY_FILES`, unanchored. A root-anchored glob stops matching when a
+  workspace's own `eslint.config.js` re-exports the root, since ESLint resolves `files` against
+  the loading config's directory.
+- **`default: "disallow"`, `checkAllOrigins` and `checkUnknownLocals`** are on. With the default
+  resolver and `checkAllOrigins` off, the fixture reported nothing at all. `checkUnknownLocals`
+  catches an import of a local file outside every workspace.
+- **Tests:** `boundaries/files` tags `<dir>/test/**` and `<dir>/src/**/*.{test,spec}.*` with the
+  category `test`, scoped per workspace so a `src/test/` directory isn't tagged. v7 deprecates
+  element `mode`, and a file glob in folder mode doesn't match. A `disallow` keeps source files
+  from importing test files.
+- **`deny`** expands a core-module entry to both spellings (`fs` and `node:fs`), because the plugin
+  matches a module source literally. It's placed last, since later policies override earlier ones.
+- **`unrs-resolver` `^1.13.0`** is a direct dependency, though nothing imports it. The resolver
+  asks for `^1.7.11`, and 1.12.x has a `postinstall` script, so an install that lands on 1.12.x
+  fails every pnpm version's strict build check with `ERR_PNPM_IGNORED_BUILDS`. 1.13.0 has no
+  script, and the direct dependency pulls it into the graph.
+- **`ts-builds/no-boundaries-disable`** reads directives from ESLint's own parse,
+  `sourceCode.getDisableDirectives()` and `sourceCode.applyInlineConfig()`, never from the
+  comment text. Five review rounds each found a comment shape a hand parser or text scan missed:
+  quoted names, no commas, arrays, braces, a `--` inside a value, and backslash escapes in a
+  quoted name. ESLint decodes all of them before applying the comment. The raw text is still
+  scanned as well, so a guarded name in a disable's `-- reason` is reported. Don't go back to
+  parsing comments by hand.
+
+`test/fixtures/architecture` is an on-disk pnpm workspace. Its "registry" packages are local
+`file:` packages, so installing it needs no network. `test/architecture.spec.ts` installs it
+frozen and lints it through the built package in child processes with real working directories.
+An in-process `cwd` option doesn't move `process.cwd()` and gave a false green. The spec covers:
+
+- one seeded violation per import form, each reported exactly once;
+- runs from the root and from inside workspaces, with and without workspace configs that
+  re-export the root;
+- a `--classify` snapshot of how every import is classified;
+- a `--cwd-root` harness check that the working directory really varies.
+
+`test/architecture-packed.spec.ts` packs ts-builds and installs the tarball into a copy of the
+fixture outside the repo, hoisting only `eslint` and `typescript-eslint`. Inside the repo, Node
+walks up into this repo's `node_modules`, so only the packed install shows a consumer needs
+nothing else. Both specs check against `EXPECTED` in `test/architecture-expected.ts`, so the
+packed spec doesn't depend on the in-repo install. Its consumer install has no lockfile and
+resolves ts-builds' dependencies on every run, from the store when they're cached. The root
+`vitest.config.ts` excludes `test/fixtures/**`, since fixture test files are data.
+
 ### Cross-package `validate:*` commands (removed in 4.0)
 
 A `commands["validate:X"]` entry whose `cwd:` escapes the package root (parent traversal or an absolute path outside it) fails with exit code 1 when it runs, either as a chain step or when invoked directly. It warned from 2.8.0 to 3.x. The check lives in `escapingValidateCwdError` (`src/cli/config.ts`) and is called from `runChain` and the CLI's direct-command dispatch, not from `loadConfig`, so unrelated commands such as `build` still work with a stale entry. Use a workspace orchestrator (Turbo, nx, `pnpm -r`) for cross-package validation instead. See issue #72.

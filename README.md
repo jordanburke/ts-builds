@@ -508,6 +508,91 @@ export default defineConfig(
 )
 ```
 
+### Architecture boundaries (pnpm monorepos, preview)
+
+One policy module, kept in your repo, says which workspaces may import which. `createBoundaries`
+turns it into an [eslint-plugin-boundaries](https://www.jsboundaries.dev) config that checks every
+import, per file, in the editor and in CI.
+
+```javascript
+// architecture.mjs, at the workspace root
+import { defineArchitecture } from "ts-builds/architecture"
+
+export default defineArchitecture({
+  rootDir: import.meta.dirname,
+  workspaces: {
+    "@acme/types": { dir: "packages/types", type: "pure" },
+    "@acme/rules": { dir: "packages/rules", type: "pure", allow: ["@acme/types"], deny: ["pg", "@ai-sdk/*"] },
+    "@acme/db": { dir: "packages/db", type: "infra" },
+    "@acme/api": { dir: "apps/api", type: "app", allow: ["@acme/*"] },
+  },
+  testPolicy: { allowExternals: ["vitest"] },
+})
+```
+
+```javascript
+// eslint.config.js
+import { createBoundaries } from "ts-builds/eslint-boundaries"
+import baseConfig from "ts-builds/eslint"
+
+import architecture from "./architecture.mjs"
+
+export default [...baseConfig, ...createBoundaries(architecture).configs]
+```
+
+What a policy allows:
+
+- **Other workspaces:** only those its `allow` names, by package name or `@scope/*` glob.
+- **External packages:** only those its own `package.json` declares, never one it merely reaches
+  through hoisting. A type-only import may also come from a `devDependency`, or from a package
+  whose `@types/*` package is declared.
+- **Tests:** files under the workspace's `test/`, and `*.test.*`/`*.spec.*` files under its
+  `src/`, may also import its `devDependencies` and `testPolicy.allowExternals`, and each other.
+  Source files may not import test files, in their own workspace or another.
+- **Node core modules:** allowed, unless `deny` names them. `deny: ["fs"]` also stops `node:fs`,
+  and a glob such as `node:child_*` covers both spellings too.
+- **`deny`:** external packages only, and it wins over a declared dependency for every import
+  form: `import`, `import type`, dynamic `import()`, `require`, `import x = require()` and
+  re-exports.
+- **`"pure"`:** a pure workspace may allow only other pure workspaces.
+
+`defineArchitecture` throws when the policy doesn't match the disk:
+
+- `rootDir` isn't absolute, or its `pnpm-workspace.yaml` is missing or lists no `packages`.
+- A workspace the root lists has no policy, or its `package.json` can't be read.
+- A policy names a directory the root doesn't list, or a package name that differs.
+- A workspace has no `src`.
+- An `allow` entry matches nothing, or a pure workspace allows an impure one.
+- A `deny` entry matches a workspace. Leave the workspace out of `allow` instead.
+
+Each of eslint-plugin-boundaries' defaults that passes silently is forced:
+
+- The root path is your absolute `rootDir`, not the cwd.
+- Elements are each workspace's `src` and `test`.
+- Imports resolve through `eslint-import-resolver-typescript`, with every workspace's tsconfig, so
+  `paths` aliases work. ts-builds loads the resolver itself; you don't install it.
+- Anything no policy allows is reported, external modules included.
+- A file in a `src` or `test` directory that belongs to no workspace is an error, and so is an
+  import of a local file outside every workspace.
+- A comment that would silence a `boundaries/*` rule is an error: an `eslint-disable` naming one,
+  a blanket `eslint-disable`, or an `/* eslint … */` config comment naming one.
+
+Known limits:
+
+- **Workspaces must export their source.** The fixture's packages export raw `./src/*.ts`, as the
+  issue this came from assumes. A workspace whose `exports` point at `dist` resolves to `dist`, which
+  belongs to no element, so its imports are reported as having no policy.
+- **Code outside `src` and `test` isn't checked,** and a relative path into an allowed workspace
+  (`../../packages/x/src/internal.ts`) passes like a package import does.
+- **Some disable comments can't be reported,** because ESLint applies them before any rule runs:
+  a blanket `/* eslint-disable */` at the very start of a file, an `/* eslint … */` config comment
+  that turns `ts-builds/no-boundaries-disable` itself off, an `eslint-disable-line` naming it in a
+  one-line file, and combinations of directives placed to cover each other. To rule them all out,
+  run the boundary check in CI with `--no-inline-config`.
+- **Run the boundary lint from the repo root.** With several tsconfigs, an `@/*` path alias has been
+  seen to fail to resolve when linting from inside an app. The fixture's single alias resolves
+  from both places.
+
 ## Bundled Packages
 
 Run `npx ts-builds info` to see all bundled packages. You don't need to install:
