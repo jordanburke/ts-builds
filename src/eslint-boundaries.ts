@@ -108,10 +108,12 @@ function workspacePolicies(ws: ResolvedWorkspace, testExternals: readonly string
 }
 
 // `eslint-disable`, `eslint-disable-line` and `eslint-disable-next-line`, with an
-// optional rule list and `-- reason`.
-const DISABLE_DIRECTIVE = /^\s*eslint-disable(-next-line|-line)?(?:\s+([^]*?))?\s*(?:--[^]*)?$/
+// optional rule list and `-- reason`. Like ESLint, a reason starts only at a run of two or
+// more dashes with whitespace on both sides, so `"a--b"` stays part of the list.
+const DISABLE_DIRECTIVE = /^\s*eslint-disable(-next-line|-line)?(\s[^]*)?$/
+const REASON_SEPARATOR = /\s-{2,}\s/
 // `/* eslint rule: "off", … */`, which reconfigures rules for the whole file.
-const CONFIG_DIRECTIVE = /^\s*eslint\s+([^]*?)\s*(?:--[^]*)?$/
+const CONFIG_DIRECTIVE = /^\s*eslint\s/
 
 // Any mention of a boundary rule or the guard, however the comment is written. ESLint's own
 // directive parser accepts more shapes (quotes, no commas, braces, arrays) than a re-parse
@@ -124,23 +126,23 @@ const guardedNames = (text: string): string[] =>
     .toArray()
 
 /**
- * `blanket` is a disable directive with no rule list; `names` are the boundary and guard
- * rules the comment mentions anywhere in its rule list or config body.
+ * `blanket` is a disable directive with no rule list. `names` are the boundary and guard
+ * rules the comment mentions anywhere, its reason included: matching ESLint's split of the
+ * reason exactly isn't worth the risk, and a reason that names a boundary rule is rare.
  */
 type Directive = { kind: "block" | "line" | "next-line" | "config"; blanket: boolean; names: string[] }
 
 function parseDirective(comment: { type: string; value: string }): Option<Directive> {
   const disable = DISABLE_DIRECTIVE.exec(comment.value)
   if (disable !== null) {
-    const list = (disable.at(2) ?? "").trim()
+    const list = (` ${disable.at(2) ?? ""} `.split(REASON_SEPARATOR)[0] ?? "").trim()
     const suffix = disable.at(1)
     const kind = suffix === "-line" ? "line" : suffix === "-next-line" ? "next-line" : "block"
-    return Option({ kind, blanket: list.length === 0, names: guardedNames(list) })
+    return Option({ kind, blanket: list.length === 0, names: guardedNames(comment.value) })
   }
   // Config comments are only read from block comments.
-  const config = comment.type === "Block" ? CONFIG_DIRECTIVE.exec(comment.value) : null
-  if (config === null) return Option.none<Directive>()
-  return Option({ kind: "config" as const, blanket: false, names: guardedNames(config.at(1) ?? "") })
+  if (comment.type !== "Block" || !CONFIG_DIRECTIVE.test(comment.value)) return Option.none<Directive>()
+  return Option({ kind: "config" as const, blanket: false, names: guardedNames(comment.value) })
 }
 
 /**

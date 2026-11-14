@@ -321,6 +321,16 @@ describe("no-boundaries-disable", () => {
     ],
     ["a config comment wrapped in braces", 'const a = 1\n/* eslint {"boundaries/dependencies": 0} */', 2],
     [
+      "a config comment with a double dash inside an option value",
+      'const a = 1\n/* eslint no-restricted-globals: [0, "a--b"], boundaries/dependencies: 0 */',
+      2,
+    ],
+    [
+      "a disable directive with a double dash inside the rule list",
+      "const a = 1\n/* eslint-disable no-console --,boundaries/dependencies */\nconst b = 2",
+      1,
+    ],
+    [
       "a mid-file block disable naming only this rule",
       "const a = 1\n/* eslint-disable ts-builds/no-boundaries-disable */\nconst b = 2",
       1,
@@ -357,6 +367,12 @@ describe("no-boundaries-disable", () => {
     ],
   ])("can't report %s (a known limit)", (_label, code) => {
     expect(lint(code)).toEqual([])
+  })
+
+  it("still reads a reason after a spaced double dash as no rule list", () => {
+    expect(lint("const a = 1\n/* eslint-disable -- legacy code */\nconst b = 2")).toEqual([
+      { line: 1, messageId: "blanket" },
+    ])
   })
 
   it("leaves a disable of an unrelated rule alone", () => {
