@@ -52,9 +52,15 @@ Releases are automated via GitHub Actions. To publish a new version:
 2. Commit with message like `chore: bump version to X.Y.Z`
 3. Create and push a git tag: `git tag -a vX.Y.Z -m "vX.Y.Z" && git push origin main --tags`
 4. GitHub Actions will automatically:
+   - Check the tag matches `package.json`'s version and pick the npm dist-tag
    - Run validation
    - Publish to npm with provenance
    - Create a GitHub Release with auto-generated notes
+
+A prerelease version such as `4.6.0-next.0` publishes to the dist-tag named by its first
+prerelease identifier (`next`) and is marked a prerelease on GitHub, so it never moves `latest`.
+A stable version passes no `--tag`, on purpose: npm then applies `latest` itself and refuses to move
+it back to a lower version, which an explicit `--tag latest` would skip. See RELEASE.md.
 
 **Workflows**:
 
