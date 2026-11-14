@@ -57,15 +57,29 @@ npm version 4.6.0-next.0 -m "chore: bump version to %s"
 git push --follow-tags
 ```
 
-Consumers opt in with `pnpm add ts-builds@next`. The publish job fails before validating when the
-git tag doesn't match `package.json`'s version, or when the prerelease has no named identifier
-(`4.6.0-0`): npm refuses a prerelease without `--tag`, and a numeric tag is not allowed.
+Consumers opt in with `pnpm add ts-builds@next`.
+
+The publish job fails before installing or validating in two cases:
+
+- **The git tag doesn't match `package.json`'s version.** The job would publish `package.json`'s
+  version under the wrong tag.
+- **The prerelease's first identifier isn't a lowercase word,** such as `4.6.0-0`, `4.6.0-RC.1` or
+  `4.6.0-v2.0`, or is `latest` or `x`. That word becomes the dist-tag: npm refuses a prerelease
+  without `--tag`, rejects a tag that is a valid semver range, and `latest` would move `latest`.
+
+A stable version passes no `--tag`, so npm applies `latest` itself. That keeps npm's guard against
+moving `latest` back: a backport such as a 4.x patch published after 5.0.0 fails with
+`Cannot implicitly apply the "latest" tag`. Publish a backport with an explicit tag by hand if you
+mean to.
 
 ## What Happens on Release
 
-1. **Validation**: Runs `pnpm validate` (format, build, test)
-2. **Publish**: Publishes to npm with provenance
-3. **GitHub Release**: Creates release with auto-generated notes
+1. **Dist-tag check**: The tag must match `package.json`'s version; a prerelease gets its dist-tag
+   (see Prereleases)
+2. **Validation**: Runs `pnpm validate` (format, build, test)
+3. **Publish**: Publishes to npm with provenance
+4. **GitHub Release**: Creates release with auto-generated notes, marked a prerelease for a
+   prerelease version
 
 ## Authentication
 
@@ -92,7 +106,7 @@ This package uses [npm trusted publishers](https://docs.npmjs.com/trusted-publis
 ### npm version compatibility
 
 - The workflow does not update npm. It uses the npm bundled with the Node version in `.nvmrc`.
-- `.nvmrc` pins an exact Node version (`24.20.0`, bundling npm 11.19.0), not a bare major.
+- `.nvmrc` pins an exact Node version (`24.21.0`, bundling npm 11.19.0), not a bare major.
   A bare `24` lets `actions/setup-node` pick whichever 24.x the runner has cached, and some
   bundled npm versions break the OIDC exchange.
 

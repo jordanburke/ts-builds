@@ -20,6 +20,8 @@ jobs:
       # A prerelease such as 4.6.0-next.0 publishes to the `next` dist-tag and never
       # moves `latest`. npm refuses a prerelease without --tag, and a mismatched tag
       # would publish package.json's version, so both are checked before anything runs.
+      # A stable version passes no --tag: npm then applies `latest` itself, and keeps
+      # its guard against moving `latest` back to a lower version (a backport).
       - name: Pick the npm dist-tag
         id: dist-tag
         run: |
@@ -28,19 +30,25 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
             exit 1
           fi
-          case "$version" in
-            *-*) prerelease=${version#*-}; tag=${prerelease%%.*} ;;
-            *) tag=latest ;;
-          esac
-          case "$tag" in
-            [a-z]*) ;;
+          release=${version%%+*}
+          case "$release" in
+            *-*)
+              prerelease=${release#*-}
+              tag=${prerelease%%.*}
+              case "$tag" in
+                "" | latest | x | *[!a-z]*)
+                  echo "::error::Prerelease $version needs a lowercase word as its first identifier, such as ${release%%-*}-next.0. That word becomes the npm dist-tag, so it can't be latest or x"
+                  exit 1
+                  ;;
+              esac
+              echo "tag=$tag" >> "$GITHUB_OUTPUT"
+              echo "Publishing $version to dist-tag $tag"
+              ;;
             *)
-              echo "::error::Prerelease $version needs a named identifier for its dist-tag, such as ${version%%-*}-next.0"
-              exit 1
+              echo "tag=" >> "$GITHUB_OUTPUT"
+              echo "Publishing $version to latest"
               ;;
           esac
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "Publishing $version to dist-tag $tag"
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -64,7 +72,7 @@ jobs:
           npm pack --dry-run
 
       - name: Publish to npm
-        run: npm publish --provenance --access public --tag "$DIST_TAG"
+        run: npm publish --provenance --access public ${DIST_TAG:+--tag "$DIST_TAG"}
         env:
           DIST_TAG: ${{ steps.dist-tag.outputs.tag }}
 
@@ -72,6 +80,6 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
-          prerelease: ${{ steps.dist-tag.outputs.tag != 'latest' }}
+          prerelease: ${{ steps.dist-tag.outputs.tag != '' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

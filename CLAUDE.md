@@ -59,7 +59,8 @@ Releases are automated via GitHub Actions. To publish a new version:
 
 A prerelease version such as `4.6.0-next.0` publishes to the dist-tag named by its first
 prerelease identifier (`next`) and is marked a prerelease on GitHub, so it never moves `latest`.
-See RELEASE.md.
+A stable version passes no `--tag`, on purpose: npm then applies `latest` itself and refuses to move
+it back to a lower version, which an explicit `--tag latest` would skip. See RELEASE.md.
 
 **Workflows**:
 
