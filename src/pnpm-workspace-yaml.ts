@@ -26,10 +26,10 @@ const YAML_LIST_ENTRY = /^\s*-\s*(["']?)([^"'\s#]+)\1\s*(?:#.*)?$/
  * (`- item` lines below it) or a flow list on the header line (`key: [a, 'b']`).
  */
 export function readListBlock(yaml: string, header: RegExp): string[] {
-  const flow = yaml
-    .split("\n")
-    .find((line) => header.test(line))
-    ?.match(/:\s*\[([^\]]*)\]/)
+  // A flow list may span lines, so match from the header to the first closing bracket.
+  const lines = yaml.split("\n")
+  const start = lines.findIndex((line) => header.test(line))
+  const flow = start === -1 ? null : /^[^:]*:\s*\[([^\]]*)\]/.exec(lines.slice(start).join("\n"))
   if (flow?.[1] !== undefined) {
     return flow[1]
       .split(",")

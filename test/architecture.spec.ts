@@ -207,9 +207,12 @@ describe("defineArchitecture", () => {
     })
   })
 
-  it("reads a flow-style packages list", () => {
+  it.each([
+    ["on one line", "packages: ['packages/*', \"apps/*\"]\n"],
+    ["over several lines", "packages: [\n  'packages/*',\n  \"apps/*\",\n]\nminimumReleaseAge: 1440\n"],
+  ])("reads a flow-style packages list %s", (_label, yaml) => {
     const files = {
-      "pnpm-workspace.yaml": "packages: ['packages/*', \"apps/*\"]\n",
+      "pnpm-workspace.yaml": yaml,
       "packages/a/package.json": JSON.stringify({ name: "@x/a" }),
       "packages/a/src/index.ts": "",
     }
@@ -289,6 +292,23 @@ describe("no-boundaries-disable", () => {
 
   it.each([
     ["a config comment turning a boundaries rule off", 'const a = 1\n/* eslint boundaries/dependencies: "off" */', 2],
+    ["a config comment with a double-quoted name", 'const a = 1\n/* eslint "boundaries/dependencies": "off" */', 2],
+    ["a config comment with a single-quoted name", "const a = 1\n/* eslint 'boundaries/dependencies': 'off' */", 2],
+    [
+      "a config comment with a quoted name second in the list",
+      'const a = 1\n/* eslint no-console: "off", "boundaries/dependencies": "off" */',
+      2,
+    ],
+    [
+      "a mid-file block disable naming only this rule",
+      "const a = 1\n/* eslint-disable ts-builds/no-boundaries-disable */\nconst b = 2",
+      1,
+    ],
+    [
+      "a next-line disable naming only this rule",
+      "const a = 1\n// eslint-disable-next-line ts-builds/no-boundaries-disable\nconst b = 2",
+      2,
+    ],
     [
       "a same-line disable that also names this rule",
       "const a = 1 // eslint-disable-line boundaries/dependencies, ts-builds/no-boundaries-disable\nconst b = 2",

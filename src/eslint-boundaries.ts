@@ -133,7 +133,8 @@ function parseDirective(comment: { type: string; value: string }): Option<Direct
   const config = comment.type === "Block" ? CONFIG_DIRECTIVE.exec(comment.value) : null
   if (config === null) return Option.none<Directive>()
   const rules = (config.at(1) ?? "").split(",").flatMap((entry) => {
-    const name = entry.split(":")[0]?.trim() ?? ""
+    // A rule name may be quoted: `/* eslint "boundaries/dependencies": "off" */`.
+    const name = (entry.split(":")[0]?.trim() ?? "").replace(/^(["'])(.*)\1$/, "$2")
     return name.length > 0 && !name.includes(" ") ? [name] : []
   })
   return Option({ kind: "config", rules })
@@ -158,10 +159,11 @@ function reportLine(kind: Directive["kind"], line: number, column: number, lastL
  * - an `/* eslint … *\/` config comment that names a `boundaries/*` rule or this rule.
  *
  * Each is reported on a line its own range doesn't cover, so the directive can't silence
- * the report. That is impossible in three cases, which ESLint's directive handling leaves
- * open to any rule: a block directive at the very start of a file, a `-line` directive in a
- * one-line file, and a config comment that turns this rule itself off. Only a lint run with
- * inline config off (`--no-inline-config`) closes those.
+ * the report. ESLint applies directives before any rule runs, so some comments still can't
+ * be reported: a block directive at the very start of a file, a `-line` directive in a
+ * one-line file, a config comment that turns this rule itself off, and combinations of
+ * directives that cover each other's report lines. Only a lint run with inline config off
+ * (`--no-inline-config`) closes those.
  */
 export const noBoundariesDisable: Rule.RuleModule = {
   meta: {

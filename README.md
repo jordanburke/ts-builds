@@ -584,10 +584,11 @@ Known limits:
   belongs to no element, so its imports are reported as having no policy.
 - **Code outside `src` and `test` isn't checked,** and a relative path into an allowed workspace
   (`../../packages/x/src/internal.ts`) passes like a package import does.
-- **Three disable comments can't be reported,** because ESLint applies them before any rule runs:
+- **Some disable comments can't be reported,** because ESLint applies them before any rule runs:
   a blanket `/* eslint-disable */` at the very start of a file, an `/* eslint … */` config comment
-  that turns `ts-builds/no-boundaries-disable` itself off, and an `eslint-disable-line` naming it in
-  a one-line file. To rule them out, run the boundary check in CI with `--no-inline-config`.
+  that turns `ts-builds/no-boundaries-disable` itself off, an `eslint-disable-line` naming it in a
+  one-line file, and combinations of directives placed to cover each other. To rule them all out,
+  run the boundary check in CI with `--no-inline-config`.
 - **Run the boundary lint from the repo root.** With several tsconfigs, an `@/*` path alias has been
   seen to fail to resolve when linting from inside an app. The fixture's single alias resolves
   from both places.
