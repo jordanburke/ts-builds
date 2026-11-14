@@ -6,6 +6,14 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+### Dependencies
+
+- update bundled dependencies to latest and raise their ranges to match (#240): `functype` /
+  `functype-os` `^1.26.0`, `eslint-plugin-functype` / `eslint-config-functype` `^2.126.0`,
+  `typescript-eslint` `^8.72.2`, `prettier` `^3.10.1`, `eslint` `^10.14.0`, `vitest` and the
+  `@vitest/*` packages `^5.1.0`. A consumer's install now resolves at least these versions.
+  TypeScript stays on 6.0, because `typescript-eslint` 8.72.2 supports only `typescript <6.1.0`.
+
 ## 4.5.0 (2026-11-12)
 
 ### Features
