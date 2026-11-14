@@ -321,6 +321,30 @@ describe("no-boundaries-disable", () => {
     ],
     ["a config comment wrapped in braces", 'const a = 1\n/* eslint {"boundaries/dependencies": 0} */', 2],
     [
+      "a config comment with a unicode escape in the rule name",
+      String.raw`const a = 1
+/* eslint "\u0062oundaries/dependencies": 0 */`,
+      2,
+    ],
+    [
+      "a config comment with an escaped slash in the rule name",
+      String.raw`const a = 1
+/* eslint "boundaries\/dependencies": 0 */`,
+      2,
+    ],
+    [
+      "a config comment with an escaped letter in the rule name",
+      String.raw`const a = 1
+/* eslint "boundaries/\dependencies": 0 */`,
+      2,
+    ],
+    [
+      "a config comment with a single-quoted escaped name",
+      String.raw`const a = 1
+/* eslint '\u0062oundaries/dependencies': 0 */`,
+      2,
+    ],
+    [
       "a config comment with a double dash inside an option value",
       'const a = 1\n/* eslint no-restricted-globals: [0, "a--b"], boundaries/dependencies: 0 */',
       2,

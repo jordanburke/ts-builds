@@ -397,6 +397,13 @@ fail, with one exception, noted under the resolver:
   asks for `^1.7.11`, and 1.12.x has a `postinstall` script, so an install that lands on 1.12.x
   fails every pnpm version's strict build check with `ERR_PNPM_IGNORED_BUILDS`. 1.13.0 has no
   script, and the direct dependency pulls it into the graph.
+- **`ts-builds/no-boundaries-disable`** reads directives from ESLint's own parse,
+  `sourceCode.getDisableDirectives()` and `sourceCode.applyInlineConfig()`, never from the
+  comment text. Five review rounds each found a comment shape a hand parser or text scan missed:
+  quoted names, no commas, arrays, braces, a `--` inside a value, and backslash escapes in a
+  quoted name. ESLint decodes all of them before applying the comment. The raw text is still
+  scanned as well, so a guarded name in a disable's `-- reason` is reported. Don't go back to
+  parsing comments by hand.
 
 `test/fixtures/architecture` is an on-disk pnpm workspace. Its "registry" packages are local
 `file:` packages, so installing it needs no network. `test/architecture.spec.ts` installs it

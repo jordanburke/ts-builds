@@ -2,7 +2,7 @@ import { builtinModules, createRequire } from "node:module"
 
 import type { Linter, Rule } from "eslint"
 import boundaries from "eslint-plugin-boundaries"
-import { List, Option } from "functype"
+import { List, Map } from "functype"
 
 import { type Architecture, matchesPackagePattern, type ResolvedWorkspace } from "./architecture"
 
@@ -107,42 +107,54 @@ function workspacePolicies(ws: ResolvedWorkspace, testExternals: readonly string
   ]
 }
 
-// `eslint-disable`, `eslint-disable-line` and `eslint-disable-next-line`, with an
-// optional rule list and `-- reason`. Like ESLint, a reason starts only at a run of two or
-// more dashes with whitespace on both sides, so `"a--b"` stays part of the list.
-const DISABLE_DIRECTIVE = /^\s*eslint-disable(-next-line|-line)?(\s[^]*)?$/
-const REASON_SEPARATOR = /\s-{2,}\s/
-// `/* eslint rule: "off", … */`, which reconfigures rules for the whole file.
-const CONFIG_DIRECTIVE = /^\s*eslint\s/
-
-// Any mention of a boundary rule or the guard, however the comment is written. ESLint's own
-// directive parser accepts more shapes (quotes, no commas, braces, arrays) than a re-parse
-// would track, so the comment text is scanned instead of parsed.
+// A boundary rule or the guard, by name.
 const GUARDED_NAME = /(?:boundaries\/[\w-]+|ts-builds\/no-boundaries-disable)/g
+const isGuarded = (rule: string): boolean =>
+  rule.startsWith("boundaries/") || rule === "ts-builds/no-boundaries-disable"
 
-const guardedNames = (text: string): string[] =>
-  List([...text.matchAll(GUARDED_NAME)].map((match) => match[0]))
-    .distinct()
-    .toArray()
+/** Every guarded name a text mentions, however it is quoted or separated. */
+const guardedNames = (text: string): string[] => [...text.matchAll(GUARDED_NAME)].map((match) => match[0])
+
+type DirectiveKind = "block" | "line" | "next-line" | "config"
+type Location = { start: { line: number; column: number } }
+
+/** A comment ESLint will apply, as ESLint itself parsed it. */
+type Directive = { kind: DirectiveKind; loc: Location; blanket: boolean; names: string[] }
+
+const DISABLE_KINDS = Map<string, DirectiveKind>([
+  ["disable", "block"],
+  ["disable-line", "line"],
+  ["disable-next-line", "next-line"],
+])
+
+// ESLint's own shapes, narrowed to what this rule reads. A comment always has a location.
+type DisableDirective = { type: string; value: string; node: { value: string; loc: Location } }
+type InlineConfig = { config: { rules?: Record<string, unknown> }; loc: Location }
+type DirectiveSource = {
+  getDisableDirectives(): { directives: DisableDirective[] }
+  applyInlineConfig(): { configs: InlineConfig[] }
+}
 
 /**
- * `blanket` is a disable directive with no rule list. `names` are the boundary and guard
- * rules the comment mentions anywhere, its reason included: matching ESLint's split of the
- * reason exactly isn't worth the risk, and a reason that names a boundary rule is rare.
+ * The directives in a file, read from ESLint's own parse rather than from the comment text,
+ * so every shape ESLint accepts (quotes, escapes, no commas, braces, reasons) is seen the way
+ * ESLint sees it. The raw text is scanned too, so a name in a reason is also reported.
  */
-type Directive = { kind: "block" | "line" | "next-line" | "config"; blanket: boolean; names: string[] }
-
-function parseDirective(comment: { type: string; value: string }): Option<Directive> {
-  const disable = DISABLE_DIRECTIVE.exec(comment.value)
-  if (disable !== null) {
-    const list = (` ${disable.at(2) ?? ""} `.split(REASON_SEPARATOR)[0] ?? "").trim()
-    const suffix = disable.at(1)
-    const kind = suffix === "-line" ? "line" : suffix === "-next-line" ? "next-line" : "block"
-    return Option({ kind, blanket: list.length === 0, names: guardedNames(comment.value) })
-  }
-  // Config comments are only read from block comments.
-  if (comment.type !== "Block" || !CONFIG_DIRECTIVE.test(comment.value)) return Option.none<Directive>()
-  return Option({ kind: "config" as const, blanket: false, names: guardedNames(comment.value) })
+function directivesOf(sourceCode: DirectiveSource): Directive[] {
+  const disables = sourceCode.getDisableDirectives().directives.flatMap((directive): Directive[] => {
+    const { loc, value: text } = directive.node
+    const names = [...guardedNames(directive.value), ...guardedNames(text)]
+    return DISABLE_KINDS.get(directive.type)
+      .map((kind): Directive[] => [{ kind, loc, blanket: directive.value.trim().length === 0, names }])
+      .orElse([])
+  })
+  const configs = sourceCode.applyInlineConfig().configs.map((inline): Directive => ({
+    kind: "config",
+    loc: inline.loc,
+    blanket: false,
+    names: Object.keys(inline.config.rules ?? {}).filter(isGuarded),
+  }))
+  return [...disables, ...configs]
 }
 
 /**
@@ -150,7 +162,7 @@ function parseDirective(comment: { type: string; value: string }): Option<Direct
  * A `-next-line` directive covers the line after it, a `-line` directive its own line, and
  * a block directive everything from the comment on.
  */
-function reportLine(kind: Directive["kind"], line: number, column: number, lastLine: number): number {
+function reportLine(kind: DirectiveKind, line: number, column: number, lastLine: number): number {
   if (kind === "line") return line < lastLine ? line + 1 : Math.max(1, line - 1)
   if (kind === "block") return line > 1 || column > 0 ? 1 : line
   return line
@@ -184,20 +196,15 @@ export const noBoundariesDisable: Rule.RuleModule = {
     return {
       Program(program) {
         const lastLine = program.loc?.end.line ?? 1
-        context.sourceCode.getAllComments().forEach((comment) => {
-          if (comment.loc === null || comment.loc === undefined) return
-          const { start } = comment.loc
-          parseDirective(comment).forEach((directive) => {
-            const line = reportLine(directive.kind, start.line, start.column, lastLine)
-            const loc = { line, column: 0 }
-            if (directive.blanket) {
-              context.report({ loc, messageId: "blanket" })
-              return
-            }
-            if (directive.names.length > 0) {
-              context.report({ loc, messageId: "named", data: { rules: directive.names.join(", ") } })
-            }
-          })
+        directivesOf(context.sourceCode as unknown as DirectiveSource).forEach((directive) => {
+          const { start } = directive.loc
+          const loc = { line: reportLine(directive.kind, start.line, start.column, lastLine), column: 0 }
+          if (directive.blanket) {
+            context.report({ loc, messageId: "blanket" })
+            return
+          }
+          const names = List(directive.names).distinct().toArray()
+          if (names.length > 0) context.report({ loc, messageId: "named", data: { rules: names.join(", ") } })
         })
       },
     }
