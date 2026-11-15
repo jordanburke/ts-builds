@@ -21,6 +21,7 @@ exports[`architecture boundaries on the pnpm fixture > classifies every import t
   "packages/rules/src/reaches-hops.ts:4 There is no policy allowing dependencies from elements of type "@fx/rules" to elements of type "@fx/rules:ownDirs"",
   "packages/rules/src/reaches-hops.ts:5 There is no policy allowing dependencies from elements of type "@fx/rules" to elements of type "@fx/rules:ownDirs"",
   "packages/rules/src/reaches-hops.ts:6 There is no policy allowing dependencies from elements of type "@fx/rules" to elements of type "@fx/rules:ownDirs"",
+  "packages/rules/src/reaches-hops.ts:7 There is no policy allowing dependencies from elements of type "@fx/rules" to elements of type "@fx/rules:ownDirs"",
   "packages/rules/src/reaches-undeclared-own.ts:2 There is no policy allowing dependencies from elements of type "@fx/rules" to elements of type "@fx/rules:ownDirs"",
   "packages/rules/src/test/not-a-test-dir.ts:1 There is no policy allowing dependencies from elements of type "@fx/rules" to entities of module with origin "external" and module source "test-runner"",
   "packages/rules/src/type-from-dev.ts:1 There is no policy allowing dependencies from elements of type "@fx/rules" to entities of module with origin "external" and module source "test-helper"",

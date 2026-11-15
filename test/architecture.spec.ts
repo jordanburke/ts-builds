@@ -425,6 +425,28 @@ describe("defineArchitecture", () => {
     })
   })
 
+  it("throws for a workspace folder inside another workspace's src", () => {
+    const files = {
+      "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n  - 'packages/a/src/*'\n",
+      "packages/a/package.json": JSON.stringify({ name: "@x/a" }),
+      "packages/a/src/index.ts": "",
+      "packages/a/src/sub/package.json": JSON.stringify({ name: "@x/sub" }),
+      "packages/a/src/sub/src/index.ts": "",
+    }
+    scratchRoot(files, (root) => {
+      const input: ArchitectureInput = {
+        rootDir: root,
+        workspaces: {
+          "@x/a": { dir: "packages/a", type: "lib" },
+          "@x/sub": { dir: "packages/a/src/sub", type: "lib" },
+        },
+      }
+      expect(problemsOf(input)).toEqual([
+        "packages/a/src/sub is a workspace inside packages/a's src, so the boundary rules would read it as packages/a's own code",
+      ])
+    })
+  })
+
   it("throws for an ownDirs folder that is a symlink", () => {
     scratchRoot({ ...ONE_WORKSPACE, "packages/a/data/x.json": "{}" }, (root) => {
       symlinkSync(join(root, "packages", "a", "data"), join(root, "packages", "a", "link"), "dir")

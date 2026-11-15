@@ -417,6 +417,85 @@ describe("ownDirs", () => {
   )
 
   it(
+    "reports an installed copy of a workspace outside allow, as pnpm's injected dependencies leave it",
+    () =>
+      scratchWorkspace(
+        {
+          "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
+          "packages/a/package.json": JSON.stringify({
+            name: "@x/a",
+            version: "0.0.0",
+            type: "module",
+            dependencies: { "@x/b": "workspace:*" },
+          }),
+          "packages/a/src/index.ts": 'import { d } from "../data/d.ts"\nexport const a = d\n',
+          "packages/a/data/d.ts": 'import { b } from "@x/b"\nexport const d = b\n',
+          "packages/b/package.json": pkg("@x/b"),
+          "packages/b/src/index.ts": "export const b = 1\n",
+          // A copy, not a symlink: it resolves inside node_modules, so only the name gives it away.
+          "packages/a/node_modules/@x/b/package.json": JSON.stringify({
+            name: "@x/b",
+            version: "0.0.0",
+            type: "module",
+            exports: "./src/index.ts",
+          }),
+          "packages/a/node_modules/@x/b/src/index.ts": "export const b = 1\n",
+        },
+        async (root) => {
+          const report = await runDepcruise(
+            defineArchitecture({
+              rootDir: root,
+              workspaces: {
+                "@x/a": { dir: "packages/a", type: "lib", ownDirs: ["data"] },
+                "@x/b": { dir: "packages/b", type: "lib" },
+              },
+            }),
+          )
+          expect(report.violations.filter((violation) => violation.rule.startsWith(OWN_DIRS_RULE))).toEqual([
+            {
+              rule: `${OWN_DIRS_RULE}-workspace-package:@x/a`,
+              from: "packages/a/data/d.ts",
+              to: "packages/a/node_modules/@x/b/src/index.ts",
+              via: [],
+            },
+          ])
+        },
+      ),
+    60_000,
+  )
+
+  it(
+    "reports ownDirs code importing a .spec. file in its own src",
+    () =>
+      scratchWorkspace(
+        {
+          "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
+          "packages/a/package.json": pkg("@x/a"),
+          "packages/a/src/index.ts": 'import { d } from "../data/d.ts"\nexport const a = d\n',
+          "packages/a/src/a.spec.ts": "export const s = 1\n",
+          "packages/a/data/d.ts": 'import { s } from "../src/a.spec.ts"\nexport const d = s\n',
+        },
+        async (root) => {
+          const report = await runDepcruise(
+            defineArchitecture({
+              rootDir: root,
+              workspaces: { "@x/a": { dir: "packages/a", type: "lib", ownDirs: ["data"] } },
+            }),
+          )
+          expect(report.violations).toEqual([
+            {
+              rule: `${OWN_DIRS_RULE}-test-file:@x/a`,
+              from: "packages/a/data/d.ts",
+              to: "packages/a/src/a.spec.ts",
+              via: [],
+            },
+          ])
+        },
+      ),
+    60_000,
+  )
+
+  it(
     "passes an ownDirs folder that nothing imports, rather than failing the zero-match guard",
     () =>
       scratchWorkspace(

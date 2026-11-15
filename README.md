@@ -593,6 +593,8 @@ test file.
 - A `testPolicy.allowRootFiles` entry matches no file, matches a file inside a workspace (a
   workspace's own folders go in its `ownDirs`), names a symlink or a file in another case, or
   uses a glob other than `*`, `**` and `?`.
+- A workspace folder sits inside another workspace's `src` or `test`, where both halves would read
+  it as that workspace's own code.
 - A workspace folder, an `ownDirs` folder or a matched file has any of `* ? [ ] { } ( ) ! \` in
   its name. The plugin matches paths with picomatch, which reads `a(b).mjs` as a pattern that
   also matches `ab.mjs`, so such a name can't be allowed exactly.
@@ -657,12 +659,14 @@ throws while loading. It reports:
   reachability chain silently, and ESLint's resolver can resolve an alias that dependency-cruiser
   can't, so neither half would report a reach through it. It covers the workspace's `ownDirs`
   code too.
-- **`own-dirs-boundary:<workspace>`**, **`own-dirs-test-file:<workspace>`** and
-  **`own-dirs-undeclared:<workspace>`:** ESLint doesn't lint `ownDirs` folders, so these check what
-  their code imports. A local import must land in the workspace's own `src` or `ownDirs`, or in the
-  `src` of a workspace its `allow` names, and not on a test file there; anything else, a second
-  hop through a folder beside them or a repo file included, is reported where it leaves. A
-  package must be one the workspace declares, `devDependencies` included: `ownDirs` code is often
+- **`own-dirs-boundary:<workspace>`**, **`own-dirs-test-file:<workspace>`**,
+  **`own-dirs-workspace-package:<workspace>`** and **`own-dirs-undeclared:<workspace>`:** ESLint
+  doesn't lint `ownDirs` folders, so these check what their code imports. A local import must land
+  in the workspace's own `src` or `ownDirs`, or in the `src` of a workspace its `allow` names, and
+  not on a test file there; anything else, a second hop through a folder beside them, a repo file
+  or a relative path into `node_modules` included, is reported where it leaves. A package import
+  must name a package the workspace declares, and not an installed copy of a workspace outside
+  `allow` (pnpm's injected workspace dependencies), `devDependencies` included: `ownDirs` code is often
   build or migration code, so it may use them at runtime, where `src` may only import their
   types. A `deny` reach through `ownDirs` code is reported by `deny-reachable`. Only code that
   `src` or `test` reaches is cruised, so an `ownDirs` folder nothing imports is skipped, not

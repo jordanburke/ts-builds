@@ -362,6 +362,24 @@ function resolveRootFiles(rootDir: string, entries: readonly string[], listed: S
   }
 }
 
+/**
+ * A workspace folder inside another workspace's `src` or `test`. Its files would sit inside
+ * that workspace's element, so both halves would read them as that workspace's own code.
+ */
+function nestedInSourcesProblems(listed: Set<string>): string[] {
+  const dirs = listed.toArray()
+  return dirs.flatMap((dir) =>
+    dirs.flatMap((outer) =>
+      ["src", "test"]
+        .filter((folder) => isWithin(dir, `${outer}/${folder}`))
+        .map(
+          (folder) =>
+            `${dir} is a workspace inside ${outer}'s ${folder}, so the boundary rules would read it as ${outer}'s own code`,
+        ),
+    ),
+  )
+}
+
 function resolveWorkspace(
   rootDir: string,
   name: string,
@@ -433,6 +451,7 @@ export function defineArchitecture(input: ArchitectureInput): Architecture {
       ]
     }),
     ...rootFiles.problems,
+    ...nestedInSourcesProblems(listed),
     ...listed
       .toArray()
       .filter((dir) => !classifiedDirs.has(dir))

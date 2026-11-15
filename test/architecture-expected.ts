@@ -114,7 +114,8 @@ const ownDir = (check: string, file: string, to: string): string =>
  * `packages/rules/data` is an ownDirs folder, which ESLint doesn't lint: `reaches-denied-own.ts`
  * reaches `db-client` through it, and its other files are reported for what they import: an
  * unresolved alias, an undeclared package, a workspace outside `allow`, a second hop through a
- * local file in no element, a root file, its own test folder, and a test file in its own src.
+ * local file in no element, a root file, its own test folder, a test file in its own src, and a
+ * relative path into node_modules.
  * `data/allowed.ts` and `data/core-ok.ts` import only what ownDirs code may, and the tests that
  * import the root `tooling.config.mjs` resolve, so none of them appears.
  */
@@ -145,6 +146,7 @@ export const EXPECTED_DEPCRUISE = [
   ownDir("boundary", "hop-local.ts", "packages/rules/other/hop.ts"),
   ownDir("boundary", "hop-root.ts", "tooling.config.mjs"),
   ownDir("boundary", "hop-test.ts", "packages/rules/test/helpers.ts"),
+  ownDir("boundary", "via-path.ts", "test-runner/index.js"),
   ownDir("test-file", "hop-src-test.ts", "packages/rules/src/colocated.test.ts"),
   ownDir("undeclared", "undeclared.ts", "test-runner/index.js"),
 ]

@@ -16,7 +16,9 @@ conventional commits via `ts-builds changelog`.
     the reached `ownDirs` code imports. A local import must land in the workspace's own `src` or
     `ownDirs`, or an allowed workspace's `src`, and not on a test file there
     (`own-dirs-boundary:<workspace>`, `own-dirs-test-file:<workspace>`). A package must be declared
-    (`own-dirs-undeclared:<workspace>`), and every import must resolve.
+    (`own-dirs-undeclared:<workspace>`) and not an installed copy of a workspace outside `allow`
+    (`own-dirs-workspace-package:<workspace>`), and every import must resolve. `defineArchitecture`
+    also refuses a workspace folder inside another workspace's `src` or `test`.
   - **`testPolicy.allowRootFiles`** lists repo files outside every workspace that test files may
     import, such as `eslint.config.mjs`. Source files still may not. Paths or globs (`*`, `**`,
     `?`), expanded once by `defineArchitecture`.

@@ -484,9 +484,13 @@ scratch copy of the fixture first:
 - **`ownDirs` code** is followed like any reached module, so a `deny` reach through it was already
   reported before #245, and a test's import of an `allowRootFiles` file already resolved; the
   fixture pins both. New in #245: `not-to-unresolvable` includes `ownDirs` in its `from`, and three
-  rules check what `ownDirs` code imports. `own-dirs-boundary:<ws>` is an allow-list: a resolved,
-  non-core, non-`node_modules` target must sit in the workspace's own `src` or `ownDirs`, or an
-  allowed workspace's `src`. The first version listed forbidden workspace folders instead, and
+  rules check what `ownDirs` code imports. `own-dirs-boundary:<ws>` is an allow-list: a resolved
+  target that isn't core or a package import must sit in the workspace's own `src` or `ownDirs`, or
+  an allowed workspace's `src`. Packages are exempt by dependency type (`PACKAGE_DEPENDENCY_TYPES`),
+  never by a `node_modules` path: a second review found that a path exemption let
+  `../../../node_modules/x` past the declared-package check. An installed copy of a workspace
+  (pnpm's injected dependencies) is type `npm` at a `node_modules` path, so
+  `own-dirs-workspace-package:<ws>` refuses it by the names of the workspaces outside `allow`. The first version listed forbidden workspace folders instead, and
   review broke it twice: a second hop through a folder beside them (`data/x.ts → ../other/y.ts →
 anything`), and a disallowed workspace nested inside an allowed one. Permit named folders, never
   a whole workspace folder. `own-dirs-test-file:<ws>` refuses `*.test.*` files inside the permitted

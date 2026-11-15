@@ -1,7 +1,7 @@
 import { existsSync, realpathSync, statSync } from "node:fs"
 import { join } from "node:path"
 
-import type { ICruiseResult, IForbiddenRuleType } from "dependency-cruiser"
+import type { DependencyType, ICruiseResult, IForbiddenRuleType } from "dependency-cruiser"
 import { List, Option } from "functype"
 
 import { type Architecture, coreModulesMatching, type ResolvedWorkspace, typedPackages } from "./architecture"
@@ -16,6 +16,16 @@ const packageFragment = (pattern: string): string => escapeRegex(pattern).replac
 
 /** The prefix of the rules on what a workspace's `ownDirs` code imports: `own-dirs-<check>:<workspace>`. */
 export const OWN_DIRS_RULE = "own-dirs"
+
+/** The dependency types of an import of a package, declared or not (`npm-no-pkg`). */
+const PACKAGE_DEPENDENCY_TYPES: DependencyType[] = [
+  "npm",
+  "npm-dev",
+  "npm-optional",
+  "npm-peer",
+  "npm-bundled",
+  "npm-no-pkg",
+]
 
 /** Folders of a workspace, as a path prefix pattern. */
 const foldersOf = (ws: ResolvedWorkspace, folders: readonly string[]): string =>
@@ -85,19 +95,35 @@ function ownDirRules(ws: ResolvedWorkspace, workspaces: readonly ResolvedWorkspa
     .map((other) => `${escapeRegex(other.dir)}/src`)
   const permitted = [`${escapeRegex(ws.dir)}/(${["src", ...ws.ownDirs].map(escapeRegex).join("|")})`, ...allowedSources]
   const permittedSources = [`${escapeRegex(ws.dir)}/src`, ...allowedSources]
+  const disallowedNames = workspaces
+    .filter((other) => other.name !== ws.name && !ws.allowedWorkspaces.includes(other.name))
+    .map((other) => escapeRegex(other.name))
+  // A workspace installed as a copy (pnpm's injected workspace dependencies) is a package, so
+  // the boundary rule passes it; its name still says which workspace it is.
+  const workspacePackage: IForbiddenRuleType = {
+    name: `${OWN_DIRS_RULE}-workspace-package:${ws.name}`,
+    comment: `${ws.name}'s ownDirs code imports an installed copy of a workspace its allow doesn't name`,
+    severity: "error",
+    from,
+    to: { path: `(^|/)node_modules/(${disallowedNames.join("|")})/` },
+  }
   return [
     {
       name: `${OWN_DIRS_RULE}-boundary:${ws.name}`,
       comment: `${ws.name}'s ownDirs code imports a file outside its own src and ownDirs and outside an allowed workspace's src`,
       severity: "error",
       from,
-      // Resolved, not core, and not a package: `not-to-unresolvable` and `own-dirs-undeclared` own those.
+      // Resolved, and not core or a package import, which `not-to-unresolvable` and
+      // `own-dirs-undeclared` own. Packages are told apart by dependency type, never by a
+      // node_modules path: a relative import of ../node_modules/x is a local file reaching past
+      // the package check, and it is reported here.
       to: {
         couldNotResolve: false,
-        dependencyTypesNot: ["core"],
-        pathNot: `^(${permitted.join("|")})/|(^|/)node_modules/`,
+        dependencyTypesNot: [...PACKAGE_DEPENDENCY_TYPES, "core"],
+        pathNot: `^(${permitted.join("|")})/`,
       },
     },
+    ...(disallowedNames.length > 0 ? [workspacePackage] : []),
     {
       name: `${OWN_DIRS_RULE}-test-file:${ws.name}`,
       comment: `${ws.name}'s ownDirs code imports a test file, which source files may not`,
