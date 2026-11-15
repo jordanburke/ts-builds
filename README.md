@@ -596,9 +596,11 @@ test file.
 - A workspace folder sits inside another workspace's `src` or `test`, where both halves would read
   it as that workspace's own code.
 - A dependency installs a workspace under another name: `"alias": "workspace:@scope/b@*"`,
-  `npm:@scope/b@…`, or a `workspace:`, `file:` or `link:` path to its folder. Both halves tell a
-  workspace import from an external one by name, so the alias would pass as a declared external
-  package. Depend on the workspace by its own name.
+  `npm:@scope/b@…`, or a path to its folder (`../b`, `workspace:../b`, `file:` and `link:` paths, an
+  absolute path or a `file://` URL). Both halves tell a workspace import from an external one by
+  name. Under pnpm's injected dependencies the alias is a copy, and it passes both as a declared
+  external package. As a symlink both halves resolve it, but it's refused either way, so the policy
+  doesn't depend on how pnpm installs it. Depend on the workspace by its own name.
 - A workspace folder, an `ownDirs` folder or a matched file has any of `* ? [ ] { } ( ) ! \` in
   its name. The plugin matches paths with picomatch, which reads `a(b).mjs` as a pattern that
   also matches `ab.mjs`, so such a name can't be allowed exactly.

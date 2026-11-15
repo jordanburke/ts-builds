@@ -494,8 +494,11 @@ scratch copy of the fixture first:
   not (#249): ESLint refuses such a copy from `src` too, since a workspace's name is never a declared
   external, and a copy of an allowed workspace otherwise let `ownDirs` code reach its test files.
   The name match is why `defineArchitecture` refuses a dependency that installs a workspace under
-  another name (`aliasedWorkspaceProblems`, #250): an alias passed both halves as a declared
-  external. The first version listed forbidden workspace folders instead, and
+  another name (`aliasedWorkspaceProblems`, #250): an injected alias passed both halves as a declared
+  external. It reads bare, absolute and `file://` paths too, and compares folders by real path
+  (`realRelative`), because review found pnpm installs `"alias": "../b"`, `file:<abs>` and, on a
+  case-insensitive disk, `file:../B` as the workspace. A symlinked alias is refused as well, so the
+  policy doesn't depend on how pnpm installs it. The first version listed forbidden workspace folders instead, and
   review broke it twice: a second hop through a folder beside them (`data/x.ts → ../other/y.ts →
 anything`), and a disallowed workspace nested inside an allowed one. Permit named folders, never
   a whole workspace folder. `own-dirs-test-file:<ws>` refuses `*.test.*` files inside the permitted
