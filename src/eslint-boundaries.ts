@@ -1,10 +1,10 @@
-import { builtinModules, createRequire } from "node:module"
+import { createRequire } from "node:module"
 
 import type { Linter, Rule } from "eslint"
 import boundaries from "eslint-plugin-boundaries"
 import { List, Map } from "functype"
 
-import { type Architecture, matchesPackagePattern, type ResolvedWorkspace } from "./architecture"
+import { type Architecture, coreModulesMatching, type ResolvedWorkspace } from "./architecture"
 
 /**
  * Every source file a workspace can hold, under `src` or `test`. The glob is not
@@ -34,18 +34,13 @@ const toExternal = (source: readonly string[]): Record<string, unknown> => ({
   to: { module: { origin: "external", source: [...source] } },
 })
 
-const CORE_MODULES = builtinModules.map((name) => name.replace(/^node:/, ""))
-
 /**
  * A `deny` list as module sources. The plugin matches a core module by its literal
  * spelling, so an entry naming one, or a glob matching some, also gets the other spelling:
  * `fs` adds `node:fs`, and `node:o*` adds `os` and `node:os`.
  */
 export function denySources(deny: readonly string[]): string[] {
-  const core = deny.flatMap((entry) => {
-    const bare = entry.replace(/^node:/, "")
-    return CORE_MODULES.filter((name) => matchesPackagePattern(bare, name)).flatMap((name) => [name, `node:${name}`])
-  })
+  const core = deny.flatMap((entry) => coreModulesMatching(entry).flatMap((name) => [name, `node:${name}`]))
   return List([...deny, ...core])
     .distinct()
     .toArray()

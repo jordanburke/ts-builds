@@ -1,6 +1,7 @@
 import { runBuild, runDev, runFormat, runLint, runTest, runTypecheck } from "./cli/commands/build"
 import { runChangelog } from "./cli/commands/changelog"
 import { cleanup } from "./cli/commands/cleanup"
+import { runDepcruiseCommand } from "./cli/commands/depcruise"
 import { runDoctor } from "./cli/commands/doctor"
 import { showHelp, showInfo } from "./cli/commands/info"
 import { createConfig, init } from "./cli/commands/init"
@@ -95,6 +96,9 @@ switch (command) {
     break
   case "doctor":
     process.exit(runDoctor(subCommand === "--fix"))
+    break
+  case "depcruise":
+    process.exit(await runDepcruiseCommand(subCommand))
     break
   case "changelog":
     process.exit(runChangelog(process.argv.slice(3)))

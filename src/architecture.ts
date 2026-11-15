@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { builtinModules } from "node:module"
 import { isAbsolute, join, normalize, relative, sep } from "node:path"
 
 import { Set, Try } from "functype"
@@ -89,6 +90,18 @@ const toPosix = (path: string): string => path.split(sep).join("/")
 export function matchesPackagePattern(pattern: string, name: string): boolean {
   const body = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "[^/]*")
   return new RegExp(`^${body}$`).test(name)
+}
+
+const CORE_MODULES = builtinModules.map((name) => name.replace(/^node:/, ""))
+
+/**
+ * The Node core modules a `deny` entry names, bare (`fs`, never `node:fs`). An entry may
+ * be written either way, and may be a glob such as `node:o*`. An entry that names no core
+ * module returns [].
+ */
+export function coreModulesMatching(entry: string): string[] {
+  const bare = entry.replace(/^node:/, "")
+  return CORE_MODULES.filter((name) => matchesPackagePattern(bare, name))
 }
 
 /**

@@ -24,9 +24,10 @@ const builtEntries = Object.entries(pkg.exports).filter(([, target]) => {
 })
 
 describe("package exports", () => {
-  it("covers the three config entries and the two architecture entries", () => {
+  it("covers the three config entries and the three architecture entries", () => {
     expect(builtEntries.map(([name]) => name).sort()).toEqual([
       "./architecture",
+      "./depcruise",
       "./eslint-boundaries",
       "./tsdown",
       "./vite",
@@ -56,6 +57,12 @@ describe("package exports", () => {
     )
     expect(dts("eslint-boundaries")).toMatch(
       /export declare function createBoundaries\(architecture: Architecture\): BoundariesConfig/,
+    )
+    expect(dts("depcruise")).toMatch(
+      /export declare function createDepcruise\(architecture: Architecture\): DepcruiseConfig/,
+    )
+    expect(dts("depcruise")).toMatch(
+      /export declare function runDepcruise\(architecture: Architecture\): Promise<DepcruiseReport>/,
     )
   })
 })

@@ -12,6 +12,7 @@ export default defineConfig([
       "src/vite.config.base.ts",
       "src/architecture.ts",
       "src/eslint-boundaries.ts",
+      "src/depcruise.ts",
     ],
     format: ["esm"],
     dts: true,

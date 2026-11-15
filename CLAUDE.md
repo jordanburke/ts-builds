@@ -424,6 +424,42 @@ packed spec doesn't depend on the in-repo install. Its consumer install has no l
 resolves ts-builds' dependencies on every run, from the store when they're cached. The root
 `vitest.config.ts` excludes `test/fixtures/**`, since fixture test files are data.
 
+`ts-builds/depcruise` (`src/depcruise.ts`) exports `createDepcruise` and `runDepcruise`, and
+`ts-builds depcruise` (`src/cli/commands/depcruise.ts`) runs it on the nearest
+`architecture.{mjs,js,ts}`. dependency-cruiser is imported dynamically, so other commands don't
+load it. It owns only transitive `deny` reach, runtime cycles and an integrity rule; it has no
+`allowed` list, so direct edges stay with ESLint. What each forced setting guards, all probed in a
+scratch copy of the fixture first:
+
+- **`validate: true` and `ruleSet`** are passed to `cruise()` directly. Without `validate` there
+  are no violations at all, and the default reporter returns exit code 0 regardless, so
+  `runDepcruise` counts error-severity violations itself and returns 0, 1 or 2.
+- **`baseDir`** is `rootDir`, and the entries (`<dir>/src`, `<dir>/test`) are relative to it.
+  Without it, a run from a subdirectory crashed or matched nothing.
+- **`exportsFields` and `conditionNames`**: dependency-cruiser's default `exportsFields` is empty
+  and enhanced-resolve's default `conditionNames` is empty, so workspace packages (and `@fx/db`'s
+  conditional `exports` in the fixture) don't resolve without them.
+- **Per-workspace aliases:** `enhancedResolveOptions.tsconfig` is enhanced-resolve 5.26's own
+  option, `{ configFile, references: [workspace dirs] }`, which resolves each workspace's `paths`
+  inside that workspace only. dependency-cruiser's `tsConfig` option takes one tsconfig, so two
+  workspaces with `@/*` can't both resolve through it. dependency-cruiser's result schema doesn't
+  know the option, so its `format()` rejects the result: `formatViolations` replaces it.
+- **Type-only edges** are kept (`tsPreCompilationDeps: true`), matching ESLint's `deny`, and
+  excluded from cycles with `viaOnly: { dependencyTypesNot: ["type-only"] }`.
+- **`not-to-unresolvable-local`** fails an unresolved specifier starting with `.`, `/`, `#`, `~/`
+  or `@/`. dependency-cruiser refuses any regex with nested repetition ("unsafe regular
+  expression"), which rules out a "not a bare package name" pattern.
+- **Guards in `runDepcruise`:** every rule's `from` must match a cruised module
+  (`rulesMatchingNothing`), something must be cruised, and the TypeScript transpiler must load
+  (`transpilerProblem`). The call site of the transpiler check can't be mutation-tested in this
+  repo, which always has TypeScript; the pure function is unit-tested.
+
+`test/depcruise.spec.ts` runs the fixture through the built package in child processes, from the
+root and from workspaces, and checks `EXPECTED_DEPCRUISE` in `test/architecture-expected.ts`. The
+fixture's `reaches-denied.ts` (through `@fx/types/runtime`) is the case only dependency-cruiser
+sees, and `packages/shared` holds a runtime cycle that must be reported and a type-only one that
+must not. The packed spec runs it in the installed consumer too.
+
 ### Cross-package `validate:*` commands (removed in 4.0)
 
 A `commands["validate:X"]` entry whose `cwd:` escapes the package root (parent traversal or an absolute path outside it) fails with exit code 1 when it runs, either as a chain step or when invoked directly. It warned from 2.8.0 to 3.x. The check lives in `escapingValidateCwdError` (`src/cli/config.ts`) and is called from `runChain` and the CLI's direct-command dispatch, not from `loadConfig`, so unrelated commands such as `build` still work with a stale entry. Use a workspace orchestrator (Turbo, nx, `pnpm -r`) for cross-package validation instead. See issue #72.
