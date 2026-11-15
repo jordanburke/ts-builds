@@ -490,7 +490,15 @@ scratch copy of the fixture first:
   never by a `node_modules` path: a second review found that a path exemption let
   `../../../node_modules/x` past the declared-package check. An installed copy of a workspace
   (pnpm's injected dependencies) is type `npm` at a `node_modules` path, so
-  `own-dirs-workspace-package:<ws>` refuses it by the names of the workspaces outside `allow`. The first version listed forbidden workspace folders instead, and
+  `own-dirs-workspace-package:<ws>` refuses it by the name of every other workspace, allowed or
+  not (#249): ESLint refuses such a copy from `src` too, since a workspace's name is never a declared
+  external, and a copy of an allowed workspace otherwise let `ownDirs` code reach its test files.
+  The name match is why `defineArchitecture` refuses a dependency that installs a workspace under
+  another name (`aliasedWorkspaceProblems`, #250): an injected alias passed both halves as a declared
+  external. It reads bare, absolute and `file://` paths too, and compares folders by real path
+  (`realRelative`), because review found pnpm installs `"alias": "../b"`, `file:<abs>` and, on a
+  case-insensitive disk, `file:../B` as the workspace. A symlinked alias is refused as well, so the
+  policy doesn't depend on how pnpm installs it. The first version listed forbidden workspace folders instead, and
   review broke it twice: a second hop through a folder beside them (`data/x.ts → ../other/y.ts →
 anything`), and a disallowed workspace nested inside an allowed one. Permit named folders, never
   a whole workspace folder. `own-dirs-test-file:<ws>` refuses `*.test.*` files inside the permitted

@@ -595,6 +595,12 @@ test file.
   uses a glob other than `*`, `**` and `?`.
 - A workspace folder sits inside another workspace's `src` or `test`, where both halves would read
   it as that workspace's own code.
+- A dependency installs a workspace under another name: `"alias": "workspace:@scope/b@*"`,
+  `npm:@scope/b@…`, or a path to its folder (`../b`, `workspace:../b`, `file:` and `link:` paths, an
+  absolute path or a `file://` URL). Both halves tell a workspace import from an external one by
+  name. Under pnpm's injected dependencies the alias is a copy, and it passes both as a declared
+  external package. As a symlink both halves resolve it, but it's refused either way, so the policy
+  doesn't depend on how pnpm installs it. Depend on the workspace by its own name.
 - A workspace folder, an `ownDirs` folder or a matched file has any of `* ? [ ] { } ( ) ! \` in
   its name. The plugin matches paths with picomatch, which reads `a(b).mjs` as a pattern that
   also matches `ab.mjs`, so such a name can't be allowed exactly.
@@ -665,8 +671,8 @@ throws while loading. It reports:
   in the workspace's own `src` or `ownDirs`, or in the `src` of a workspace its `allow` names, and
   not on a test file there; anything else, a second hop through a folder beside them, a repo file
   or a relative path into `node_modules` included, is reported where it leaves. A package import
-  must name a package the workspace declares, and not an installed copy of a workspace outside
-  `allow` (pnpm's injected workspace dependencies), `devDependencies` included: `ownDirs` code is often
+  must name a package the workspace declares, and not an installed copy of another workspace,
+  `devDependencies` included: `ownDirs` code is often
   build or migration code, so it may use them at runtime, where `src` may only import their
   types. A `deny` reach through `ownDirs` code is reported by `deny-reachable`. Only code that
   `src` or `test` reaches is cruised, so an `ownDirs` folder nothing imports is skipped, not
@@ -683,6 +689,11 @@ the run.
 
 Known limits:
 
+- **Injected workspace dependencies aren't supported.** pnpm's `injected` (or
+  `injectWorkspacePackages`) installs a copy of a workspace into the consumer's `node_modules`.
+  An import of that copy is refused, whether `allow` names the workspace or not: ESLint reports it
+  from `src` and `test` as an undeclared external package, and `own-dirs-workspace-package`
+  reports it from `ownDirs` code.
 - **External packages aren't followed.** A denied package reached only through another external
   package (an allowed `orm` that imports `pg`) isn't reported. Deny the outer package too.
 - **Aliases resolve from each workspace's own `tsconfig.json`.** `paths` inherited from a base in

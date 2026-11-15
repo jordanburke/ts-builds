@@ -95,17 +95,17 @@ function ownDirRules(ws: ResolvedWorkspace, workspaces: readonly ResolvedWorkspa
     .map((other) => `${escapeRegex(other.dir)}/src`)
   const permitted = [`${escapeRegex(ws.dir)}/(${["src", ...ws.ownDirs].map(escapeRegex).join("|")})`, ...allowedSources]
   const permittedSources = [`${escapeRegex(ws.dir)}/src`, ...allowedSources]
-  const disallowedNames = workspaces
-    .filter((other) => other.name !== ws.name && !ws.allowedWorkspaces.includes(other.name))
-    .map((other) => escapeRegex(other.name))
+  const otherNames = workspaces.filter((other) => other.name !== ws.name).map((other) => escapeRegex(other.name))
   // A workspace installed as a copy (pnpm's injected workspace dependencies) is a package, so
-  // the boundary rule passes it; its name still says which workspace it is.
+  // the boundary rule passes it; its name still says which workspace it is. Every copy is
+  // refused, allowed or not, as ESLint refuses one from src: it resolves into node_modules under
+  // a workspace's name, which is never a declared external.
   const workspacePackage: IForbiddenRuleType = {
     name: `${OWN_DIRS_RULE}-workspace-package:${ws.name}`,
-    comment: `${ws.name}'s ownDirs code imports an installed copy of a workspace its allow doesn't name`,
+    comment: `${ws.name}'s ownDirs code imports an installed copy of a workspace; import the workspace itself`,
     severity: "error",
     from,
-    to: { path: `(^|/)node_modules/(${disallowedNames.join("|")})/` },
+    to: { path: `(^|/)node_modules/(${otherNames.join("|")})/` },
   }
   return [
     {
@@ -123,7 +123,7 @@ function ownDirRules(ws: ResolvedWorkspace, workspaces: readonly ResolvedWorkspa
         pathNot: `^(${permitted.join("|")})/`,
       },
     },
-    ...(disallowedNames.length > 0 ? [workspacePackage] : []),
+    ...(otherNames.length > 0 ? [workspacePackage] : []),
     {
       name: `${OWN_DIRS_RULE}-test-file:${ws.name}`,
       comment: `${ws.name}'s ownDirs code imports a test file, which source files may not`,

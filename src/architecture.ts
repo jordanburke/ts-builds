@@ -1,8 +1,8 @@
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
 import { builtinModules } from "node:module"
-import { isAbsolute, join, normalize, relative, sep } from "node:path"
+import { isAbsolute, join, normalize, relative, resolve, sep } from "node:path"
 
-import { Set, Try } from "functype"
+import { Map, Option, Set, Try } from "functype"
 
 import { isListedPackage, readWorkspacePackageGlobs } from "./pnpm-workspace-yaml"
 
@@ -362,6 +362,77 @@ function resolveRootFiles(rootDir: string, entries: readonly string[], listed: S
   }
 }
 
+const DEPENDENCY_FIELDS = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"] as const
+
+/** The package name at the start of `name@range`, scoped or not. */
+const leadingPackageName = (spec: string): Option<string> => Option(/^(@[^/@]+\/[^/@]+|[^/@]+)@/.exec(spec)?.[1])
+
+/** `path` relative to the real rootDir, through symlinks and in its case on disk, when it exists. */
+const realRelative = (rootDir: string, path: string): Option<string> =>
+  Try(() => toPosix(relative(realpathSync.native(rootDir), realpathSync.native(path)))).toOption()
+
+/**
+ * The workspace a dependency spec installs, when it names one: `workspace:<name>@<range>` and
+ * `npm:<name>@<range>` by name; by folder, a path relative to the package (`../b`, `workspace:../b`,
+ * `file:../b`, `link:../b`), an absolute one, or a `file://` URL. A plain `workspace:*` or a
+ * registry range names none. Folders are compared by real path, so `file:../B` on a
+ * case-insensitive filesystem still names `packages/b`.
+ */
+function specWorkspace(
+  spec: string,
+  packageDir: string,
+  rootDir: string,
+  names: Set<string>,
+  dirNames: Map<string, string>,
+): Option<string> {
+  const byPath = (path: string): Option<string> =>
+    realRelative(rootDir, resolve(rootDir, packageDir, path)).flatMap((rel) => dirNames.get(rel))
+  if (spec.startsWith(".") || isAbsolute(spec)) return byPath(spec)
+  const [, protocol = "", rest = ""] = /^(workspace|npm|file|link):(.*)$/.exec(spec) ?? []
+  // `resolve` reads `file:///abs` as `/abs`, so a file:// URL needs no branch of its own.
+  if (protocol === "file" || protocol === "link") return byPath(rest)
+  // pnpm refuses an absolute `workspace:` path, so only a relative one names a folder.
+  if (protocol === "workspace" && rest.startsWith(".")) return byPath(rest)
+  if (protocol !== "workspace" && protocol !== "npm") return Option.none()
+  return leadingPackageName(rest).filter((target) => names.has(target))
+}
+
+/**
+ * Dependencies that install a workspace under another name, such as
+ * `"alias": "workspace:@scope/other@*"`. Both halves tell a workspace import from an external
+ * one by name. Installed as a copy (pnpm's injected dependencies), the alias passes both as a
+ * declared external package. Installed as a symlink, both resolve it to the workspace, but it's
+ * refused either way, so the policy doesn't depend on how pnpm installs it.
+ */
+function aliasedWorkspaceProblems(
+  rootDir: string,
+  name: string,
+  policy: WorkspacePolicy,
+  entries: readonly (readonly [string, WorkspacePolicy])[],
+  listed: Set<string>,
+): string[] {
+  const dir = normalizeDir(policy.dir)
+  const pkg = readPackageJson(join(rootDir, dir))
+  const names = Set(entries.map(([other]) => other))
+  // Only listed folders: a policy whose dir isn't a workspace is reported on its own.
+  const dirNames = Map.of(
+    ...entries
+      .map(([other, otherPolicy]): [string, string] => [normalizeDir(otherPolicy.dir), other])
+      .filter(([otherDir]) => listed.has(otherDir)),
+  )
+  return DEPENDENCY_FIELDS.flatMap((field) =>
+    Object.entries(pkg[field] ?? {}).flatMap(([key, spec]) =>
+      specWorkspace(spec, dir, rootDir, names, dirNames)
+        .filter((target) => target !== key)
+        .map(
+          (target) =>
+            `${name}: ${field} "${key}": "${spec}" installs the workspace ${target} under another name, which the boundary rules would read as an external package. Depend on it as "${target}"`,
+        )
+        .toArray(),
+    ),
+  )
+}
+
 /**
  * A workspace folder inside another workspace's `src` or `test`. Its files would sit inside
  * that workspace's element, so both halves would read them as that workspace's own code.
@@ -416,6 +487,7 @@ function resolveWorkspace(
  * - An `allow` entry matches no other workspace, or a pure workspace allows an impure one.
  * - An `ownDirs` entry isn't a plain folder inside the workspace, outside `src` and `test`.
  * - A `testPolicy.allowRootFiles` entry matches no file, or a file inside a workspace.
+ * - A dependency installs a workspace under another name, such as `"alias": "workspace:@scope/b@*"`.
  *
  * @interop It throws on purpose: a consumer's eslint.config.js calls it at load, and a bad
  * policy must stop ESLint from starting rather than lint against a wrong one.
@@ -446,6 +518,7 @@ export function defineArchitecture(input: ArchitectureInput): Architecture {
         ...placement,
         // ownDirs are checked against the workspace folder, so only once that folder is valid.
         ...(placement.length === 0 ? ownDirProblems(rootDir, name, policy, listed) : []),
+        ...(placement.length === 0 ? aliasedWorkspaceProblems(rootDir, name, policy, entries, listed) : []),
         ...allowProblems(name, policy, entries),
         ...denyProblems(name, policy, entries),
       ]

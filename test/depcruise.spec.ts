@@ -416,9 +416,13 @@ describe("ownDirs", () => {
     60_000,
   )
 
-  it(
-    "reports an installed copy of a workspace outside allow, as pnpm's injected dependencies leave it",
-    () =>
+  // ESLint refuses an injected copy from src whether allow names it or not, so ownDirs code matches.
+  it.each([
+    ["outside allow", []],
+    ["that allow names", ["@x/b"]],
+  ] as const)(
+    "reports an installed copy of a workspace %s, as pnpm's injected dependencies leave it",
+    (_label, allow) =>
       scratchWorkspace(
         {
           "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
@@ -446,7 +450,7 @@ describe("ownDirs", () => {
             defineArchitecture({
               rootDir: root,
               workspaces: {
-                "@x/a": { dir: "packages/a", type: "lib", ownDirs: ["data"] },
+                "@x/a": { dir: "packages/a", type: "lib", ownDirs: ["data"], allow },
                 "@x/b": { dir: "packages/b", type: "lib" },
               },
             }),
@@ -459,6 +463,46 @@ describe("ownDirs", () => {
               via: [],
             },
           ])
+        },
+      ),
+    60_000,
+  )
+
+  it(
+    "passes an external package whose name starts with a workspace's name",
+    () =>
+      scratchWorkspace(
+        {
+          "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
+          "packages/a/package.json": JSON.stringify({
+            name: "@x/a",
+            version: "0.0.0",
+            type: "module",
+            dependencies: { "@x/bb": "1.0.0" },
+          }),
+          "packages/a/src/index.ts": 'import { d } from "../data/d.ts"\nexport const a = d\n',
+          "packages/a/data/d.ts": 'import { bb } from "@x/bb"\nexport const d = bb\n',
+          "packages/b/package.json": pkg("@x/b"),
+          "packages/b/src/index.ts": "export const b = 1\n",
+          "packages/a/node_modules/@x/bb/package.json": JSON.stringify({
+            name: "@x/bb",
+            version: "1.0.0",
+            type: "module",
+            exports: "./index.js",
+          }),
+          "packages/a/node_modules/@x/bb/index.js": "export const bb = 1\n",
+        },
+        async (root) => {
+          const report = await runDepcruise(
+            defineArchitecture({
+              rootDir: root,
+              workspaces: {
+                "@x/a": { dir: "packages/a", type: "lib", ownDirs: ["data"] },
+                "@x/b": { dir: "packages/b", type: "lib" },
+              },
+            }),
+          )
+          expect(report.violations).toEqual([])
         },
       ),
     60_000,
