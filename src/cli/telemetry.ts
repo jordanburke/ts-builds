@@ -5,7 +5,7 @@ import { basename, dirname, isAbsolute, join, relative, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import type { ESLint } from "eslint"
-import { Option, Try } from "functype"
+import { $, Do, Option, Try } from "functype"
 
 /**
  * Opt-in lint telemetry: per-rule counts from a `ts-builds lint` run, sent to an endpoint you
@@ -411,9 +411,14 @@ export function gitTrace(results: readonly ESLint.LintResult[], dir: string): Op
             : git(top, ["--literal-pathspecs", ...args, "--", ...files]).map(pathSet)
         const tracked = listed(["ls-files", "-z"])
         const changed = listed(["diff", "--name-only", "-z", "HEAD"])
-        const findings = tracked
-          .flatMap((t) => changed.map((c) => capped.filter((f) => t.has(f.file) && !c.has(f.file))))
-          .orElse([])
+        // Kept: tracked in git and unchanged from HEAD. If either git call fails, keep nothing.
+        const findings = (
+          Do(function* () {
+            const t = yield* $(tracked)
+            const c = yield* $(changed)
+            return capped.filter((f) => t.has(f.file) && !c.has(f.file))
+          }) as Option<TraceFinding[]>
+        ).orElse([])
         return { repo: name, commit: sha, findings, dropped: candidates.length - findings.length }
       }),
     ),

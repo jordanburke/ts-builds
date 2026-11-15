@@ -1,6 +1,8 @@
 import { existsSync, readFileSync } from "node:fs"
 import { isAbsolute, join, relative, resolve } from "node:path"
 
+import { Option, Try } from "functype"
+
 export const targetDir = process.cwd()
 
 /**
@@ -17,16 +19,16 @@ export function cwdEscapesPackageRoot(cwd: string, baseDir: string = targetDir):
 
 /**
  * Returns an error message when a `validate:*` command's `cwd` escapes the
- * package root, or `undefined` when the command may run. Cross-package
+ * package root, or None when the command may run. Cross-package
  * validation through ts-builds chains was removed in 4.0 (issue #72).
  */
-export function escapingValidateCwdError(name: string, cmd: CommandDef): string | undefined {
-  if (!name.startsWith("validate:") || !cmd.cwd || !cwdEscapesPackageRoot(cmd.cwd)) return undefined
-  return (
+export function escapingValidateCwdError(name: string, cmd: CommandDef): Option<string> {
+  if (!name.startsWith("validate:") || !cmd.cwd || !cwdEscapesPackageRoot(cmd.cwd)) return Option.none()
+  return Option(
     `✗ commands[${JSON.stringify(name)}] uses cwd ${JSON.stringify(cmd.cwd)} which escapes the package root.\n` +
-    `   ts-builds 4.0 no longer runs cross-package validation from a package's config.\n` +
-    `   Use a workspace tool (Turbo, nx, pnpm -r) for monorepo orchestration.\n` +
-    `   See: https://github.com/jordanburke/ts-builds/issues/72`
+      `   ts-builds 4.0 no longer runs cross-package validation from a package's config.\n` +
+      `   Use a workspace tool (Turbo, nx, pnpm -r) for monorepo orchestration.\n` +
+      `   See: https://github.com/jordanburke/ts-builds/issues/72`,
   )
 }
 
@@ -51,6 +53,8 @@ export interface LintConfig {
   useProjectEslint?: boolean
   /** Lint `testDir` as well as `srcDir`, when it exists. Off by default until 5.0. */
   includeTests?: boolean
+  /** Fail lint when it finds more warnings than this, as ESLint's `--max-warnings` does. */
+  maxWarnings?: number
 }
 
 export interface SizeConfig {
@@ -81,7 +85,7 @@ export interface ResolvedConfig {
   srcDir: string
   testDir: string
   buildMode: BuildMode
-  lint: { useProjectEslint: boolean; includeTests: boolean }
+  lint: { useProjectEslint: boolean; includeTests: boolean; maxWarnings: Option<number> }
   size: SizeConfig
   changelog: ChangelogConfig
   commands: Record<string, CommandDef>
@@ -167,12 +171,13 @@ export function ciProblems(
 
 function readUserConfig(configPath: string): TsBuildsConfig {
   if (!existsSync(configPath)) return {}
-  try {
-    return JSON.parse(readFileSync(configPath, "utf-8"))
-  } catch {
-    console.error("Warning: Failed to parse ts-builds.config.json, using defaults")
-    return {}
-  }
+  return Try(() => JSON.parse(readFileSync(configPath, "utf-8")) as TsBuildsConfig).fold(
+    (): TsBuildsConfig => {
+      console.error("Warning: Failed to parse ts-builds.config.json, using defaults")
+      return {}
+    },
+    (config) => config,
+  )
 }
 
 export function loadConfig(): ResolvedConfig {
@@ -207,6 +212,7 @@ export function loadConfig(): ResolvedConfig {
     lint: {
       useProjectEslint: userConfig.lint?.useProjectEslint ?? false,
       includeTests: userConfig.lint?.includeTests ?? false,
+      maxWarnings: Option(userConfig.lint?.maxWarnings),
     },
     size: userConfig.size ?? {},
     changelog: userConfig.changelog ?? {},

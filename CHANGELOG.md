@@ -6,6 +6,14 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+### Features
+
+- **lint:** `lint.maxWarnings` in `ts-builds.config.json` fails `lint` when it finds more warnings than
+  that, as ESLint's `--max-warnings` does, with ESLint's wording and exit code 1. `0` makes every
+  warning fail. The sidecar is still written, and with `lint.useProjectEslint` the limit is passed to
+  your ESLint as `--max-warnings`. A value that isn't a whole number of 0 or more stops `lint` with
+  exit code 2.
+
 ### Bug Fixes
 
 - **architecture:** `defineArchitecture` refuses a dependency that installs a workspace under another

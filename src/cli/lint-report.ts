@@ -130,12 +130,16 @@ export function fatalLintReport(fix: boolean, pkg: string): LintReport {
 export async function writeLintReport(report: LintReport, dir: string = targetDir): Promise<void> {
   const path = lintReportPath(dir)
   const tmp = `${path}.tmp`
-  try {
-    await mkdir(join(dir, ".ts-builds"), { recursive: true })
-    await writeFile(tmp, `${JSON.stringify(report, null, 2)}\n`)
-    await rename(tmp, path)
-  } catch (err) {
-    await rm(tmp, { force: true }).catch(() => undefined)
-    console.warn(`⚠  Could not write lint report to ${path}: ${(err as Error).message}`)
-  }
+  const written = await Try.fromPromise(
+    mkdir(join(dir, ".ts-builds"), { recursive: true })
+      .then(() => writeFile(tmp, `${JSON.stringify(report, null, 2)}\n`))
+      .then(() => rename(tmp, path)),
+  )
+  await written.fold(
+    async (err) => {
+      await rm(tmp, { force: true }).catch(() => undefined)
+      console.warn(`⚠  Could not write lint report to ${path}: ${err.message}`)
+    },
+    () => Promise.resolve(),
+  )
 }

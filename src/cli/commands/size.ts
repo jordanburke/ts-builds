@@ -1,8 +1,8 @@
 import { join, relative } from "node:path"
 import { gzipSync } from "node:zlib"
 
-import type { Either } from "functype"
-import { $, Do, List, Option } from "functype"
+import type { Either, Option } from "functype"
+import { $, Do, List, Try } from "functype"
 import { Fs } from "functype-os"
 
 import { loadConfig, targetDir } from "../config"
@@ -61,13 +61,7 @@ function loadBaseline(baselinePath: string): Option<SizeBaseline> {
   const absPath = join(targetDir, baselinePath)
   return Fs.readFileSync(absPath)
     .toOption()
-    .flatMap((content) => {
-      try {
-        return Option(JSON.parse(content) as SizeBaseline)
-      } catch {
-        return Option.none<SizeBaseline>()
-      }
-    })
+    .flatMap((content) => Try(() => JSON.parse(content) as SizeBaseline).toOption())
 }
 
 function saveBaseline(baselinePath: string, files: List<FileSize>): void {

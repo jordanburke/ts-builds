@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from "node:fs"
 import { readdir } from "node:fs/promises"
 import { isAbsolute, join } from "node:path"
 
-import { Set, Try } from "functype"
+import { Option, Set, Try } from "functype"
 
 import { targetDir } from "../config"
 import { LINT_REPORT_VERSION, type LintReport } from "../lint-report"
@@ -83,18 +83,25 @@ export interface LintSummaryTotals {
 /**
  * Validate a parsed sidecar. A wrong-shape or wrong-version file must NOT flow into
  * the aggregate: `undefined` counts would poison the reduce (`NaN > 0 === false`) and
- * silently pass CI. Returns the typed report or null (caller counts nulls as invalid).
+ * silently pass CI. Returns the typed report, or None (the caller counts None as invalid).
  */
-export function parseLintReport(raw: string): LintReport | null {
+export function parseLintReport(raw: string): Option<LintReport> {
   const obj: unknown = Try((): unknown => JSON.parse(raw)).orElse(null)
-  if (typeof obj !== "object" || obj === null) return null
+  return Option(isLintReport(obj) ? obj : undefined)
+}
+
+function isLintReport(obj: unknown): obj is LintReport {
+  if (typeof obj !== "object" || obj === null) return false
   const r = obj as Record<string, unknown>
   const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v)
-  if (r.version !== LINT_REPORT_VERSION) return null
-  if (typeof r.package !== "string" || typeof r.timestamp !== "string") return null
-  if (!isNum(r.errorCount) || !isNum(r.warningCount)) return null
-  if (r.fatal !== undefined && typeof r.fatal !== "boolean") return null
-  return obj as LintReport
+  return (
+    r.version === LINT_REPORT_VERSION &&
+    typeof r.package === "string" &&
+    typeof r.timestamp === "string" &&
+    isNum(r.errorCount) &&
+    isNum(r.warningCount) &&
+    (r.fatal === undefined || typeof r.fatal === "boolean")
+  )
 }
 
 /** Aggregate parsed reports into per-package rows and grand totals. */
@@ -175,7 +182,10 @@ export async function runLintSummary(args: string[]): Promise<number> {
   // between the walk and here (or EACCES) counts as a failure, not a crash.
   const read = paths.map((path) => ({
     path,
-    report: Try(() => parseLintReport(readFileSync(path, "utf-8"))).orElse(null),
+    report: Try(() => readFileSync(path, "utf-8"))
+      .toOption()
+      .flatMap(parseLintReport)
+      .orElse(null),
   }))
   const reports = read.flatMap(({ report }) => (report ? [report] : []))
   const invalid = read.filter(({ report }) => !report)

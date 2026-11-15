@@ -99,7 +99,7 @@ recursion guard), so it would bump-and-tag without ever publishing.
 ### Code Quality Tools
 
 - **ESLint**: Flat config setup in `eslint.config.base.js` with TypeScript support
-- **Own lint config**: this repo lints its own `src/` with the functype preset (`eslint.config.js` re-exports `eslint.config.functype.js`), and `ts-builds.config.json`'s validate chain runs `lint:check`, so a functype rule error fails `pnpm validate` and CI. `test/` is not linted by the chain.
+- **Own lint config**: this repo lints its own `src/` with the functype preset (`eslint.config.js` re-exports `eslint.config.functype.js`), and `ts-builds.config.json`'s validate chain runs `lint:check` with `lint.maxWarnings: 0`, so any functype rule warning or error fails `pnpm validate` and CI. `tsconfig.json` (this repo's own, not the published `tsconfig.base.json`) turns on `noUncheckedIndexedAccess`, which is what makes record lookups typed as possibly missing. `test/` is not linted by the chain.
 - **Prettier**: Integrated with ESLint for consistent formatting
 - **Import Sorting**: Automatic import organization via `simple-import-sort`
 
@@ -190,6 +190,7 @@ Create `ts-builds.config.json` in your project root to customize behavior:
 | `buildMode`             | string   | `"tsdown"`                                         | Build tool: `"tsdown"` (libraries) or `"vite"` (SPAs)        |
 | `lint.useProjectEslint` | boolean  | `false`                                            | Use project's ESLint instead of bundled (for custom plugins) |
 | `lint.includeTests`     | boolean  | `false`                                            | Also lint `testDir`, when it exists. 5.0 turns it on         |
+| `lint.maxWarnings`      | number   | unset                                              | Fail lint past this many warnings, as `--max-warnings`       |
 | `validateChain`         | string[] | `["format", "lint", "typecheck", "test", "build"]` | Commands to run for validate                                 |
 | `commands`              | object   | `{}`                                               | Custom commands                                              |
 | `chains`                | object   | `{}`                                               | Named command chains                                         |
@@ -247,7 +248,7 @@ The `cleanDir` helper lives in `src/cli/commands/build.ts` and is exported for t
 
 `runLint` (`src/cli/commands/build.ts`) has two paths:
 
-- **Bundled (default, `useProjectEslint: false`)** — runs ESLint via its **Node API** (`import("eslint")` resolves ts-builds' own bundled eslint, because tsdown externalizes deps). One pass yields the stylish human output (via `loadFormatter`) **and** exact counts, which are written to a per-package sidecar `.ts-builds/lint-report.json`. `--fix` calls `ESLint.outputFixes`. stdout is drained (`writeAll`) before returning so the tail isn't truncated on a pipe under a task runner. Exit codes are **returned, never `process.exit`ed** (it runs in-process inside the `validate` chain): `1` iff `errorCount>0`, `0` on warnings-only/clean, `2` on a thrown config/no-files error — and a `fatal:true` sidecar is written so a stale prior report can't green-light CI.
+- **Bundled (default, `useProjectEslint: false`)** — runs ESLint via its **Node API** (`import("eslint")` resolves ts-builds' own bundled eslint, because tsdown externalizes deps). One pass yields the stylish human output (via `loadFormatter`) **and** exact counts, which are written to a per-package sidecar `.ts-builds/lint-report.json`. `--fix` calls `ESLint.outputFixes`. stdout is drained (`writeAll`) before returning so the tail isn't truncated on a pipe under a task runner. Exit codes are **returned, never `process.exit`ed** (it runs in-process inside the `validate` chain): `1` iff `errorCount>0` or warnings exceed `lint.maxWarnings` (`lintExitCode`), `0` otherwise, `2` on a thrown config/no-files error — and a `fatal:true` sidecar is written so a stale prior report can't green-light CI. An invalid `lint.maxWarnings` (`maxWarningsProblem`) returns `2` before linting, on both paths. The project path passes the limit as `--max-warnings`.
 - **Project (`useProjectEslint: true`)** — keeps the `npx eslint` spawn; writes **no** sidecar and prints no warning (those packages just don't appear in the summary).
 
 `src/cli/lint-report.ts` owns the `LintReport` type + write/build helpers (imports `config.ts` only — no cycle). `src/cli/commands/lint-summary.ts` owns `ts-builds lint:summary`: a hand-rolled recursive walk (not experimental `fs.glob`) finds every `.ts-builds/lint-report.json` (skips `node_modules`/`dist`/`lib`/`coverage`/hidden dirs, no symlinks), aggregates, prints a padded table + grand total, and exits nonzero iff aggregate errors > 0, any package is `fatal`, **or zero sidecars were found** (an empty sweep must not pass CI). It re-runs nothing — pure reads. The pure functions (`findLintReports`, `aggregateLintReports`, `formatLintSummaryTable`, `lintSummaryExitCode`) are exported for tests.
