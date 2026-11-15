@@ -50,6 +50,22 @@ const summary = (findings: Finding[]): string[] => findings.map((f) => `${f.file
 const under = (findings: Finding[], cwd: string): Finding[] =>
   findings.filter((f) => cwd === "." || f.file.startsWith(`${cwd}/`))
 
+const aliasFiles = (deps: Record<string, Record<string, string>>): Record<string, string> => ({
+  "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
+  "packages/a/package.json": JSON.stringify({ name: "@x/a", ...deps }),
+  "packages/a/src/index.ts": "",
+  "packages/b/package.json": JSON.stringify({ name: "@x/b" }),
+  "packages/b/src/index.ts": "",
+})
+
+const aliasInput = (root: string): ArchitectureInput => ({
+  rootDir: root,
+  workspaces: {
+    "@x/a": { dir: "packages/a", type: "lib" },
+    "@x/b": { dir: "packages/b", type: "lib" },
+  },
+})
+
 describe("architecture boundaries on the pnpm fixture", () => {
   let rootFindings: Finding[] = []
 
@@ -425,25 +441,57 @@ describe("defineArchitecture", () => {
     })
   })
 
-  it("throws for a workspace folder inside another workspace's src", () => {
+  it.each(["src", "test"])("throws for a workspace folder inside another workspace's %s", (folder) => {
     const files = {
-      "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n  - 'packages/a/src/*'\n",
+      "pnpm-workspace.yaml": `packages:\n  - 'packages/*'\n  - 'packages/a/${folder}/*'\n`,
       "packages/a/package.json": JSON.stringify({ name: "@x/a" }),
       "packages/a/src/index.ts": "",
-      "packages/a/src/sub/package.json": JSON.stringify({ name: "@x/sub" }),
-      "packages/a/src/sub/src/index.ts": "",
+      [`packages/a/${folder}/sub/package.json`]: JSON.stringify({ name: "@x/sub" }),
+      [`packages/a/${folder}/sub/src/index.ts`]: "",
     }
     scratchRoot(files, (root) => {
       const input: ArchitectureInput = {
         rootDir: root,
         workspaces: {
           "@x/a": { dir: "packages/a", type: "lib" },
-          "@x/sub": { dir: "packages/a/src/sub", type: "lib" },
+          "@x/sub": { dir: `packages/a/${folder}/sub`, type: "lib" },
         },
       }
       expect(problemsOf(input)).toEqual([
-        "packages/a/src/sub is a workspace inside packages/a's src, so the boundary rules would read it as packages/a's own code",
+        `packages/a/${folder}/sub is a workspace inside packages/a's ${folder}, so the boundary rules would read it as packages/a's own code`,
       ])
+    })
+  })
+
+  // Both halves tell a workspace import from an external one by name, so an alias passes as external.
+  it.each([
+    ["dependencies", "alias", "workspace:@x/b@*"],
+    ["devDependencies", "alias", "workspace:@x/b@^0.0.0"],
+    ["dependencies", "alias", "npm:@x/b@^0.0.0"],
+    ["dependencies", "alias", "workspace:../b"],
+    ["peerDependencies", "alias", "file:../b"],
+    ["optionalDependencies", "alias", "link:../b/"],
+    ["dependencies", "@x/c", "workspace:@x/b@*"],
+  ] as const)("throws for %s %s: %s, a workspace under another name", (field, key, spec) => {
+    scratchRoot(aliasFiles({ [field]: { [key]: spec } }), (root) => {
+      expect(problemsOf(aliasInput(root))).toEqual([
+        `@x/a: ${field} "${key}": "${spec}" installs the workspace @x/b under another name, which the boundary rules would read as an external package. Depend on it as "@x/b"`,
+      ])
+    })
+  })
+
+  it.each([
+    ["@x/b", "workspace:*"],
+    ["@x/b", "workspace:^"],
+    ["@x/b", "workspace:@x/b@*"],
+    ["@x/b", "workspace:../b"],
+    ["@x/b", "file:../b"],
+    ["lodash", "npm:lodash-es@^4.17.0"],
+    ["lodash", "^4.17.0"],
+    ["@x/c", "link:../elsewhere"],
+  ] as const)("accepts %s: %s", (key, spec) => {
+    scratchRoot(aliasFiles({ dependencies: { [key]: spec } }), (root) => {
+      expect(() => defineArchitecture(aliasInput(root))).not.toThrow()
     })
   })
 

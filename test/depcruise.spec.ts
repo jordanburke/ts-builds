@@ -416,9 +416,13 @@ describe("ownDirs", () => {
     60_000,
   )
 
-  it(
-    "reports an installed copy of a workspace outside allow, as pnpm's injected dependencies leave it",
-    () =>
+  // ESLint refuses an injected copy from src whether allow names it or not, so ownDirs code matches.
+  it.each([
+    ["outside allow", []],
+    ["that allow names", ["@x/b"]],
+  ] as const)(
+    "reports an installed copy of a workspace %s, as pnpm's injected dependencies leave it",
+    (_label, allow) =>
       scratchWorkspace(
         {
           "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
@@ -446,7 +450,7 @@ describe("ownDirs", () => {
             defineArchitecture({
               rootDir: root,
               workspaces: {
-                "@x/a": { dir: "packages/a", type: "lib", ownDirs: ["data"] },
+                "@x/a": { dir: "packages/a", type: "lib", ownDirs: ["data"], allow },
                 "@x/b": { dir: "packages/b", type: "lib" },
               },
             }),

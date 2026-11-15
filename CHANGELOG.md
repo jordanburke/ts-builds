@@ -6,6 +6,19 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- **architecture:** `defineArchitecture` refuses a dependency that installs a workspace under another
+  name (#250): `"alias": "workspace:@scope/b@*"`, `npm:@scope/b@…`, or a `workspace:`, `file:` or
+  `link:` path to its folder. Both halves tell a workspace import from an external one by name, so
+  an import of the alias passed ESLint and depcruise as a declared external package.
+- **depcruise:** `own-dirs-workspace-package` refuses an installed copy of any other workspace, not
+  only one outside `allow` (#249). A copy of an allowed workspace let `ownDirs` code import its test
+  files, and ESLint already refuses such a copy from `src`. The README lists injected workspace
+  dependencies as unsupported.
+- **architecture:** the nested-workspace refusal is tested for a workspace inside another's `test`
+  as well as its `src` (#248).
+
 ## 4.6.0 (2026-11-15)
 
 ### Features
