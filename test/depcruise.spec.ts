@@ -11,6 +11,7 @@ import {
   denyPathPattern,
   displayPath,
   formatViolations,
+  OWN_DIRS_RULE,
   runDepcruise,
   transpilerProblem,
   UNRESOLVED_RULE,
@@ -310,6 +311,74 @@ describe("workspace exports with a types condition first", () => {
               via: ["packages/b/src/index.ts"],
             },
           ])
+        },
+      ),
+    60_000,
+  )
+})
+
+describe("ownDirs", () => {
+  it(
+    "reports ownDirs code importing an enclosing workspace, but not its own folder inside it",
+    () =>
+      scratchWorkspace(
+        {
+          "pnpm-workspace.yaml": "packages:\n  - 'packages/outer'\n  - 'packages/outer/inner'\n",
+          "packages/outer/package.json": pkg("@x/outer"),
+          "packages/outer/src/index.ts": "export const outer = 1\n",
+          "packages/outer/inner/package.json": pkg("@x/inner"),
+          "packages/outer/inner/src/index.ts":
+            'import { own } from "../data/own.ts"\nimport { up } from "../data/up.ts"\nexport const inner = [own, up]\n',
+          // Its own src: packages/outer/inner sits inside the disallowed packages/outer.
+          "packages/outer/inner/data/own.ts":
+            'import { inner } from "../src/index.ts"\nexport const own = () => inner\n',
+          "packages/outer/inner/data/up.ts": 'import { outer } from "../../src/index.ts"\nexport const up = outer\n',
+        },
+        async (root) => {
+          const report = await runDepcruise(
+            defineArchitecture({
+              rootDir: root,
+              workspaces: {
+                "@x/outer": { dir: "packages/outer", type: "lib" },
+                "@x/inner": { dir: "packages/outer/inner", type: "lib", ownDirs: ["data"] },
+              },
+            }),
+          )
+          expect(report.violations.filter((violation) => violation.rule.startsWith(OWN_DIRS_RULE))).toEqual([
+            {
+              rule: `${OWN_DIRS_RULE}-workspace:@x/inner`,
+              from: "packages/outer/inner/data/up.ts",
+              to: "packages/outer/src/index.ts",
+              via: [],
+            },
+          ])
+        },
+      ),
+    60_000,
+  )
+
+  it(
+    "passes an ownDirs folder that nothing imports, rather than failing the zero-match guard",
+    () =>
+      scratchWorkspace(
+        {
+          "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
+          "packages/a/package.json": pkg("@x/a"),
+          "packages/a/src/index.ts": "export const a = 1\n",
+          "packages/a/migrations/0001.sql": "create table t (id int);\n",
+        },
+        async (root) => {
+          const report = await runDepcruise(
+            defineArchitecture({
+              rootDir: root,
+              workspaces: { "@x/a": { dir: "packages/a", type: "lib", ownDirs: ["migrations"] } },
+            }),
+          )
+          expect(report).toEqual({
+            exitCode: 0,
+            output: expect.stringContaining("✔ no dependency violations"),
+            violations: [],
+          })
         },
       ),
     60_000,

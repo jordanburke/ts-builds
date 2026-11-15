@@ -14,8 +14,15 @@ const escapeRegex = (text: string): string => text.replace(/[.+?^${}()|[\]\\]/g,
 /** A package-name pattern as a regex fragment: `@scope/*` matches any package in the scope. */
 const packageFragment = (pattern: string): string => escapeRegex(pattern).replace(/\*/g, "[^/]+")
 
+/** The prefix of the rules on what a workspace's `ownDirs` code imports: `own-dirs-<check>:<workspace>`. */
+export const OWN_DIRS_RULE = "own-dirs"
+
+/** Folders of a workspace, as a path prefix pattern. */
+const foldersOf = (ws: ResolvedWorkspace, folders: readonly string[]): string =>
+  `^${escapeRegex(ws.dir)}/(${folders.map(escapeRegex).join("|")})/`
+
 /** The workspace's `src` and `test` directories, as a path prefix pattern. */
-const sourcesOf = (ws: ResolvedWorkspace): string => `^${escapeRegex(ws.dir)}/(src|test)/`
+const sourcesOf = (ws: ResolvedWorkspace): string => foldersOf(ws, ["src", "test"])
 
 /**
  * The resolved paths a workspace's `deny` list forbids reaching. dependency-cruiser reports
@@ -52,12 +59,55 @@ function unresolvedRule(ws: ResolvedWorkspace): IForbiddenRuleType {
     name: `${UNRESOLVED_RULE}:${ws.name}`,
     comment: `An import from ${ws.name} that doesn't resolve and isn't a package it declares. It would end a reachability chain without a finding.`,
     severity: "error",
-    from: { path: sourcesOf(ws) },
+    // ownDirs too: a followed ownDirs file with an unresolved import would end a chain silently.
+    from: { path: foldersOf(ws, ["src", "test", ...ws.ownDirs]) },
     to: {
       couldNotResolve: true,
       ...(declared.length > 0 ? { pathNot: `^(${declared.join("|")})(/|$)` } : {}),
     },
   }
+}
+
+/**
+ * ESLint doesn't lint the files in a workspace's `ownDirs`, so these rules check what they
+ * import, the way the boundary rules check `src`: another workspace only when `allow` names it,
+ * and an external package only when the workspace declares it. A `deny` reach through them is
+ * already reported from `src` and `test`, and an unresolved import by `unresolvedRule`. They see
+ * the files that `src` or `test` reach, since nothing else is cruised.
+ */
+function ownDirRules(ws: ResolvedWorkspace, workspaces: readonly ResolvedWorkspace[]): IForbiddenRuleType[] {
+  if (ws.ownDirs.length === 0) return []
+  const from = { path: foldersOf(ws, ws.ownDirs) }
+  const others = workspaces.filter((other) => other.name !== ws.name)
+  const disallowed = others.filter((other) => !ws.allowedWorkspaces.includes(other.name)).map((other) => other.dir)
+  // Workspace folders nest, so a disallowed folder may hold this workspace or an allowed one.
+  const permitted = [
+    ws.dir,
+    ...others.filter((other) => ws.allowedWorkspaces.includes(other.name)).map((other) => other.dir),
+  ]
+  return [
+    ...(disallowed.length > 0
+      ? [
+          {
+            name: `${OWN_DIRS_RULE}-workspace:${ws.name}`,
+            comment: `${ws.name}'s ownDirs code imports a workspace its allow doesn't name`,
+            severity: "error" as const,
+            from,
+            to: {
+              path: `^(${disallowed.map(escapeRegex).join("|")})/`,
+              pathNot: `^(${permitted.map(escapeRegex).join("|")})/`,
+            },
+          },
+        ]
+      : []),
+    {
+      name: `${OWN_DIRS_RULE}-undeclared:${ws.name}`,
+      comment: `${ws.name}'s ownDirs code imports a package its package.json doesn't declare`,
+      severity: "error",
+      from,
+      to: { dependencyTypes: ["npm-no-pkg", "npm-unknown"] },
+    },
+  ]
 }
 
 function denyRule(ws: ResolvedWorkspace): IForbiddenRuleType[] {
@@ -122,6 +172,7 @@ export function createDepcruise(architecture: Architecture): DepcruiseConfig {
       to: { circular: true, viaOnly: { dependencyTypesNot: ["type-only"] } },
     },
     ...workspaces.map(unresolvedRule),
+    ...workspaces.flatMap((ws) => ownDirRules(ws, workspaces)),
   ]
   const options = {
     baseDir: rootDir,
@@ -155,9 +206,14 @@ export type DepcruiseReport = {
   violations: DepcruiseViolation[]
 }
 
-/** The rules whose `from` pattern matches no cruised module: each would pass without checking anything. */
+/**
+ * The rules whose `from` pattern matches no cruised module: each would pass without checking
+ * anything. The `ownDirs` rules are exempt: their folder exists (`defineArchitecture` checks),
+ * and when nothing in `src` or `test` imports from it there is no code of it to check.
+ */
 export function rulesMatchingNothing(forbidden: readonly IForbiddenRuleType[], result: ICruiseResult): string[] {
   return forbidden
+    .filter((rule) => !(rule.name ?? "").startsWith(`${OWN_DIRS_RULE}-`))
     .filter((rule) => {
       const from = typeof rule.from.path === "string" ? new RegExp(rule.from.path) : undefined
       return from !== undefined && !result.modules.some((module) => from.test(module.source))

@@ -540,6 +540,11 @@ import architecture from "./architecture.mjs"
 export default [...baseConfig, ...createBoundaries(architecture).configs]
 ```
 
+`createBoundaries` sets no parser. `ts-builds/eslint` brings one, so the example above parses
+TypeScript. A boundary config that doesn't spread `ts-builds/eslint` must set a TypeScript parser
+itself, for example `{ files: ["**/*.{ts,mts,cts,tsx}"], languageOptions: { parser: tseslint.parser } }`
+with `typescript-eslint` declared in your root `package.json`.
+
 What a policy allows:
 
 - **Other workspaces:** only those its `allow` names, by package name or `@scope/*` glob.
@@ -555,6 +560,23 @@ What a policy allows:
   form: `import`, `import type`, dynamic `import()`, `require`, `import x = require()` and
   re-exports.
 - **`"pure"`:** a pure workspace may allow only other pure workspaces.
+- **A workspace's own folders beside `src` and `test`:** none, unless its `ownDirs` lists them.
+  `ownDirs: ["drizzle"]` lets the workspace's own code import `apps/api/drizzle/...`; another
+  workspace importing them still fails, even one whose `allow` names this workspace.
+- **Repo files outside every workspace:** none, unless `testPolicy.allowRootFiles` lists them, and
+  then only from test files. `allowRootFiles: ["eslint.config.mjs"]` lets a test import the root
+  ESLint config. Entries are repo-relative paths, or globs with `*`, `**` and `?`; a glob skips
+  dotfiles and `node_modules`, so list such a file exactly.
+
+```javascript
+"@acme/api": { dir: "apps/api", type: "app", allow: ["@acme/*"], ownDirs: ["drizzle"] },
+// …
+testPolicy: { allowExternals: ["vitest"], allowRootFiles: ["eslint.config.mjs"] },
+```
+
+A disallowed import of a local file outside every workspace names the file and the option that
+would allow it: `ownDirs` for a source file, and `ownDirs` or `testPolicy.allowRootFiles` for a
+test file.
 
 `defineArchitecture` throws when the policy doesn't match the disk:
 
@@ -564,6 +586,11 @@ What a policy allows:
 - A workspace has no `src`.
 - An `allow` entry matches nothing, or a pure workspace allows an impure one.
 - A `deny` entry matches a workspace. Leave the workspace out of `allow` instead.
+- An `ownDirs` entry isn't an existing plain folder inside the workspace: a glob, `.`, a path
+  out of the workspace, `node_modules`, anything under `src` or `test`, or a folder that holds
+  another workspace.
+- A `testPolicy.allowRootFiles` entry matches no file, or matches a file inside a workspace. A
+  workspace's own folders go in its `ownDirs`; brace, bracket and `!` globs aren't supported.
 
 Each of eslint-plugin-boundaries' defaults that passes silently is forced:
 
@@ -582,8 +609,10 @@ Known limits:
 - **Workspaces must export their source.** The fixture's packages export raw `./src/*.ts`, as the
   issue this came from assumes. A workspace whose `exports` point at `dist` resolves to `dist`, which
   belongs to no element, so its imports are reported as having no policy.
-- **Code outside `src` and `test` isn't checked,** and a relative path into an allowed workspace
-  (`../../packages/x/src/internal.ts`) passes like a package import does.
+- **Code outside `src` and `test` isn't linted,** and a relative path into an allowed workspace
+  (`../../packages/x/src/internal.ts`) passes like a package import does. That includes `ownDirs`
+  folders: ESLint checks imports into them, not imports out of them. `ts-builds depcruise` checks
+  what the `ownDirs` code that `src` or `test` reaches imports (see below).
 - **Some disable comments can't be reported,** because ESLint applies them before any rule runs:
   a blanket `/* eslint-disable */` at the very start of a file, an `/* eslint … */` config comment
   that turns `ts-builds/no-boundaries-disable` itself off, an `eslint-disable-line` naming it in a
@@ -618,7 +647,17 @@ throws while loading. It reports:
 - **`not-to-unresolvable:<workspace>`:** an import that doesn't resolve, unless it names a package
   the workspace declares (directly or through `@types/*`). An unresolved import would end a
   reachability chain silently, and ESLint's resolver can resolve an alias that dependency-cruiser
-  can't, so neither half would report a reach through it.
+  can't, so neither half would report a reach through it. It covers the workspace's `ownDirs`
+  code too.
+- **`own-dirs-workspace:<workspace>`** and **`own-dirs-undeclared:<workspace>`:** ESLint doesn't
+  lint `ownDirs` folders, so these check what their code imports, the way the boundary rules check
+  `src`. Another workspace may be imported only when `allow` names it, and an external package
+  only when the workspace declares it. A `deny` reach through `ownDirs` code is reported by
+  `deny-reachable`. Only code that `src` or `test` reaches is cruised, so an `ownDirs` folder
+  nothing imports is skipped, not failed.
+
+A test's import of a `testPolicy.allowRootFiles` file resolves like any other, and a `deny` reach
+through it is reported.
 
 It fails rather than passes when a rule matches no cruised file, or when dependency-cruiser can't
 load TypeScript. It never reads the working directory: run it from the root or from any workspace.

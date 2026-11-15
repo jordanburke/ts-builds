@@ -404,6 +404,22 @@ fail, with one exception, noted under the resolver:
   quoted name. ESLint decodes all of them before applying the comment. The raw text is still
   scanned as well, so a guarded name in a disable's `-- reason` is reported. Don't go back to
   parsing comments by hand.
+- **`ownDirs`** (#245) are elements of their own type, `<name>:ownDirs`, and a policy lets only
+  that workspace import them. Giving them the workspace's own type would let every workspace whose
+  `allow` names it in too. ESLint doesn't lint their files: `BOUNDARY_FILES` must stay unanchored,
+  and an unanchored `**/drizzle/**` would hit every workspace's folder of that name. depcruise
+  checks their imports instead (below).
+- **`testPolicy.allowRootFiles`** files carry the `allowed-root-file` file category, and only test
+  files may import them, only while they sit in no element (`isUnknown`). `defineArchitecture`
+  expands globs itself, with the same matcher as `packages:`, and the plugin only ever gets literal
+  paths, so the two can't read an entry differently. Brace, bracket and `!` globs are rejected for
+  that reason. A literal pattern matches only that path: `tooling.config.mjs` doesn't tag
+  `scripts/tooling.config.mjs`, and the fixture pins it.
+- **Messages for a local file in no element** come from two `disallow` policies placed first in
+  each workspace's list, so any later `allow` overrides them; the test one overrides the source
+  one. They're scoped to `origin: "local"`, so an undeclared external keeps the plugin's own
+  message. `{{to.file.path}}` is empty for a path that doesn't resolve, so a `{{#if}}` falls back to
+  `{{dependency.source}}`.
 
 `test/fixtures/architecture` is an on-disk pnpm workspace. Its "registry" packages are local
 `file:` packages, so installing it needs no network. Vitest's global setup
@@ -461,8 +477,15 @@ scratch copy of the fixture first:
   dependency-cruiser, so a reach through it passed both halves. The exemption is a `pathNot` of
   literal names, because dependency-cruiser refuses any regex with nested repetition ("unsafe
   regular expression").
+- **`ownDirs` code** is followed like any reached module, so a `deny` reach through it was already
+  reported before #245, and a test's import of an `allowRootFiles` file already resolved; the
+  fixture pins both. New in #245: `not-to-unresolvable` includes `ownDirs` in its `from`, and
+  `own-dirs-workspace:<ws>` and `own-dirs-undeclared:<ws>` check what `ownDirs` code imports
+  (`dependencyTypes` `npm-no-pkg`/`npm-unknown` for an undeclared package). The workspace rule's
+  `pathNot` lists the workspace and its allowed workspaces, because workspace folders nest.
 - **Guards in `runDepcruise`:** every rule's `from` must match a cruised module
-  (`rulesMatchingNothing`), something must be cruised, and the TypeScript transpiler must load
+  (`rulesMatchingNothing`; the `own-dirs-*` rules are exempt, since an `ownDirs` folder nothing
+  imports has no code to check), something must be cruised, and the TypeScript transpiler must load
   (`transpilerProblem`). The call site of the transpiler check can't be mutation-tested in this
   repo, which always has TypeScript; the pure function is unit-tested.
 
