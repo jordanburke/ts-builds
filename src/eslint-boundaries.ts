@@ -32,6 +32,28 @@ const fromWorkspaceTests = (ws: ResolvedWorkspace): Record<string, unknown> => (
   element: { type: ws.name },
   file: { categories: ["test"] },
 })
+/** The element type of a workspace's `ownDirs`: its own type would let an allowed workspace in. */
+export const ownDirsType = (ws: ResolvedWorkspace): string => `${ws.name}:ownDirs`
+
+/** The file category `testPolicy.allowRootFiles` files carry. */
+export const ROOT_FILE_CATEGORY = "allowed-root-file"
+
+// A local file in no element: outside every workspace's src and test, or a path that doesn't resolve.
+const UNKNOWN_LOCAL = { element: { isUnknown: true }, module: { origin: "local" } }
+
+const UNRESOLVED_TEXT = "{{dependency.source}}, a local path that doesn't resolve"
+
+/** The message for a source file importing an unknown local. It names the target and the fix. */
+const sourceOutsideMessage = (ws: ResolvedWorkspace, label: string): string =>
+  `${label} imports {{#if to.file.path}}{{to.file.path}}, a file outside every workspace's src and test. ` +
+  `To allow a folder of ${ws.name} beside src, list it in its ownDirs{{else}}${UNRESOLVED_TEXT}{{/if}}`
+
+/** As `sourceOutsideMessage`, for a test file, which may also use `testPolicy.allowRootFiles`. */
+const testOutsideMessage = (ws: ResolvedWorkspace, label: string): string =>
+  `${label} test imports {{#if to.file.path}}{{to.file.path}}, a file outside every workspace's src and test. ` +
+  `To allow a folder of ${ws.name} beside src, list it in its ownDirs; to allow a repo file outside every ` +
+  `workspace, list it in testPolicy.allowRootFiles{{else}}${UNRESOLVED_TEXT}{{/if}}`
+
 const toExternal = (source: readonly string[]): Record<string, unknown> => ({
   to: { module: { origin: "external", source: [...source] } },
 })
@@ -52,13 +74,21 @@ export function denySources(deny: readonly string[]): string[] {
  * The policies for one workspace, in the order the plugin reads them: later policies
  * override earlier ones, so `deny` comes last and wins over a declared dependency.
  */
-function workspacePolicies(ws: ResolvedWorkspace, testExternals: readonly string[]): Policy[] {
+function workspacePolicies(
+  ws: ResolvedWorkspace,
+  testExternals: readonly string[],
+  rootFiles: readonly string[],
+): Policy[] {
   const label = `${ws.name} (${ws.type})`
   const deny = ws.deny ?? []
   // A type-only import is erased, so it may come from a devDependency, or from a package
   // only its @types package declares.
   const typeOnly = [...ws.devDependencies, ...typedPackages([...ws.dependencies, ...ws.devDependencies])]
   return [
+    // First, so any later allow overrides them: these only supply the message when no policy
+    // allows a local file outside every element. The test one overrides the source one.
+    { from: fromWorkspace(ws), disallow: { to: UNKNOWN_LOCAL }, message: sourceOutsideMessage(ws, label) },
+    { from: fromWorkspaceTests(ws), disallow: { to: UNKNOWN_LOCAL }, message: testOutsideMessage(ws, label) },
     // A test file importing ../src crosses from the test element to the src one.
     { from: fromWorkspace(ws), allow: { to: { element: { type: ws.name } } } },
     ...(ws.allowedWorkspaces.length > 0
@@ -73,6 +103,19 @@ function workspacePolicies(ws: ResolvedWorkspace, testExternals: readonly string
       allow: toExternal([...ws.dependencies, ...ws.devDependencies, ...testExternals]),
     },
     { from: fromWorkspace(ws), allow: { to: { module: { origin: "core" } } } },
+    ...(ws.ownDirs.length > 0
+      ? [{ from: fromWorkspace(ws), allow: { to: { element: { type: ownDirsType(ws) } } } }]
+      : []),
+    // Only a file in no element: validation keeps workspace files out of allowRootFiles, and this
+    // keeps the category from ever opening a workspace file.
+    ...(rootFiles.length > 0
+      ? [
+          {
+            from: fromWorkspaceTests(ws),
+            allow: { to: { ...UNKNOWN_LOCAL, file: { categories: [ROOT_FILE_CATEGORY] } } },
+          },
+        ]
+      : []),
     // Source files may not import test files, in this workspace or another. A workspace's
     // own test files may import each other, such as a shared test helper.
     {
@@ -237,6 +280,10 @@ export type BoundariesConfig = {
  * - `default: "disallow"`, `checkAllOrigins` and `checkUnknownLocals` are on, and
  *   `boundaries/no-unknown-files` is an error: a wrong root makes every file unknown.
  * - Disabling a `boundaries/*` rule in a comment is an error.
+ *
+ * A workspace's `ownDirs` are elements of their own type, so only that workspace may import
+ * them. `testPolicy.allowRootFiles` files carry a file category that only test files may
+ * import, and only while they sit in no element.
  */
 export function createBoundaries(architecture: Architecture): BoundariesConfig {
   const workspaces = Object.values(architecture.workspaces)
@@ -246,13 +293,18 @@ export function createBoundaries(architecture: Architecture): BoundariesConfig {
     "boundaries/elements": workspaces.flatMap((ws) => [
       { type: ws.name, pattern: `${ws.dir}/src` },
       { type: ws.name, pattern: `${ws.dir}/test` },
+      ...ws.ownDirs.map((own) => ({ type: ownDirsType(ws), pattern: `${ws.dir}/${own}` })),
     ]),
     // Scoped to each workspace, so a workspace under a directory named test, or a
     // src/test directory, isn't tagged as tests wholesale.
-    "boundaries/files": workspaces.flatMap((ws) => [
-      { pattern: `${ws.dir}/test/**`, category: "test" },
-      { pattern: `${ws.dir}/src/**/*.{test,spec}.*`, category: "test" },
-    ]),
+    "boundaries/files": [
+      ...workspaces.flatMap((ws) => [
+        { pattern: `${ws.dir}/test/**`, category: "test" },
+        { pattern: `${ws.dir}/src/**/*.{test,spec}.*`, category: "test" },
+      ]),
+      // Literal paths: defineArchitecture expanded every glob, so the plugin never reads one.
+      ...architecture.testPolicy.allowRootFiles.map((file) => ({ pattern: file, category: ROOT_FILE_CATEGORY })),
+    ],
     "import/resolver": {
       [TYPESCRIPT_RESOLVER]: {
         ...(tsconfigs.length > 0 ? { project: tsconfigs } : {}),
@@ -260,7 +312,9 @@ export function createBoundaries(architecture: Architecture): BoundariesConfig {
       },
     },
   }
-  const policies = workspaces.flatMap((ws) => workspacePolicies(ws, architecture.testPolicy.allowExternals))
+  const policies = workspaces.flatMap((ws) =>
+    workspacePolicies(ws, architecture.testPolicy.allowExternals, architecture.testPolicy.allowRootFiles),
+  )
   const configs: Linter.Config[] = [
     {
       name: "ts-builds/boundaries",

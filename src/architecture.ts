@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs"
 import { builtinModules } from "node:module"
 import { isAbsolute, join, normalize, relative, sep } from "node:path"
 
@@ -25,6 +25,13 @@ export type WorkspacePolicy = {
    * declares them: names such as `"pg"`, or `@scope/*` globs such as `"@ai-sdk/*"`.
    */
   readonly deny?: readonly string[]
+  /**
+   * Folders of this workspace beside `src` and `test` that its own code may import, such as
+   * `"drizzle"`. Workspace-relative plain paths, never globs. Another workspace importing
+   * them still fails. ESLint doesn't lint the files in them; `ts-builds depcruise` checks
+   * what they import.
+   */
+  readonly ownDirs?: readonly string[]
 }
 
 export type ArchitectureInput = {
@@ -35,12 +42,21 @@ export type ArchitectureInput = {
   readonly testPolicy?: {
     /** External packages any test file may import, such as `"vitest"`. */
     readonly allowExternals?: readonly string[]
+    /**
+     * Repo files outside every workspace that any test file may import, such as
+     * `"eslint.config.mjs"`. Repo-relative paths, or globs with `*`, `**` and `?`. A glob
+     * doesn't match dotfiles or anything under `node_modules`; list such a file exactly.
+     * Source files still may not import them.
+     */
+    readonly allowRootFiles?: readonly string[]
   }
 }
 
 /** A workspace after validation, with what the generators need already worked out. */
-export type ResolvedWorkspace = WorkspacePolicy & {
+export type ResolvedWorkspace = Omit<WorkspacePolicy, "ownDirs"> & {
   readonly name: string
+  /** `ownDirs`, normalized: workspace-relative POSIX paths with no trailing slash. */
+  readonly ownDirs: readonly string[]
   /** The other workspaces `allow` matches, by package name. */
   readonly allowedWorkspaces: readonly string[]
   /** External packages declared in `dependencies`, `peerDependencies` or `optionalDependencies`. */
@@ -54,7 +70,11 @@ export type ResolvedWorkspace = WorkspacePolicy & {
 export type Architecture = {
   readonly rootDir: string
   readonly workspaces: Readonly<Record<string, ResolvedWorkspace>>
-  readonly testPolicy: { readonly allowExternals: readonly string[] }
+  readonly testPolicy: {
+    readonly allowExternals: readonly string[]
+    /** `allowRootFiles` with every glob expanded: repo-relative POSIX file paths, sorted. */
+    readonly allowRootFiles: readonly string[]
+  }
 }
 
 /** Every problem `defineArchitecture` found, listed one per line. */
@@ -145,6 +165,11 @@ function workspaceProblems(rootDir: string, name: string, policy: WorkspacePolic
   if (!listed.has(dir)) {
     return [`${name}: dir "${policy.dir}" is not a workspace the root's pnpm-workspace.yaml lists`]
   }
+  if (PATTERN_CHARS.test(dir)) {
+    return [
+      `${name}: dir "${policy.dir}" has one of * ? [ ] { } ( ) ! \\, which the boundary plugin reads as a pattern`,
+    ]
+  }
   const read = Try(() => readPackageJson(join(rootDir, dir)))
   if (read.isFailure())
     return [
@@ -194,6 +219,167 @@ function allowProblems(
   })
 }
 
+const GLOB_CHARS = /[*?]/
+/**
+ * Characters that make picomatch, the boundary plugin's matcher, read a path as a pattern: a
+ * group, a class, braces, a leading `!`, `*`, `?`, or an escape. `a(b).mjs` also matches
+ * `ab.mjs`, so no path ts-builds hands the plugin may hold one.
+ */
+const PATTERN_CHARS = /[*?[\]{}()!\\]/
+// In an entry, `*` and `?` are this validator's own globs; the rest are refused.
+const UNSUPPORTED_GLOB_CHARS = /[[\]{}()!\\]/
+
+/** Whether a normalized relative path escapes its base: absolute, `..`, or empty. */
+const escapes = (raw: string, normalized: string): boolean =>
+  raw.trim() === "" || isAbsolute(raw) || normalized === "." || normalized === ".." || normalized.startsWith("../")
+
+/** `path` is `dir` or inside it. Both are POSIX paths relative to the same root. */
+const isWithin = (path: string, dir: string): boolean => path === dir || path.startsWith(`${dir}/`)
+
+/**
+ * `path`, relative to `rootDir`, as it is on disk: its real case, and through any symlink.
+ * Compared on real paths at both ends, so a symlinked root (macOS `/var`) still matches.
+ */
+const onDisk = (rootDir: string, path: string): string =>
+  toPosix(relative(realpathSync.native(rootDir), realpathSync.native(join(rootDir, path))))
+
+/** Every `package.json` below `dir`, relative to `rootDir`. Skips `node_modules`. */
+function manifestsBelow(rootDir: string, dir: string): string[] {
+  return readdirSync(join(rootDir, dir), { withFileTypes: true })
+    .filter((entry) => entry.name !== "node_modules")
+    .flatMap((entry) => {
+      const path = `${dir}/${entry.name}`
+      if (entry.isDirectory()) return manifestsBelow(rootDir, path)
+      return entry.isFile() && entry.name === "package.json" ? [path] : []
+    })
+}
+
+function ownDirProblems(rootDir: string, name: string, policy: WorkspacePolicy, listed: Set<string>): string[] {
+  const wsDir = normalizeDir(policy.dir)
+  return (policy.ownDirs ?? []).flatMap((entry) => {
+    const own = normalizeDir(entry)
+    const label = `${name}: ownDirs entry "${entry}"`
+    if (escapes(entry, own)) return [`${label} must be a folder inside ${wsDir}, relative to it`]
+    if (PATTERN_CHARS.test(own)) return [`${label} must be a plain folder path, with none of * ? [ ] { } ( ) ! \\`]
+    // Lower case: on a case-insensitive filesystem "Test" is the test folder.
+    const segments = own.toLowerCase().split("/")
+    if (segments[0] === "src" || segments[0] === "test") {
+      return [`${label} is inside ${segments[0]}, which the boundary rules already check`]
+    }
+    if (segments.includes("node_modules")) return [`${label} is under node_modules`]
+    const full = `${wsDir}/${own}`
+    if (!isDirectory(join(rootDir, full))) return [`${label}: ${full} is not a folder`]
+    // The plugin and dependency-cruiser both match the real path, so the entry must name it.
+    const real = onDisk(rootDir, full)
+    if (real !== full) return [`${label} must name the folder as it is on disk; it resolves to ${real}`]
+    const nested = listed.toArray().filter((dir) => isWithin(dir, full))
+    if (nested.length > 0) return [`${label} holds the workspace ${nested.join(", ")}`]
+    // dependency-cruiser checks a file's packages against its nearest package.json.
+    const manifests = manifestsBelow(rootDir, full)
+    return manifests.length > 0
+      ? [`${label} holds ${manifests.join(", ")}, so its imports would be checked against that file, not ${name}'s`]
+      : []
+  })
+}
+
+/** Every file below `rootDir`, as sorted POSIX paths. Skips `node_modules`, dotfiles, dot folders and symlinks. */
+function repoFiles(rootDir: string): string[] {
+  const walk = (dir: string): string[] =>
+    readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => !entry.name.startsWith(".") && entry.name !== "node_modules")
+      .flatMap((entry) => {
+        const path = join(dir, entry.name)
+        if (entry.isDirectory()) return walk(path)
+        return entry.isFile() ? [toPosix(relative(rootDir, path))] : []
+      })
+  return walk(rootDir).sort()
+}
+
+type RootFiles = { readonly problems: readonly string[]; readonly files: readonly string[] }
+
+const rootFilesProblem = (problem: string): RootFiles => ({ problems: [problem], files: [] })
+
+/** Why the files an entry matched can't be allowed, if they can't. */
+function matchProblems(
+  rootDir: string,
+  label: string,
+  path: string,
+  matches: readonly string[],
+  listed: Set<string>,
+): string[] {
+  if (matches.length === 0) return [`${label} matches no file`]
+  const patterned = matches.filter((file) => PATTERN_CHARS.test(file))
+  if (patterned.length > 0) {
+    return [
+      `${label} matches ${patterned.join(", ")}, whose name has one of * ? [ ] { } ( ) ! \\, so it can't be listed`,
+    ]
+  }
+  if (!GLOB_CHARS.test(path)) {
+    const real = onDisk(rootDir, path)
+    if (real !== path) return [`${label} must name the file as it is on disk; it resolves to ${real}`]
+  }
+  const inside = matches.flatMap((file) =>
+    listed
+      .toArray()
+      .filter((dir) => isWithin(file, dir))
+      .map((dir) => `${file} (inside the workspace ${dir})`),
+  )
+  return inside.length > 0
+    ? [
+        `${label} matches ${inside.join(", ")}. A workspace's own folders go in its ownDirs, and other workspaces import it as a package`,
+      ]
+    : []
+}
+
+/**
+ * `allowRootFiles`, expanded to the files each entry names. An entry must match at least one
+ * file, and every match must sit outside every workspace: a file inside one belongs to that
+ * workspace, and allowing it here would let every workspace's tests import it. Every file it
+ * returns is a literal path picomatch reads as itself.
+ */
+function resolveRootFiles(rootDir: string, entries: readonly string[], listed: Set<string>): RootFiles {
+  const globbed = entries.some((entry) => GLOB_CHARS.test(entry)) ? repoFiles(rootDir) : []
+  const results = entries.map((entry): RootFiles => {
+    const path = toPosix(normalize(entry))
+    const label = `testPolicy.allowRootFiles entry "${entry}"`
+    if (escapes(entry, path)) return rootFilesProblem(`${label} must be a path inside rootDir, relative to it`)
+    if (UNSUPPORTED_GLOB_CHARS.test(path)) {
+      return rootFilesProblem(`${label} uses an unsupported character; only the globs *, ** and ? are supported`)
+    }
+    if (path.toLowerCase().split("/").includes("node_modules"))
+      return rootFilesProblem(`${label} is under node_modules`)
+    const matches = GLOB_CHARS.test(path)
+      ? globbed.filter((file) => isListedPackage(file, [path]))
+      : isFile(join(rootDir, path))
+        ? [path]
+        : []
+    const problems = matchProblems(rootDir, label, path, matches, listed)
+    return problems.length > 0 ? { problems, files: [] } : { problems: [], files: matches }
+  })
+  return {
+    problems: results.flatMap((result) => result.problems),
+    files: [...Set(results.flatMap((result) => result.files)).toArray()].sort(),
+  }
+}
+
+/**
+ * A workspace folder inside another workspace's `src` or `test`. Its files would sit inside
+ * that workspace's element, so both halves would read them as that workspace's own code.
+ */
+function nestedInSourcesProblems(listed: Set<string>): string[] {
+  const dirs = listed.toArray()
+  return dirs.flatMap((dir) =>
+    dirs.flatMap((outer) =>
+      ["src", "test"]
+        .filter((folder) => isWithin(dir, `${outer}/${folder}`))
+        .map(
+          (folder) =>
+            `${dir} is a workspace inside ${outer}'s ${folder}, so the boundary rules would read it as ${outer}'s own code`,
+        ),
+    ),
+  )
+}
+
 function resolveWorkspace(
   rootDir: string,
   name: string,
@@ -208,6 +394,7 @@ function resolveWorkspace(
     ...policy,
     dir,
     name,
+    ownDirs: [...Set((policy.ownDirs ?? []).map(normalizeDir)).toArray()],
     allowedWorkspaces: names
       .toArray()
       .filter(
@@ -227,6 +414,8 @@ function resolveWorkspace(
  * - A workspace the root lists is not classified, or a classified one is not listed.
  * - A workspace's `package.json` name differs from its key, or it has no `src` directory.
  * - An `allow` entry matches no other workspace, or a pure workspace allows an impure one.
+ * - An `ownDirs` entry isn't a plain folder inside the workspace, outside `src` and `test`.
+ * - A `testPolicy.allowRootFiles` entry matches no file, or a file inside a workspace.
  *
  * @interop It throws on purpose: a consumer's eslint.config.js calls it at load, and a bad
  * policy must stop ESLint from starting rather than lint against a wrong one.
@@ -249,12 +438,20 @@ export function defineArchitecture(input: ArchitectureInput): Architecture {
   const listed = Set(listedWorkspaceDirs(rootDir, globs))
   const entries = Object.entries(input.workspaces)
   const classifiedDirs = Set(entries.map(([, policy]) => normalizeDir(policy.dir)))
+  const rootFiles = resolveRootFiles(rootDir, input.testPolicy?.allowRootFiles ?? [], listed)
   const problems = [
-    ...entries.flatMap(([name, policy]) => [
-      ...workspaceProblems(rootDir, name, policy, listed),
-      ...allowProblems(name, policy, entries),
-      ...denyProblems(name, policy, entries),
-    ]),
+    ...entries.flatMap(([name, policy]) => {
+      const placement = workspaceProblems(rootDir, name, policy, listed)
+      return [
+        ...placement,
+        // ownDirs are checked against the workspace folder, so only once that folder is valid.
+        ...(placement.length === 0 ? ownDirProblems(rootDir, name, policy, listed) : []),
+        ...allowProblems(name, policy, entries),
+        ...denyProblems(name, policy, entries),
+      ]
+    }),
+    ...rootFiles.problems,
+    ...nestedInSourcesProblems(listed),
     ...listed
       .toArray()
       .filter((dir) => !classifiedDirs.has(dir))
@@ -272,5 +469,9 @@ export function defineArchitecture(input: ArchitectureInput): Architecture {
       resolveWorkspace(rootDir, name, policy, names),
     ]),
   )
-  return { rootDir, workspaces, testPolicy: { allowExternals: [...(input.testPolicy?.allowExternals ?? [])] } }
+  return {
+    rootDir,
+    workspaces,
+    testPolicy: { allowExternals: [...(input.testPolicy?.allowExternals ?? [])], allowRootFiles: rootFiles.files },
+  }
 }

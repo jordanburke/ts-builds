@@ -11,6 +11,7 @@ import {
   denyPathPattern,
   displayPath,
   formatViolations,
+  OWN_DIRS_RULE,
   runDepcruise,
   transpilerProblem,
   UNRESOLVED_RULE,
@@ -310,6 +311,212 @@ describe("workspace exports with a types condition first", () => {
               via: ["packages/b/src/index.ts"],
             },
           ])
+        },
+      ),
+    60_000,
+  )
+})
+
+describe("ownDirs", () => {
+  it(
+    "reports ownDirs code importing an enclosing workspace, but not its own folder inside it",
+    () =>
+      scratchWorkspace(
+        {
+          "pnpm-workspace.yaml": "packages:\n  - 'packages/outer'\n  - 'packages/outer/inner'\n",
+          "packages/outer/package.json": pkg("@x/outer"),
+          "packages/outer/src/index.ts": "export const outer = 1\n",
+          "packages/outer/inner/package.json": pkg("@x/inner"),
+          "packages/outer/inner/src/index.ts":
+            'import { own } from "../data/own.ts"\nimport { up } from "../data/up.ts"\nexport const inner = [own, up]\n',
+          // Its own src: packages/outer/inner sits inside the disallowed packages/outer.
+          "packages/outer/inner/data/own.ts":
+            'import { inner } from "../src/index.ts"\nexport const own = () => inner\n',
+          "packages/outer/inner/data/up.ts": 'import { outer } from "../../src/index.ts"\nexport const up = outer\n',
+        },
+        async (root) => {
+          const report = await runDepcruise(
+            defineArchitecture({
+              rootDir: root,
+              workspaces: {
+                "@x/outer": { dir: "packages/outer", type: "lib" },
+                "@x/inner": { dir: "packages/outer/inner", type: "lib", ownDirs: ["data"] },
+              },
+            }),
+          )
+          expect(report.violations.filter((violation) => violation.rule.startsWith(OWN_DIRS_RULE))).toEqual([
+            {
+              rule: `${OWN_DIRS_RULE}-boundary:@x/inner`,
+              from: "packages/outer/inner/data/up.ts",
+              to: "packages/outer/src/index.ts",
+              via: [],
+            },
+          ])
+        },
+      ),
+    60_000,
+  )
+
+  // Workspace folders nest, so a disallowed workspace can sit inside this one or inside an allowed one.
+  it.each([
+    [
+      "a disallowed workspace inside this one",
+      "packages/outer",
+      {
+        "@x/outer": { dir: "packages/outer", type: "lib", ownDirs: ["data"] },
+        "@x/inner": { dir: "packages/outer/inner", type: "lib" },
+      },
+      "packages/outer/data/d.ts",
+      'import { inner } from "../inner/src/index.ts"\nexport const d = inner\n',
+      "packages/outer/inner/src/index.ts",
+    ],
+    [
+      "a disallowed workspace inside an allowed one",
+      "packages/outer",
+      {
+        "@x/outer": { dir: "packages/outer", type: "lib", ownDirs: ["data"], allow: ["@x/ok"] },
+        "@x/ok": { dir: "packages/ok", type: "lib" },
+        "@x/bad": { dir: "packages/ok/bad", type: "lib" },
+      },
+      "packages/outer/data/d.ts",
+      'import { bad } from "../../ok/bad/src/index.ts"\nexport const d = bad\n',
+      "packages/ok/bad/src/index.ts",
+    ],
+  ] as const)(
+    "reports ownDirs code importing %s",
+    (_label, _dir, workspaces, file, source, to) =>
+      scratchWorkspace(
+        {
+          "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n  - 'packages/*/*'\n",
+          "packages/outer/package.json": pkg("@x/outer"),
+          "packages/outer/src/index.ts": 'import { d } from "../data/d.ts"\nexport const outer = d\n',
+          "packages/outer/inner/package.json": pkg("@x/inner"),
+          "packages/outer/inner/src/index.ts": "export const inner = 1\n",
+          "packages/ok/package.json": pkg("@x/ok"),
+          "packages/ok/src/index.ts": "export const ok = 1\n",
+          "packages/ok/bad/package.json": pkg("@x/bad"),
+          "packages/ok/bad/src/index.ts": "export const bad = 1\n",
+          [file]: source,
+        },
+        async (root) => {
+          // Classify every listed workspace: the unused ones get a plain policy.
+          const all = {
+            "@x/outer": { dir: "packages/outer", type: "lib" },
+            "@x/inner": { dir: "packages/outer/inner", type: "lib" },
+            "@x/ok": { dir: "packages/ok", type: "lib" },
+            "@x/bad": { dir: "packages/ok/bad", type: "lib" },
+            ...workspaces,
+          }
+          const report = await runDepcruise(defineArchitecture({ rootDir: root, workspaces: all }))
+          expect(report.violations.filter((violation) => violation.rule.startsWith(OWN_DIRS_RULE))).toEqual([
+            { rule: `${OWN_DIRS_RULE}-boundary:@x/outer`, from: file, to, via: [] },
+          ])
+        },
+      ),
+    60_000,
+  )
+
+  it(
+    "reports an installed copy of a workspace outside allow, as pnpm's injected dependencies leave it",
+    () =>
+      scratchWorkspace(
+        {
+          "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
+          "packages/a/package.json": JSON.stringify({
+            name: "@x/a",
+            version: "0.0.0",
+            type: "module",
+            dependencies: { "@x/b": "workspace:*" },
+          }),
+          "packages/a/src/index.ts": 'import { d } from "../data/d.ts"\nexport const a = d\n',
+          "packages/a/data/d.ts": 'import { b } from "@x/b"\nexport const d = b\n',
+          "packages/b/package.json": pkg("@x/b"),
+          "packages/b/src/index.ts": "export const b = 1\n",
+          // A copy, not a symlink: it resolves inside node_modules, so only the name gives it away.
+          "packages/a/node_modules/@x/b/package.json": JSON.stringify({
+            name: "@x/b",
+            version: "0.0.0",
+            type: "module",
+            exports: "./src/index.ts",
+          }),
+          "packages/a/node_modules/@x/b/src/index.ts": "export const b = 1\n",
+        },
+        async (root) => {
+          const report = await runDepcruise(
+            defineArchitecture({
+              rootDir: root,
+              workspaces: {
+                "@x/a": { dir: "packages/a", type: "lib", ownDirs: ["data"] },
+                "@x/b": { dir: "packages/b", type: "lib" },
+              },
+            }),
+          )
+          expect(report.violations.filter((violation) => violation.rule.startsWith(OWN_DIRS_RULE))).toEqual([
+            {
+              rule: `${OWN_DIRS_RULE}-workspace-package:@x/a`,
+              from: "packages/a/data/d.ts",
+              to: "packages/a/node_modules/@x/b/src/index.ts",
+              via: [],
+            },
+          ])
+        },
+      ),
+    60_000,
+  )
+
+  it(
+    "reports ownDirs code importing a .spec. file in its own src",
+    () =>
+      scratchWorkspace(
+        {
+          "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
+          "packages/a/package.json": pkg("@x/a"),
+          "packages/a/src/index.ts": 'import { d } from "../data/d.ts"\nexport const a = d\n',
+          "packages/a/src/a.spec.ts": "export const s = 1\n",
+          "packages/a/data/d.ts": 'import { s } from "../src/a.spec.ts"\nexport const d = s\n',
+        },
+        async (root) => {
+          const report = await runDepcruise(
+            defineArchitecture({
+              rootDir: root,
+              workspaces: { "@x/a": { dir: "packages/a", type: "lib", ownDirs: ["data"] } },
+            }),
+          )
+          expect(report.violations).toEqual([
+            {
+              rule: `${OWN_DIRS_RULE}-test-file:@x/a`,
+              from: "packages/a/data/d.ts",
+              to: "packages/a/src/a.spec.ts",
+              via: [],
+            },
+          ])
+        },
+      ),
+    60_000,
+  )
+
+  it(
+    "passes an ownDirs folder that nothing imports, rather than failing the zero-match guard",
+    () =>
+      scratchWorkspace(
+        {
+          "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
+          "packages/a/package.json": pkg("@x/a"),
+          "packages/a/src/index.ts": "export const a = 1\n",
+          "packages/a/migrations/0001.sql": "create table t (id int);\n",
+        },
+        async (root) => {
+          const report = await runDepcruise(
+            defineArchitecture({
+              rootDir: root,
+              workspaces: { "@x/a": { dir: "packages/a", type: "lib", ownDirs: ["migrations"] } },
+            }),
+          )
+          expect(report).toEqual({
+            exitCode: 0,
+            output: expect.stringContaining("✔ no dependency violations"),
+            violations: [],
+          })
         },
       ),
     60_000,

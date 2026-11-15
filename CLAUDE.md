@@ -404,6 +404,26 @@ fail, with one exception, noted under the resolver:
   quoted name. ESLint decodes all of them before applying the comment. The raw text is still
   scanned as well, so a guarded name in a disable's `-- reason` is reported. Don't go back to
   parsing comments by hand.
+- **`ownDirs`** (#245) are elements of their own type, `<name>:ownDirs`, and a policy lets only
+  that workspace import them. Giving them the workspace's own type would let every workspace whose
+  `allow` names it in too. ESLint doesn't lint their files: `BOUNDARY_FILES` must stay unanchored,
+  and an unanchored `**/drizzle/**` would hit every workspace's folder of that name. depcruise
+  checks their imports instead (below).
+- **`testPolicy.allowRootFiles`** files carry the `allowed-root-file` file category, and only test
+  files may import them, only while they sit in no element (`isUnknown`). `defineArchitecture`
+  expands globs itself, with the same matcher as `packages:`, so the plugin gets one path per file.
+  A path is only literal to picomatch, the plugin's matcher, if it has none of `* ? [ ] { } ( ) ! \`
+  (`PATTERN_CHARS`): `tool(s).mjs` is a group that also matches `tools.mjs`. Review found that, so
+  every path handed to the plugin is checked: listed files, files a glob expands to, `ownDirs`
+  folders and workspace folders. A literal path matches only that path: `tooling.config.mjs`
+  doesn't tag `scripts/tooling.config.mjs`, and the fixture pins it. Entries must also name the
+  path as it is on disk (`onDisk`, real case and through symlinks, relative to the real root),
+  because both tools match the real path.
+- **Messages for a local file in no element** come from two `disallow` policies placed first in
+  each workspace's list, so any later `allow` overrides them; the test one overrides the source
+  one. They're scoped to `origin: "local"`, so an undeclared external keeps the plugin's own
+  message. `{{to.file.path}}` is empty for a path that doesn't resolve, so a `{{#if}}` falls back to
+  `{{dependency.source}}`.
 
 `test/fixtures/architecture` is an on-disk pnpm workspace. Its "registry" packages are local
 `file:` packages, so installing it needs no network. Vitest's global setup
@@ -461,8 +481,25 @@ scratch copy of the fixture first:
   dependency-cruiser, so a reach through it passed both halves. The exemption is a `pathNot` of
   literal names, because dependency-cruiser refuses any regex with nested repetition ("unsafe
   regular expression").
+- **`ownDirs` code** is followed like any reached module, so a `deny` reach through it was already
+  reported before #245, and a test's import of an `allowRootFiles` file already resolved; the
+  fixture pins both. New in #245: `not-to-unresolvable` includes `ownDirs` in its `from`, and three
+  rules check what `ownDirs` code imports. `own-dirs-boundary:<ws>` is an allow-list: a resolved
+  target that isn't core or a package import must sit in the workspace's own `src` or `ownDirs`, or
+  an allowed workspace's `src`. Packages are exempt by dependency type (`PACKAGE_DEPENDENCY_TYPES`),
+  never by a `node_modules` path: a second review found that a path exemption let
+  `../../../node_modules/x` past the declared-package check. An installed copy of a workspace
+  (pnpm's injected dependencies) is type `npm` at a `node_modules` path, so
+  `own-dirs-workspace-package:<ws>` refuses it by the names of the workspaces outside `allow`. The first version listed forbidden workspace folders instead, and
+  review broke it twice: a second hop through a folder beside them (`data/x.ts → ../other/y.ts →
+anything`), and a disallowed workspace nested inside an allowed one. Permit named folders, never
+  a whole workspace folder. `own-dirs-test-file:<ws>` refuses `*.test.*` files inside the permitted
+  `src` folders, which a path prefix can't. `own-dirs-undeclared:<ws>` is `dependencyTypes`
+  `npm-no-pkg`; dependency-cruiser checks a file against its nearest `package.json`, which is why
+  an `ownDirs` folder holding one is refused at load.
 - **Guards in `runDepcruise`:** every rule's `from` must match a cruised module
-  (`rulesMatchingNothing`), something must be cruised, and the TypeScript transpiler must load
+  (`rulesMatchingNothing`; the `own-dirs-*` rules are exempt, since an `ownDirs` folder nothing
+  imports has no code to check), something must be cruised, and the TypeScript transpiler must load
   (`transpilerProblem`). The call site of the transpiler check can't be mutation-tested in this
   repo, which always has TypeScript; the pure function is unit-tested.
 

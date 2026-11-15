@@ -8,6 +8,31 @@ conventional commits via `ts-builds changelog`.
 
 ### Features
 
+- **architecture (preview):** two named escapes for legitimate imports the boundary policy had no
+  way to allow (#245). Disable comments stay banned.
+  - **`ownDirs`**, per workspace, lists folders beside `src` and `test` that its own code may
+    import, such as `drizzle`. Another workspace importing them still fails, even one whose `allow`
+    names this workspace. ESLint doesn't lint those folders, so `ts-builds depcruise` checks what
+    the reached `ownDirs` code imports. A local import must land in the workspace's own `src` or
+    `ownDirs`, or an allowed workspace's `src`, and not on a test file there
+    (`own-dirs-boundary:<workspace>`, `own-dirs-test-file:<workspace>`). A package must be declared
+    (`own-dirs-undeclared:<workspace>`) and not an installed copy of a workspace outside `allow`
+    (`own-dirs-workspace-package:<workspace>`), and every import must resolve. `defineArchitecture`
+    also refuses a workspace folder inside another workspace's `src` or `test`.
+  - **`testPolicy.allowRootFiles`** lists repo files outside every workspace that test files may
+    import, such as `eslint.config.mjs`. Source files still may not. Paths or globs (`*`, `**`,
+    `?`), expanded once by `defineArchitecture`.
+  - `defineArchitecture` throws for an `ownDirs` entry that isn't an existing plain folder inside
+    the workspace and outside `src` and `test`, or that holds a `package.json`, and for an
+    `allowRootFiles` entry that matches no file or a file inside a workspace. Both refuse a symlink,
+    a name in a different case from the one on disk, and a name with any of `* ? [ ] { } ( ) ! \`,
+    which the boundary plugin's matcher would read as a pattern.
+  - A disallowed import of a local file outside every workspace now names the file and the option
+    that would allow it (`ownDirs`, or `testPolicy.allowRootFiles` from a test). An unresolved
+    local path says so.
+  - The README notes that a boundary config which doesn't spread `ts-builds/eslint` needs a
+    TypeScript parser of its own.
+
 - **architecture (preview):** `ts-builds depcruise` checks the same architecture policy across the
   whole import graph with dependency-cruiser (#239, second part). It reports a workspace reaching a
   package its `deny` lists through other workspace modules, which the per-file ESLint rules can't

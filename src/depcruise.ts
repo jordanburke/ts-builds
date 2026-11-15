@@ -1,7 +1,7 @@
 import { existsSync, realpathSync, statSync } from "node:fs"
 import { join } from "node:path"
 
-import type { ICruiseResult, IForbiddenRuleType } from "dependency-cruiser"
+import type { DependencyType, ICruiseResult, IForbiddenRuleType } from "dependency-cruiser"
 import { List, Option } from "functype"
 
 import { type Architecture, coreModulesMatching, type ResolvedWorkspace, typedPackages } from "./architecture"
@@ -14,8 +14,25 @@ const escapeRegex = (text: string): string => text.replace(/[.+?^${}()|[\]\\]/g,
 /** A package-name pattern as a regex fragment: `@scope/*` matches any package in the scope. */
 const packageFragment = (pattern: string): string => escapeRegex(pattern).replace(/\*/g, "[^/]+")
 
+/** The prefix of the rules on what a workspace's `ownDirs` code imports: `own-dirs-<check>:<workspace>`. */
+export const OWN_DIRS_RULE = "own-dirs"
+
+/** The dependency types of an import of a package, declared or not (`npm-no-pkg`). */
+const PACKAGE_DEPENDENCY_TYPES: DependencyType[] = [
+  "npm",
+  "npm-dev",
+  "npm-optional",
+  "npm-peer",
+  "npm-bundled",
+  "npm-no-pkg",
+]
+
+/** Folders of a workspace, as a path prefix pattern. */
+const foldersOf = (ws: ResolvedWorkspace, folders: readonly string[]): string =>
+  `^${escapeRegex(ws.dir)}/(${folders.map(escapeRegex).join("|")})/`
+
 /** The workspace's `src` and `test` directories, as a path prefix pattern. */
-const sourcesOf = (ws: ResolvedWorkspace): string => `^${escapeRegex(ws.dir)}/(src|test)/`
+const sourcesOf = (ws: ResolvedWorkspace): string => foldersOf(ws, ["src", "test"])
 
 /**
  * The resolved paths a workspace's `deny` list forbids reaching. dependency-cruiser reports
@@ -52,12 +69,76 @@ function unresolvedRule(ws: ResolvedWorkspace): IForbiddenRuleType {
     name: `${UNRESOLVED_RULE}:${ws.name}`,
     comment: `An import from ${ws.name} that doesn't resolve and isn't a package it declares. It would end a reachability chain without a finding.`,
     severity: "error",
-    from: { path: sourcesOf(ws) },
+    // ownDirs too: a followed ownDirs file with an unresolved import would end a chain silently.
+    from: { path: foldersOf(ws, ["src", "test", ...ws.ownDirs]) },
     to: {
       couldNotResolve: true,
       ...(declared.length > 0 ? { pathNot: `^(${declared.join("|")})(/|$)` } : {}),
     },
   }
+}
+
+/**
+ * ESLint doesn't lint the files in a workspace's `ownDirs`, so these rules check what they
+ * import. A local import must land in the workspace's own `src` or `ownDirs`, or in the `src` of
+ * a workspace its `allow` names, and not on a test file there. A package must be one the
+ * workspace declares. The permitted places are named folders, never a whole workspace folder:
+ * workspace folders nest, and a folder beside them leads anywhere. A `deny` reach through
+ * `ownDirs` code is reported from `src` and `test`, and an unresolved import by
+ * `unresolvedRule`. They see the files that `src` or `test` reach, since nothing else is cruised.
+ */
+function ownDirRules(ws: ResolvedWorkspace, workspaces: readonly ResolvedWorkspace[]): IForbiddenRuleType[] {
+  if (ws.ownDirs.length === 0) return []
+  const from = { path: foldersOf(ws, ws.ownDirs) }
+  const allowedSources = workspaces
+    .filter((other) => ws.allowedWorkspaces.includes(other.name))
+    .map((other) => `${escapeRegex(other.dir)}/src`)
+  const permitted = [`${escapeRegex(ws.dir)}/(${["src", ...ws.ownDirs].map(escapeRegex).join("|")})`, ...allowedSources]
+  const permittedSources = [`${escapeRegex(ws.dir)}/src`, ...allowedSources]
+  const disallowedNames = workspaces
+    .filter((other) => other.name !== ws.name && !ws.allowedWorkspaces.includes(other.name))
+    .map((other) => escapeRegex(other.name))
+  // A workspace installed as a copy (pnpm's injected workspace dependencies) is a package, so
+  // the boundary rule passes it; its name still says which workspace it is.
+  const workspacePackage: IForbiddenRuleType = {
+    name: `${OWN_DIRS_RULE}-workspace-package:${ws.name}`,
+    comment: `${ws.name}'s ownDirs code imports an installed copy of a workspace its allow doesn't name`,
+    severity: "error",
+    from,
+    to: { path: `(^|/)node_modules/(${disallowedNames.join("|")})/` },
+  }
+  return [
+    {
+      name: `${OWN_DIRS_RULE}-boundary:${ws.name}`,
+      comment: `${ws.name}'s ownDirs code imports a file outside its own src and ownDirs and outside an allowed workspace's src`,
+      severity: "error",
+      from,
+      // Resolved, and not core or a package import, which `not-to-unresolvable` and
+      // `own-dirs-undeclared` own. Packages are told apart by dependency type, never by a
+      // node_modules path: a relative import of ../node_modules/x is a local file reaching past
+      // the package check, and it is reported here.
+      to: {
+        couldNotResolve: false,
+        dependencyTypesNot: [...PACKAGE_DEPENDENCY_TYPES, "core"],
+        pathNot: `^(${permitted.join("|")})/`,
+      },
+    },
+    ...(disallowedNames.length > 0 ? [workspacePackage] : []),
+    {
+      name: `${OWN_DIRS_RULE}-test-file:${ws.name}`,
+      comment: `${ws.name}'s ownDirs code imports a test file, which source files may not`,
+      severity: "error",
+      from,
+      to: { path: `^(${permittedSources.join("|")})/.*[.](test|spec)[.][^/]+$` },
+    },
+    {
+      name: `${OWN_DIRS_RULE}-undeclared:${ws.name}`,
+      comment: `${ws.name}'s ownDirs code imports a package its package.json doesn't declare`,
+      severity: "error",
+      from,
+      to: { dependencyTypes: ["npm-no-pkg"] },
+    },
+  ]
 }
 
 function denyRule(ws: ResolvedWorkspace): IForbiddenRuleType[] {
@@ -122,6 +203,7 @@ export function createDepcruise(architecture: Architecture): DepcruiseConfig {
       to: { circular: true, viaOnly: { dependencyTypesNot: ["type-only"] } },
     },
     ...workspaces.map(unresolvedRule),
+    ...workspaces.flatMap((ws) => ownDirRules(ws, workspaces)),
   ]
   const options = {
     baseDir: rootDir,
@@ -155,9 +237,14 @@ export type DepcruiseReport = {
   violations: DepcruiseViolation[]
 }
 
-/** The rules whose `from` pattern matches no cruised module: each would pass without checking anything. */
+/**
+ * The rules whose `from` pattern matches no cruised module: each would pass without checking
+ * anything. The `ownDirs` rules are exempt: their folder exists (`defineArchitecture` checks),
+ * and when nothing in `src` or `test` imports from it there is no code of it to check.
+ */
 export function rulesMatchingNothing(forbidden: readonly IForbiddenRuleType[], result: ICruiseResult): string[] {
   return forbidden
+    .filter((rule) => !(rule.name ?? "").startsWith(`${OWN_DIRS_RULE}-`))
     .filter((rule) => {
       const from = typeof rule.from.path === "string" ? new RegExp(rule.from.path) : undefined
       return from !== undefined && !result.modules.some((module) => from.test(module.source))
