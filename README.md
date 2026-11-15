@@ -586,11 +586,16 @@ test file.
 - A workspace has no `src`.
 - An `allow` entry matches nothing, or a pure workspace allows an impure one.
 - A `deny` entry matches a workspace. Leave the workspace out of `allow` instead.
-- An `ownDirs` entry isn't an existing plain folder inside the workspace: a glob, `.`, a path
-  out of the workspace, `node_modules`, anything under `src` or `test`, or a folder that holds
-  another workspace.
-- A `testPolicy.allowRootFiles` entry matches no file, or matches a file inside a workspace. A
-  workspace's own folders go in its `ownDirs`; brace, bracket and `!` globs aren't supported.
+- An `ownDirs` entry isn't an existing plain folder inside the workspace: `.`, a path out of the
+  workspace, `node_modules`, anything under `src` or `test` (in any case), a symlink, a name that
+  differs in case from the folder on disk, a folder that holds another workspace or a
+  `package.json`, or a name with any of `* ? [ ] { } ( ) ! \`.
+- A `testPolicy.allowRootFiles` entry matches no file, matches a file inside a workspace (a
+  workspace's own folders go in its `ownDirs`), names a symlink or a file in another case, or
+  uses a glob other than `*`, `**` and `?`.
+- A workspace folder, an `ownDirs` folder or a matched file has any of `* ? [ ] { } ( ) ! \` in
+  its name. The plugin matches paths with picomatch, which reads `a(b).mjs` as a pattern that
+  also matches `ab.mjs`, so such a name can't be allowed exactly.
 
 Each of eslint-plugin-boundaries' defaults that passes silently is forced:
 
@@ -613,6 +618,9 @@ Known limits:
   (`../../packages/x/src/internal.ts`) passes like a package import does. That includes `ownDirs`
   folders: ESLint checks imports into them, not imports out of them. `ts-builds depcruise` checks
   what the `ownDirs` code that `src` or `test` reaches imports (see below).
+- **A `testPolicy.allowRootFiles` file's own imports aren't checked,** apart from a `deny` reach.
+  A test may import `eslint.config.mjs`, and what that config imports isn't held to any
+  workspace's `allow`. List only files that are tooling, not a back door to another workspace.
 - **Some disable comments can't be reported,** because ESLint applies them before any rule runs:
   a blanket `/* eslint-disable */` at the very start of a file, an `/* eslint … */` config comment
   that turns `ts-builds/no-boundaries-disable` itself off, an `eslint-disable-line` naming it in a
@@ -649,12 +657,16 @@ throws while loading. It reports:
   reachability chain silently, and ESLint's resolver can resolve an alias that dependency-cruiser
   can't, so neither half would report a reach through it. It covers the workspace's `ownDirs`
   code too.
-- **`own-dirs-workspace:<workspace>`** and **`own-dirs-undeclared:<workspace>`:** ESLint doesn't
-  lint `ownDirs` folders, so these check what their code imports, the way the boundary rules check
-  `src`. Another workspace may be imported only when `allow` names it, and an external package
-  only when the workspace declares it. A `deny` reach through `ownDirs` code is reported by
-  `deny-reachable`. Only code that `src` or `test` reaches is cruised, so an `ownDirs` folder
-  nothing imports is skipped, not failed.
+- **`own-dirs-boundary:<workspace>`**, **`own-dirs-test-file:<workspace>`** and
+  **`own-dirs-undeclared:<workspace>`:** ESLint doesn't lint `ownDirs` folders, so these check what
+  their code imports. A local import must land in the workspace's own `src` or `ownDirs`, or in the
+  `src` of a workspace its `allow` names, and not on a test file there; anything else, a second
+  hop through a folder beside them or a repo file included, is reported where it leaves. A
+  package must be one the workspace declares, `devDependencies` included: `ownDirs` code is often
+  build or migration code, so it may use them at runtime, where `src` may only import their
+  types. A `deny` reach through `ownDirs` code is reported by `deny-reachable`. Only code that
+  `src` or `test` reaches is cruised, so an `ownDirs` folder nothing imports is skipped, not
+  failed.
 
 A test's import of a `testPolicy.allowRootFiles` file resolves like any other, and a `deny` reach
 through it is reported.

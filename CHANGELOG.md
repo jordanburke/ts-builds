@@ -13,15 +13,18 @@ conventional commits via `ts-builds changelog`.
   - **`ownDirs`**, per workspace, lists folders beside `src` and `test` that its own code may
     import, such as `drizzle`. Another workspace importing them still fails, even one whose `allow`
     names this workspace. ESLint doesn't lint those folders, so `ts-builds depcruise` checks what
-    the reached `ownDirs` code imports: workspaces outside `allow`
-    (`own-dirs-workspace:<workspace>`), undeclared packages (`own-dirs-undeclared:<workspace>`),
-    and imports that don't resolve.
+    the reached `ownDirs` code imports. A local import must land in the workspace's own `src` or
+    `ownDirs`, or an allowed workspace's `src`, and not on a test file there
+    (`own-dirs-boundary:<workspace>`, `own-dirs-test-file:<workspace>`). A package must be declared
+    (`own-dirs-undeclared:<workspace>`), and every import must resolve.
   - **`testPolicy.allowRootFiles`** lists repo files outside every workspace that test files may
     import, such as `eslint.config.mjs`. Source files still may not. Paths or globs (`*`, `**`,
     `?`), expanded once by `defineArchitecture`.
   - `defineArchitecture` throws for an `ownDirs` entry that isn't an existing plain folder inside
-    the workspace and outside `src` and `test`, and for an `allowRootFiles` entry that matches no
-    file or a file inside a workspace.
+    the workspace and outside `src` and `test`, or that holds a `package.json`, and for an
+    `allowRootFiles` entry that matches no file or a file inside a workspace. Both refuse a symlink,
+    a name in a different case from the one on disk, and a name with any of `* ? [ ] { } ( ) ! \`,
+    which the boundary plugin's matcher would read as a pattern.
   - A disallowed import of a local file outside every workspace now names the file and the option
     that would allow it (`ownDirs`, or `testPolicy.allowRootFiles` from a test). An unresolved
     local path says so.

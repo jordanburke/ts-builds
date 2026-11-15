@@ -346,11 +346,70 @@ describe("ownDirs", () => {
           )
           expect(report.violations.filter((violation) => violation.rule.startsWith(OWN_DIRS_RULE))).toEqual([
             {
-              rule: `${OWN_DIRS_RULE}-workspace:@x/inner`,
+              rule: `${OWN_DIRS_RULE}-boundary:@x/inner`,
               from: "packages/outer/inner/data/up.ts",
               to: "packages/outer/src/index.ts",
               via: [],
             },
+          ])
+        },
+      ),
+    60_000,
+  )
+
+  // Workspace folders nest, so a disallowed workspace can sit inside this one or inside an allowed one.
+  it.each([
+    [
+      "a disallowed workspace inside this one",
+      "packages/outer",
+      {
+        "@x/outer": { dir: "packages/outer", type: "lib", ownDirs: ["data"] },
+        "@x/inner": { dir: "packages/outer/inner", type: "lib" },
+      },
+      "packages/outer/data/d.ts",
+      'import { inner } from "../inner/src/index.ts"\nexport const d = inner\n',
+      "packages/outer/inner/src/index.ts",
+    ],
+    [
+      "a disallowed workspace inside an allowed one",
+      "packages/outer",
+      {
+        "@x/outer": { dir: "packages/outer", type: "lib", ownDirs: ["data"], allow: ["@x/ok"] },
+        "@x/ok": { dir: "packages/ok", type: "lib" },
+        "@x/bad": { dir: "packages/ok/bad", type: "lib" },
+      },
+      "packages/outer/data/d.ts",
+      'import { bad } from "../../ok/bad/src/index.ts"\nexport const d = bad\n',
+      "packages/ok/bad/src/index.ts",
+    ],
+  ] as const)(
+    "reports ownDirs code importing %s",
+    (_label, _dir, workspaces, file, source, to) =>
+      scratchWorkspace(
+        {
+          "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n  - 'packages/*/*'\n",
+          "packages/outer/package.json": pkg("@x/outer"),
+          "packages/outer/src/index.ts": 'import { d } from "../data/d.ts"\nexport const outer = d\n',
+          "packages/outer/inner/package.json": pkg("@x/inner"),
+          "packages/outer/inner/src/index.ts": "export const inner = 1\n",
+          "packages/ok/package.json": pkg("@x/ok"),
+          "packages/ok/src/index.ts": "export const ok = 1\n",
+          "packages/ok/bad/package.json": pkg("@x/bad"),
+          "packages/ok/bad/src/index.ts": "export const bad = 1\n",
+          [file]: source,
+        },
+        async (root) => {
+          // Classify every listed workspace: the unused ones get a plain policy.
+          const all = {
+            "@x/outer": { dir: "packages/outer", type: "lib" },
+            "@x/inner": { dir: "packages/outer/inner", type: "lib" },
+            "@x/ok": { dir: "packages/ok", type: "lib" },
+            "@x/bad": { dir: "packages/ok/bad", type: "lib" },
+            ...workspaces,
+          }
+          const report = await runDepcruise(defineArchitecture({ rootDir: root, workspaces: all }))
+          expect(report.violations.filter((violation) => violation.rule.startsWith(OWN_DIRS_RULE))).toEqual([
+            { rule: `${OWN_DIRS_RULE}-boundary:@x/outer`, from: file, to, via: [] },
           ])
         },
       ),

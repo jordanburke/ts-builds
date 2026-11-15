@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -29,6 +29,9 @@ import { describeFinding, DENY_MESSAGE, EXPECTED, type Finding, lintFixture as l
  * an in-process ESLint `cwd` option does not change.
  */
 const fixture = join(process.cwd(), "test", "fixtures", "architecture")
+
+// Whether this filesystem opens a path in any case (macOS and Windows defaults).
+const caseInsensitive = existsSync(join(process.cwd(), "PACKAGE.JSON"))
 
 // The fixture's workspaces without its ownDirs and testPolicy, for tests that build their own.
 const FIXTURE_WORKSPACES: ArchitectureInput["workspaces"] = {
@@ -330,7 +333,17 @@ describe("defineArchitecture", () => {
       '@x/a: ownDirs entry "test/data" is inside test, which the boundary rules already check',
     ],
     ["node_modules", "node_modules/x", '@x/a: ownDirs entry "node_modules/x" is under node_modules'],
-    ["a glob", "data/*", '@x/a: ownDirs entry "data/*" must be a plain folder path, not a glob'],
+    ["a glob", "data/*", '@x/a: ownDirs entry "data/*" must be a plain folder path, with none of * ? [ ] { } ( ) ! \\'],
+    [
+      "a group",
+      "da(ta)",
+      '@x/a: ownDirs entry "da(ta)" must be a plain folder path, with none of * ? [ ] { } ( ) ! \\',
+    ],
+    [
+      "a class",
+      "da[ta]",
+      '@x/a: ownDirs entry "da[ta]" must be a plain folder path, with none of * ? [ ] { } ( ) ! \\',
+    ],
   ])("throws for an ownDirs entry that is %s", (_label, entry, problem) => {
     scratchRoot(ONE_WORKSPACE, (root) => {
       expect(problemsOf(policyOf(root, { ownDirs: [entry] }))).toEqual([problem])
@@ -379,6 +392,90 @@ describe("defineArchitecture", () => {
     })
   })
 
+  // picomatch, the boundary plugin's matcher, reads a(b).mjs as a group that also matches ab.mjs.
+  it.each([
+    [
+      "a literal entry with a group",
+      { "tool(s).mjs": "" },
+      "tool(s).mjs",
+      'testPolicy.allowRootFiles entry "tool(s).mjs" uses an unsupported character; only the globs *, ** and ? are supported',
+    ],
+    [
+      "a glob that expands to a name with a class",
+      { "conf/[id].mjs": "" },
+      "conf/?id?.mjs",
+      'testPolicy.allowRootFiles entry "conf/?id?.mjs" matches conf/[id].mjs, whose name has one of * ? [ ] { } ( ) ! \\, so it can\'t be listed',
+    ],
+  ])("throws for %s", (_label, extra, entry, problem) => {
+    scratchRoot({ ...ONE_WORKSPACE, ...extra }, (root) => {
+      expect(problemsOf(policyOf(root, {}, { allowRootFiles: [entry] }))).toEqual([problem])
+    })
+  })
+
+  it("throws for a workspace folder whose name the plugin would read as a pattern", () => {
+    const files = {
+      "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
+      "packages/(a)/package.json": JSON.stringify({ name: "@x/a" }),
+      "packages/(a)/src/index.ts": "",
+    }
+    scratchRoot(files, (root) => {
+      expect(problemsOf({ rootDir: root, workspaces: { "@x/a": { dir: "packages/(a)", type: "lib" } } })).toEqual([
+        '@x/a: dir "packages/(a)" has one of * ? [ ] { } ( ) ! \\, which the boundary plugin reads as a pattern',
+      ])
+    })
+  })
+
+  it("throws for an ownDirs folder that is a symlink", () => {
+    scratchRoot({ ...ONE_WORKSPACE, "packages/a/data/x.json": "{}" }, (root) => {
+      symlinkSync(join(root, "packages", "a", "data"), join(root, "packages", "a", "link"), "dir")
+      expect(problemsOf(policyOf(root, { ownDirs: ["link"] }))).toEqual([
+        '@x/a: ownDirs entry "link" must name the folder as it is on disk; it resolves to packages/a/data',
+      ])
+    })
+  })
+
+  it("throws for an allowRootFiles file that is a symlink", () => {
+    scratchRoot({ ...ONE_WORKSPACE, "real.mjs": "" }, (root) => {
+      symlinkSync(join(root, "real.mjs"), join(root, "link.mjs"))
+      expect(problemsOf(policyOf(root, {}, { allowRootFiles: ["link.mjs"] }))).toEqual([
+        'testPolicy.allowRootFiles entry "link.mjs" must name the file as it is on disk; it resolves to real.mjs',
+      ])
+    })
+  })
+
+  // Only a case-insensitive filesystem (macOS, Windows) can open "Test" as test; CI runs on Linux.
+  it.skipIf(!caseInsensitive)("throws for an ownDirs entry that is the test folder in another case", () => {
+    scratchRoot({ ...ONE_WORKSPACE, "packages/a/data/x.json": "{}", "packages/a/test/x.ts": "" }, (root) => {
+      expect(problemsOf(policyOf(root, { ownDirs: ["Test"] }))).toEqual([
+        '@x/a: ownDirs entry "Test" is inside test, which the boundary rules already check',
+      ])
+      expect(problemsOf(policyOf(root, { ownDirs: ["Data"] }))).toEqual([
+        '@x/a: ownDirs entry "Data" must name the folder as it is on disk; it resolves to packages/a/data',
+      ])
+    })
+  })
+
+  it("throws for an ownDirs folder with its own package.json", () => {
+    scratchRoot({ ...ONE_WORKSPACE, "packages/a/data/meta/package.json": '{"type":"module"}' }, (root) => {
+      expect(problemsOf(policyOf(root, { ownDirs: ["data"] }))).toEqual([
+        '@x/a: ownDirs entry "data" holds packages/a/data/meta/package.json, so its imports would be checked against that file, not @x/a\'s',
+      ])
+    })
+  })
+
+  it("checks ownDirs only once the workspace folder itself is valid", () => {
+    scratchRoot(ONE_WORKSPACE, (root) => {
+      const input: ArchitectureInput = {
+        rootDir: root,
+        workspaces: { "@x/a": { dir: "packages/nope", type: "lib", ownDirs: ["data"] } },
+      }
+      expect(problemsOf(input)).toEqual([
+        '@x/a: dir "packages/nope" is not a workspace the root\'s pnpm-workspace.yaml lists',
+        "packages/a is a workspace (@x/a) with no policy",
+      ])
+    })
+  })
+
   it("takes a dotfile when it is listed exactly", () => {
     scratchRoot({ ...ONE_WORKSPACE, ".prettierrc.mjs": "" }, (root) => {
       expect(
@@ -413,7 +510,7 @@ describe("defineArchitecture", () => {
     [
       "uses a brace glob",
       "{a,b}.mjs",
-      'testPolicy.allowRootFiles entry "{a,b}.mjs" uses an unsupported glob; only *, ** and ? are supported',
+      'testPolicy.allowRootFiles entry "{a,b}.mjs" uses an unsupported character; only the globs *, ** and ? are supported',
     ],
     [
       "is under node_modules",

@@ -70,42 +70,47 @@ function unresolvedRule(ws: ResolvedWorkspace): IForbiddenRuleType {
 
 /**
  * ESLint doesn't lint the files in a workspace's `ownDirs`, so these rules check what they
- * import, the way the boundary rules check `src`: another workspace only when `allow` names it,
- * and an external package only when the workspace declares it. A `deny` reach through them is
- * already reported from `src` and `test`, and an unresolved import by `unresolvedRule`. They see
- * the files that `src` or `test` reach, since nothing else is cruised.
+ * import. A local import must land in the workspace's own `src` or `ownDirs`, or in the `src` of
+ * a workspace its `allow` names, and not on a test file there. A package must be one the
+ * workspace declares. The permitted places are named folders, never a whole workspace folder:
+ * workspace folders nest, and a folder beside them leads anywhere. A `deny` reach through
+ * `ownDirs` code is reported from `src` and `test`, and an unresolved import by
+ * `unresolvedRule`. They see the files that `src` or `test` reach, since nothing else is cruised.
  */
 function ownDirRules(ws: ResolvedWorkspace, workspaces: readonly ResolvedWorkspace[]): IForbiddenRuleType[] {
   if (ws.ownDirs.length === 0) return []
   const from = { path: foldersOf(ws, ws.ownDirs) }
-  const others = workspaces.filter((other) => other.name !== ws.name)
-  const disallowed = others.filter((other) => !ws.allowedWorkspaces.includes(other.name)).map((other) => other.dir)
-  // Workspace folders nest, so a disallowed folder may hold this workspace or an allowed one.
-  const permitted = [
-    ws.dir,
-    ...others.filter((other) => ws.allowedWorkspaces.includes(other.name)).map((other) => other.dir),
-  ]
+  const allowedSources = workspaces
+    .filter((other) => ws.allowedWorkspaces.includes(other.name))
+    .map((other) => `${escapeRegex(other.dir)}/src`)
+  const permitted = [`${escapeRegex(ws.dir)}/(${["src", ...ws.ownDirs].map(escapeRegex).join("|")})`, ...allowedSources]
+  const permittedSources = [`${escapeRegex(ws.dir)}/src`, ...allowedSources]
   return [
-    ...(disallowed.length > 0
-      ? [
-          {
-            name: `${OWN_DIRS_RULE}-workspace:${ws.name}`,
-            comment: `${ws.name}'s ownDirs code imports a workspace its allow doesn't name`,
-            severity: "error" as const,
-            from,
-            to: {
-              path: `^(${disallowed.map(escapeRegex).join("|")})/`,
-              pathNot: `^(${permitted.map(escapeRegex).join("|")})/`,
-            },
-          },
-        ]
-      : []),
+    {
+      name: `${OWN_DIRS_RULE}-boundary:${ws.name}`,
+      comment: `${ws.name}'s ownDirs code imports a file outside its own src and ownDirs and outside an allowed workspace's src`,
+      severity: "error",
+      from,
+      // Resolved, not core, and not a package: `not-to-unresolvable` and `own-dirs-undeclared` own those.
+      to: {
+        couldNotResolve: false,
+        dependencyTypesNot: ["core"],
+        pathNot: `^(${permitted.join("|")})/|(^|/)node_modules/`,
+      },
+    },
+    {
+      name: `${OWN_DIRS_RULE}-test-file:${ws.name}`,
+      comment: `${ws.name}'s ownDirs code imports a test file, which source files may not`,
+      severity: "error",
+      from,
+      to: { path: `^(${permittedSources.join("|")})/.*[.](test|spec)[.][^/]+$` },
+    },
     {
       name: `${OWN_DIRS_RULE}-undeclared:${ws.name}`,
       comment: `${ws.name}'s ownDirs code imports a package its package.json doesn't declare`,
       severity: "error",
       from,
-      to: { dependencyTypes: ["npm-no-pkg", "npm-unknown"] },
+      to: { dependencyTypes: ["npm-no-pkg"] },
     },
   ]
 }

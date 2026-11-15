@@ -411,10 +411,14 @@ fail, with one exception, noted under the resolver:
   checks their imports instead (below).
 - **`testPolicy.allowRootFiles`** files carry the `allowed-root-file` file category, and only test
   files may import them, only while they sit in no element (`isUnknown`). `defineArchitecture`
-  expands globs itself, with the same matcher as `packages:`, and the plugin only ever gets literal
-  paths, so the two can't read an entry differently. Brace, bracket and `!` globs are rejected for
-  that reason. A literal pattern matches only that path: `tooling.config.mjs` doesn't tag
-  `scripts/tooling.config.mjs`, and the fixture pins it.
+  expands globs itself, with the same matcher as `packages:`, so the plugin gets one path per file.
+  A path is only literal to picomatch, the plugin's matcher, if it has none of `* ? [ ] { } ( ) ! \`
+  (`PATTERN_CHARS`): `tool(s).mjs` is a group that also matches `tools.mjs`. Review found that, so
+  every path handed to the plugin is checked: listed files, files a glob expands to, `ownDirs`
+  folders and workspace folders. A literal path matches only that path: `tooling.config.mjs`
+  doesn't tag `scripts/tooling.config.mjs`, and the fixture pins it. Entries must also name the
+  path as it is on disk (`onDisk`, real case and through symlinks, relative to the real root),
+  because both tools match the real path.
 - **Messages for a local file in no element** come from two `disallow` policies placed first in
   each workspace's list, so any later `allow` overrides them; the test one overrides the source
   one. They're scoped to `origin: "local"`, so an undeclared external keeps the plugin's own
@@ -479,10 +483,16 @@ scratch copy of the fixture first:
   regular expression").
 - **`ownDirs` code** is followed like any reached module, so a `deny` reach through it was already
   reported before #245, and a test's import of an `allowRootFiles` file already resolved; the
-  fixture pins both. New in #245: `not-to-unresolvable` includes `ownDirs` in its `from`, and
-  `own-dirs-workspace:<ws>` and `own-dirs-undeclared:<ws>` check what `ownDirs` code imports
-  (`dependencyTypes` `npm-no-pkg`/`npm-unknown` for an undeclared package). The workspace rule's
-  `pathNot` lists the workspace and its allowed workspaces, because workspace folders nest.
+  fixture pins both. New in #245: `not-to-unresolvable` includes `ownDirs` in its `from`, and three
+  rules check what `ownDirs` code imports. `own-dirs-boundary:<ws>` is an allow-list: a resolved,
+  non-core, non-`node_modules` target must sit in the workspace's own `src` or `ownDirs`, or an
+  allowed workspace's `src`. The first version listed forbidden workspace folders instead, and
+  review broke it twice: a second hop through a folder beside them (`data/x.ts → ../other/y.ts →
+anything`), and a disallowed workspace nested inside an allowed one. Permit named folders, never
+  a whole workspace folder. `own-dirs-test-file:<ws>` refuses `*.test.*` files inside the permitted
+  `src` folders, which a path prefix can't. `own-dirs-undeclared:<ws>` is `dependencyTypes`
+  `npm-no-pkg`; dependency-cruiser checks a file against its nearest `package.json`, which is why
+  an `ownDirs` folder holding one is refused at load.
 - **Guards in `runDepcruise`:** every rule's `from` must match a cruised module
   (`rulesMatchingNothing`; the `own-dirs-*` rules are exempt, since an `ownDirs` folder nothing
   imports has no code to check), something must be cruised, and the TypeScript transpiler must load

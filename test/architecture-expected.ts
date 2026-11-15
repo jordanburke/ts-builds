@@ -100,6 +100,8 @@ const reach = (file: string, to: string, via: string[] = []): string =>
   `${RULES}: packages/rules/${file} → ${to}${via.length > 0 ? ` via ${via.join(" → ")}` : ""}`
 const unresolved = (workspace: string, file: string, to: string): string =>
   `not-to-unresolvable:${workspace}: ${file} → ${to}`
+const ownDir = (check: string, file: string, to: string): string =>
+  `own-dirs-${check}:@fx/rules: packages/rules/data/${file} → ${to}`
 
 /**
  * What dependency-cruiser must report on the fixture, ordered by rule and then file, as it
@@ -110,9 +112,11 @@ const unresolved = (workspace: string, file: string, to: string): string =>
  * ESLint. The type-only cycle in `packages/shared` must not appear.
  *
  * `packages/rules/data` is an ownDirs folder, which ESLint doesn't lint: `reaches-denied-own.ts`
- * reaches `db-client` through it, and its `broken.ts`, `undeclared.ts` and `cross.ts` are
- * reported for what they import. `data/allowed.ts` imports only what ownDirs code may, and the
- * tests that import the root `tooling.config.mjs` resolve, so neither appears.
+ * reaches `db-client` through it, and its other files are reported for what they import: an
+ * unresolved alias, an undeclared package, a workspace outside `allow`, a second hop through a
+ * local file in no element, a root file, its own test folder, and a test file in its own src.
+ * `data/allowed.ts` and `data/core-ok.ts` import only what ownDirs code may, and the tests that
+ * import the root `tooling.config.mjs` resolve, so none of them appears.
  */
 export const EXPECTED_DEPCRUISE = [
   reach("src/reaches-denied-own.ts", "db-client/index.js", ["packages/rules/data/loader.ts"]),
@@ -137,8 +141,12 @@ export const EXPECTED_DEPCRUISE = [
   unresolved("@fx/rules", "packages/rules/data/broken.ts", "@lib/missing/thing"),
   unresolved("@fx/rules", "packages/rules/src/violations/undeclared-transitive.ts", "db-pool"),
   unresolved("@fx/shared", "packages/shared/src/unresolved-local.ts", "./does-not-exist.ts"),
-  "own-dirs-undeclared:@fx/rules: packages/rules/data/undeclared.ts → test-runner/index.js",
-  "own-dirs-workspace:@fx/rules: packages/rules/data/cross.ts → packages/shared/src/index.ts",
+  ownDir("boundary", "cross.ts", "packages/shared/src/index.ts"),
+  ownDir("boundary", "hop-local.ts", "packages/rules/other/hop.ts"),
+  ownDir("boundary", "hop-root.ts", "tooling.config.mjs"),
+  ownDir("boundary", "hop-test.ts", "packages/rules/test/helpers.ts"),
+  ownDir("test-file", "hop-src-test.ts", "packages/rules/src/colocated.test.ts"),
+  ownDir("undeclared", "undeclared.ts", "test-runner/index.js"),
 ]
 
 export type DepcruiseRun = { exitCode: number; violations: DepcruiseFinding[]; output: string }
