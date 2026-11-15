@@ -1,20 +1,13 @@
-import { existsSync, statSync } from "node:fs"
+import { existsSync, realpathSync, statSync } from "node:fs"
 import { join } from "node:path"
 
 import type { ICruiseResult, IForbiddenRuleType } from "dependency-cruiser"
 import { List, Option } from "functype"
 
-import { type Architecture, coreModulesMatching, type ResolvedWorkspace } from "./architecture"
+import { type Architecture, coreModulesMatching, type ResolvedWorkspace, typedPackages } from "./architecture"
 
-/** The rule that fails an unresolved local or alias import. See `createDepcruise`. */
-export const UNRESOLVED_RULE = "not-to-unresolvable-local"
-
-// A specifier that names no package: relative (`./`, `../`), absolute, a subpath import
-// (`#x`), or a common alias prefix (`~/`, `@/`). An unresolved bare package name is left
-// to the ESLint half, which reports an undeclared dependency, and to type-only packages that
-// only have `@types/*` installed. dependency-cruiser refuses a regex with nested repetition,
-// so this is a plain anchored alternation.
-const LOCAL_SPECIFIER = String.raw`^(\.|/|#|~/|@/)`
+/** The prefix of each workspace's unresolved-import rule: `not-to-unresolvable:<workspace>`. */
+export const UNRESOLVED_RULE = "not-to-unresolvable"
 
 const escapeRegex = (text: string): string => text.replace(/[.+?^${}()|[\]\\]/g, "\\$&")
 
@@ -38,13 +31,42 @@ export function denyPathPattern(deny: readonly string[]): string {
   ].join("|")
 }
 
+/**
+ * Fails every import from a workspace's code that doesn't resolve, except a package the
+ * workspace declares, including through its `@types/*` package. A declared package that
+ * doesn't resolve is a type-only one with only `@types/*` installed, which is fine. Anything
+ * else, an alias above all, would end a reachability chain with no finding: ESLint's resolver
+ * can resolve an alias dependency-cruiser can't, so neither half would report it.
+ */
+function unresolvedRule(ws: ResolvedWorkspace): IForbiddenRuleType {
+  const declared = List([
+    ...ws.dependencies,
+    ...ws.devDependencies,
+    ...typedPackages(ws.devDependencies),
+    ...typedPackages(ws.dependencies),
+  ])
+    .distinct()
+    .toArray()
+    .map(escapeRegex)
+  return {
+    name: `${UNRESOLVED_RULE}:${ws.name}`,
+    comment: `An import from ${ws.name} that doesn't resolve and isn't a package it declares. It would end a reachability chain without a finding.`,
+    severity: "error",
+    from: { path: sourcesOf(ws) },
+    to: {
+      couldNotResolve: true,
+      ...(declared.length > 0 ? { pathNot: `^(${declared.join("|")})(/|$)` } : {}),
+    },
+  }
+}
+
 function denyRule(ws: ResolvedWorkspace): IForbiddenRuleType[] {
   const deny = ws.deny ?? []
   if (deny.length === 0) return []
   return [
     {
       name: `deny-reachable:${ws.name}`,
-      comment: `${ws.name} (${ws.type}) denies ${deny.join(", ")}, so its code may not reach them through any other module`,
+      comment: `${ws.name} (${ws.type}) denies ${deny.join(", ")}, so its code may not reach them through other workspace modules`,
       severity: "error",
       from: { path: sourcesOf(ws) },
       to: { path: denyPathPattern(deny), reachable: true },
@@ -74,20 +96,22 @@ export type DepcruiseConfig = {
  *   `conditionNames` set, and each workspace's `tsconfig.json` is a project reference, so
  *   its own `paths` aliases resolve without leaking into another workspace.
  * - Type-only imports are kept, matching the ESLint half, and excluded only from cycles.
- * - An import from workspace code that can't be resolved, and isn't a bare package name,
- *   is an error: an unresolved alias or relative path would silently end a reachability
- *   chain.
+ * - An import from workspace code that can't be resolved is an error, unless it names a
+ *   package the workspace declares: an unresolved alias or path would silently end a
+ *   reachability chain.
  *
  * `runDepcruise` adds two checks a config can't express: every rule must match at least
  * one cruised file, and the TypeScript transpiler must be available.
  */
 export function createDepcruise(architecture: Architecture): DepcruiseConfig {
+  // The real path: dependency-cruiser follows a workspace's symlink to its real path, so under a
+  // symlinked root (macOS /var is /private/var) every module reached through another
+  // workspace would sit outside baseDir, as ../.. paths that no rule's pattern matches.
+  const rootDir = realpathSync(architecture.rootDir)
   const workspaces = Object.values(architecture.workspaces)
   const allSources = `^(${workspaces.map((ws) => `${escapeRegex(ws.dir)}/(src|test)`).join("|")})/`
-  const tsconfigDirs = workspaces.flatMap((ws) =>
-    ws.tsconfig === undefined ? [] : [join(architecture.rootDir, ws.dir)],
-  )
-  const firstTsconfig = workspaces.find((ws) => ws.tsconfig !== undefined)?.tsconfig
+  const tsconfigDirs = workspaces.flatMap((ws) => (ws.tsconfig === undefined ? [] : [join(rootDir, ws.dir)]))
+  const firstTsconfig = workspaces.find((ws) => ws.tsconfig !== undefined)?.dir
   const forbidden: IForbiddenRuleType[] = [
     ...workspaces.flatMap(denyRule),
     {
@@ -97,31 +121,26 @@ export function createDepcruise(architecture: Architecture): DepcruiseConfig {
       from: { path: allSources },
       to: { circular: true, viaOnly: { dependencyTypesNot: ["type-only"] } },
     },
-    {
-      name: UNRESOLVED_RULE,
-      comment:
-        "A local, alias or subpath import that doesn't resolve. It would end a reachability chain without a finding.",
-      severity: "error",
-      from: { path: allSources },
-      to: { couldNotResolve: true, path: LOCAL_SPECIFIER },
-    },
+    ...workspaces.map(unresolvedRule),
   ]
   const options = {
-    baseDir: architecture.rootDir,
+    baseDir: rootDir,
     doNotFollow: { path: "node_modules" },
     tsPreCompilationDeps: true,
     enhancedResolveOptions: {
       exportsFields: ["exports"],
-      conditionNames: ["import", "require", "node", "default", "types"],
-      ...(firstTsconfig === undefined ? {} : { tsconfig: { configFile: firstTsconfig, references: tsconfigDirs } }),
+      // No "types": a workspace exporting `{ "types": "./dist/index.d.ts", "import": "./src/index.ts" }`
+      // must resolve to the code, not to a declaration file that ends the chain.
+      conditionNames: ["import", "require", "node", "default"],
+      ...(firstTsconfig === undefined
+        ? {}
+        : { tsconfig: { configFile: join(rootDir, firstTsconfig, "tsconfig.json"), references: tsconfigDirs } }),
     },
   }
   const entries = workspaces.flatMap((ws) =>
     ["src", "test"]
       .map((sub) => `${ws.dir}/${sub}`)
-      .filter(
-        (rel) => existsSync(join(architecture.rootDir, rel)) && statSync(join(architecture.rootDir, rel)).isDirectory(),
-      ),
+      .filter((rel) => existsSync(join(rootDir, rel)) && statSync(join(rootDir, rel)).isDirectory()),
   )
   return { forbidden, options, entries }
 }
@@ -186,6 +205,15 @@ const fatal = (output: string): DepcruiseReport => ({ exitCode: 2, output, viola
  * the consumer, so ts-builds runs it. It never reads the working directory.
  */
 export async function runDepcruise(architecture: Architecture): Promise<DepcruiseReport> {
+  // Any failure before a result exists is "couldn't check" (exit 2), never a crash.
+  return checkArchitecture(architecture).catch((error: unknown) =>
+    fatal(
+      `dependency-cruiser couldn't check the architecture: ${error instanceof Error ? error.message : String(error)}`,
+    ),
+  )
+}
+
+async function checkArchitecture(architecture: Architecture): Promise<DepcruiseReport> {
   const { cruise, getAvailableTranspilers } = await import("dependency-cruiser")
   const problem = transpilerProblem(getAvailableTranspilers())
   if (problem.isSome()) return fatal(problem.orThrow())
@@ -196,15 +224,8 @@ export async function runDepcruise(architecture: Architecture): Promise<Depcruis
     ...config.options,
     validate: true,
     ruleSet: { forbidden: config.forbidden },
-  }).then(
-    (output) => Option(output.output as ICruiseResult),
-    (error: unknown) => {
-      console.error(`dependency-cruiser failed: ${error instanceof Error ? error.message : String(error)}`)
-      return Option.none<ICruiseResult>()
-    },
-  )
-  if (cruised.isNone()) return fatal("dependency-cruiser failed before checking anything; see the error above.")
-  const result = cruised.orThrow()
+  })
+  const result = cruised.output as ICruiseResult
   if (result.summary.totalCruised === 0) return fatal("dependency-cruiser cruised no modules.")
   const idle = rulesMatchingNothing(config.forbidden, result)
   if (idle.length > 0) {

@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
@@ -69,6 +69,57 @@ describe("depcruise CLI without an architecture", () => {
       expect(run.stderr).toContain("No architecture.mjs, architecture.js, architecture.ts found")
     } finally {
       rmSync(empty, { recursive: true, force: true })
+    }
+  })
+
+  it("prints usage for --help and exits 0", () => {
+    const run = runCli(tmpdir(), ["--help"])
+    expect(run.status).toBe(0)
+    expect(run.stdout).toContain("Usage: ts-builds depcruise [file]")
+  })
+
+  it("exits 2 for a file argument that doesn't exist", () => {
+    const run = runCli(tmpdir(), ["no-such-architecture.mjs"])
+    expect(run.status).toBe(2)
+    expect(run.stderr).toContain("is not a file")
+  })
+
+  it("exits 2, not 1, when the policy throws while loading", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ts-builds-depcruise-"))
+    try {
+      writeFileSync(join(dir, "architecture.mjs"), 'throw new Error("Invalid architecture: rootDir")\n')
+      const run = runCli(dir)
+      expect(run.status).toBe(2)
+      expect(run.stderr).toContain("Invalid architecture: rootDir")
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it("skips a directory named architecture.mjs", () => {
+    const dir = mkdtempSync(join(tmpdir(), "ts-builds-depcruise-"))
+    try {
+      mkdirSync(join(dir, "architecture.mjs"))
+      const run = runCli(dir)
+      expect(run.status).toBe(2)
+      expect(run.stderr).toContain("found here or above")
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it.each([
+    ["a rootDir that isn't a string", "export default { rootDir: 1 }\n"],
+    ["null workspaces", 'export default { rootDir: "x", workspaces: null, testPolicy: null }\n'],
+  ])("exits 2 when the file exports %s", (_label, source) => {
+    const dir = mkdtempSync(join(tmpdir(), "ts-builds-depcruise-"))
+    try {
+      writeFileSync(join(dir, "architecture.mjs"), source)
+      const run = runCli(dir)
+      expect(run.status).toBe(2)
+      expect(run.stderr).toContain("must default-export defineArchitecture(...)")
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
     }
   })
 
@@ -156,6 +207,16 @@ describe("runDepcruise guards", () => {
     ["an unresolved alias", 'import { x } from "@/missing.ts"\nexport const a = x\n', "@/missing.ts"],
     ["an unresolved subpath import", 'import { x } from "#missing"\nexport const a = x\n', "#missing"],
     ["an unresolved relative import", 'import { x } from "../lib/x.ts"\nexport const a = x\n', "../lib/x.ts"],
+    ["an unresolved home alias", 'import { x } from "~/x.ts"\nexport const a = x\n', "~/x.ts"],
+    ["an unresolved absolute import", 'import { x } from "/nowhere/x.ts"\nexport const a = x\n', "/nowhere/x.ts"],
+    // ESLint's resolver can resolve such an alias into an allowed workspace when dependency-cruiser
+    // can't, so leaving it to ESLint would let a reach through it pass both halves.
+    [
+      "an alias that looks like a package name",
+      'import { x } from "@lib/types/runtime"\nexport const a = x\n',
+      "@lib/types/runtime",
+    ],
+    ["an undeclared package", 'import { x } from "undeclared-pkg"\nexport const a = x\n', "undeclared-pkg"],
   ])(
     "fails %s",
     (_label, source, to) =>
@@ -170,26 +231,85 @@ describe("runDepcruise guards", () => {
             defineArchitecture({ rootDir: root, workspaces: { "@x/a": { dir: "packages/a", type: "lib" } } }),
           )
           expect(report.exitCode).toBe(1)
-          expect(report.violations).toEqual([{ rule: UNRESOLVED_RULE, from: "packages/a/src/index.ts", to, via: [] }])
+          expect(report.violations).toEqual([
+            { rule: `${UNRESOLVED_RULE}:@x/a`, from: "packages/a/src/index.ts", to, via: [] },
+          ])
         },
       ),
     60_000,
   )
 
   it(
-    "leaves an unresolved bare package import to the ESLint half",
+    "leaves an unresolved package the workspace declares through @types alone",
     () =>
       scratchWorkspace(
         {
           "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
-          "packages/a/package.json": pkg("@x/a"),
-          "packages/a/src/index.ts": 'import type { T } from "types-only-package"\nexport type A = T\n',
+          "packages/a/package.json": JSON.stringify({
+            name: "@x/a",
+            version: "0.0.0",
+            type: "module",
+            devDependencies: { "@types/types-only-package": "1.0.0", "@types/scope__typed": "1.0.0" },
+          }),
+          "packages/a/src/index.ts":
+            'import type { T } from "types-only-package"\nimport type { U } from "@scope/typed/sub"\nexport type A = T | U\n',
         },
         async (root) => {
           const report = await runDepcruise(
             defineArchitecture({ rootDir: root, workspaces: { "@x/a": { dir: "packages/a", type: "lib" } } }),
           )
           expect(report.exitCode).toBe(0)
+        },
+      ),
+    60_000,
+  )
+})
+
+// tmpdir() on macOS is under the /var symlink, so this also proves a symlinked root works.
+describe("workspace exports with a types condition first", () => {
+  it(
+    "follows the code, not the declaration file, so a reach through it is reported",
+    () =>
+      scratchWorkspace(
+        {
+          "pnpm-workspace.yaml": "packages:\n  - 'packages/*'\n",
+          "packages/a/package.json": JSON.stringify({
+            name: "@x/a",
+            version: "0.0.0",
+            type: "module",
+            dependencies: { "@x/b": "workspace:*" },
+          }),
+          "packages/a/src/index.ts": 'import { b } from "@x/b"\nexport const a = b\n',
+          "packages/b/package.json": JSON.stringify({
+            name: "@x/b",
+            version: "0.0.0",
+            type: "module",
+            exports: { ".": { types: "./src/types.d.ts", import: "./src/index.ts" } },
+          }),
+          "packages/b/src/index.ts": 'import { readFileSync } from "node:fs"\nexport const b = readFileSync\n',
+          "packages/b/src/types.d.ts": "export declare const b: unknown\n",
+        },
+        async (root) => {
+          // What `pnpm install` would link: the workspace dependency as a symlink.
+          mkdirSync(join(root, "packages", "a", "node_modules", "@x"), { recursive: true })
+          symlinkSync(join(root, "packages", "b"), join(root, "packages", "a", "node_modules", "@x", "b"), "dir")
+          const report = await runDepcruise(
+            defineArchitecture({
+              rootDir: root,
+              workspaces: {
+                "@x/a": { dir: "packages/a", type: "pure", deny: ["fs"] },
+                "@x/b": { dir: "packages/b", type: "lib" },
+              },
+            }),
+          )
+          expect(report.violations).toEqual([
+            {
+              rule: "deny-reachable:@x/a",
+              from: "packages/a/src/index.ts",
+              to: "fs",
+              via: ["packages/b/src/index.ts"],
+            },
+          ])
         },
       ),
     60_000,
@@ -220,18 +340,19 @@ describe("createDepcruise", () => {
         )
         expect(config.entries).toEqual(["packages/a/src", "packages/a/test", "packages/b/src"])
         expect(config.options).toMatchObject({
-          baseDir: root,
+          baseDir: realpathSync(root),
           enhancedResolveOptions: {
             tsconfig: {
-              configFile: join(root, "packages", "a", "tsconfig.json"),
-              references: [join(root, "packages", "a")],
+              configFile: join(realpathSync(root), "packages", "a", "tsconfig.json"),
+              references: [join(realpathSync(root), "packages", "a")],
             },
           },
         })
         expect(config.forbidden.map((rule) => rule.name)).toEqual([
           "deny-reachable:@x/a",
           "no-circular",
-          UNRESOLVED_RULE,
+          `${UNRESOLVED_RULE}:@x/a`,
+          `${UNRESOLVED_RULE}:@x/b`,
         ])
       },
     ))

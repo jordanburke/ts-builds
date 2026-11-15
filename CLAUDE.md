@@ -436,11 +436,16 @@ scratch copy of the fixture first:
 - **`validate: true` and `ruleSet`** are passed to `cruise()` directly. Without `validate` there
   are no violations at all, and the default reporter returns exit code 0 regardless, so
   `runDepcruise` counts error-severity violations itself and returns 0, 1 or 2.
-- **`baseDir`** is `rootDir`, and the entries (`<dir>/src`, `<dir>/test`) are relative to it.
-  Without it, a run from a subdirectory crashed or matched nothing.
+- **`baseDir`** is the real path of `rootDir`, and the entries (`<dir>/src`, `<dir>/test`) are
+  relative to it. Without it, a run from a subdirectory crashed or matched nothing. It must be the
+  real path: dependency-cruiser follows a workspace symlink to its real path, so under a symlinked
+  root (macOS `/var` is `/private/var`) modules reached through another workspace became `../..`
+  paths no rule matched. The `types`-condition spec runs under `tmpdir()` and guards it.
 - **`exportsFields` and `conditionNames`**: dependency-cruiser's default `exportsFields` is empty
   and enhanced-resolve's default `conditionNames` is empty, so workspace packages (and `@fx/db`'s
-  conditional `exports` in the fixture) don't resolve without them.
+  conditional `exports` in the fixture) don't resolve without them. `types` is left out on
+  purpose: with it, `{ "types": "./dist/index.d.ts", "import": "./src/index.ts" }` resolved to the
+  declaration file and ended the chain.
 - **Per-workspace aliases:** `enhancedResolveOptions.tsconfig` is enhanced-resolve 5.26's own
   option, `{ configFile, references: [workspace dirs] }`, which resolves each workspace's `paths`
   inside that workspace only. dependency-cruiser's `tsConfig` option takes one tsconfig, so two
@@ -448,9 +453,14 @@ scratch copy of the fixture first:
   know the option, so its `format()` rejects the result: `formatViolations` replaces it.
 - **Type-only edges** are kept (`tsPreCompilationDeps: true`), matching ESLint's `deny`, and
   excluded from cycles with `viaOnly: { dependencyTypesNot: ["type-only"] }`.
-- **`not-to-unresolvable-local`** fails an unresolved specifier starting with `.`, `/`, `#`, `~/`
-  or `@/`. dependency-cruiser refuses any regex with nested repetition ("unsafe regular
-  expression"), which rules out a "not a bare package name" pattern.
+- **`not-to-unresolvable:<workspace>`** fails every unresolved import except a package the
+  workspace declares, directly or through `@types/*` (`typedPackages`, now in `architecture.ts`).
+  The first version only failed `.`, `/`, `#`, `~/` and `@/` prefixes and left bare names to
+  ESLint. Review found that unsound: an alias such as `@lib/types/runtime`, inherited from a base
+  tsconfig with no `baseUrl`, resolved for ESLint into an allowed workspace but not for
+  dependency-cruiser, so a reach through it passed both halves. The exemption is a `pathNot` of
+  literal names, because dependency-cruiser refuses any regex with nested repetition ("unsafe
+  regular expression").
 - **Guards in `runDepcruise`:** every rule's `from` must match a cruised module
   (`rulesMatchingNothing`), something must be cruised, and the TypeScript transpiler must load
   (`transpilerProblem`). The call site of the transpiler check can't be mutation-tested in this
@@ -458,9 +468,11 @@ scratch copy of the fixture first:
 
 `test/depcruise.spec.ts` runs the fixture through the built package in child processes, from the
 root and from workspaces, and checks `EXPECTED_DEPCRUISE` in `test/architecture-expected.ts`. The
-fixture's `reaches-denied.ts` (through `@fx/types/runtime`) is the case only dependency-cruiser
-sees, and `packages/shared` holds a runtime cycle that must be reported and a type-only one that
-must not. The packed spec runs it in the installed consumer too.
+fixture's two `reaches-denied.ts` files (`src` and `test`, through `@fx/types/runtime`) are the
+cases only dependency-cruiser sees, and `packages/shared` holds a runtime cycle that must be
+reported and a type-only one that must not. The packed spec runs it in the installed consumer too.
+The CLI returns 2, never 1, for anything that stops the check: a missing file, a directory, a
+module that fails to load (a throwing `defineArchitecture` included), or a bad export.
 
 ### Cross-package `validate:*` commands (removed in 4.0)
 

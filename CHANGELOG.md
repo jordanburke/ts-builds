@@ -10,10 +10,11 @@ conventional commits via `ts-builds changelog`.
 
 - **architecture (preview):** `ts-builds depcruise` checks the same architecture policy across the
   whole import graph with dependency-cruiser (#239, second part). It reports a workspace reaching a
-  package its `deny` lists through other modules, which the per-file ESLint rules can't see, and
-  runtime import cycles. It fails, rather than passes, on an unresolved local or alias import, on a
-  rule that matches no file, and when dependency-cruiser can't load TypeScript. It works from the
-  root or any workspace, and resolves each workspace's own `paths` aliases. `createDepcruise` and
+  package its `deny` lists through other workspace modules, which the per-file ESLint rules can't
+  see, and runtime import cycles. It fails, rather than passes, on an import that doesn't resolve and
+  isn't a package the workspace declares, on a rule that matches no file, and when
+  dependency-cruiser can't load TypeScript. It works from the root or any workspace, and resolves
+  each workspace's `paths` aliases from its own `tsconfig.json`. `createDepcruise` and
   `runDepcruise` from the new `ts-builds/depcruise` export expose the config and the run. New
   dependency, pinned exactly: `dependency-cruiser` 18.7.2, about 23 more installed packages.
 

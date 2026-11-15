@@ -4,7 +4,9 @@ import type { Linter, Rule } from "eslint"
 import boundaries from "eslint-plugin-boundaries"
 import { List, Map } from "functype"
 
-import { type Architecture, coreModulesMatching, type ResolvedWorkspace } from "./architecture"
+import { type Architecture, coreModulesMatching, type ResolvedWorkspace, typedPackages } from "./architecture"
+
+export { typedPackages }
 
 /**
  * Every source file a workspace can hold, under `src` or `test`. The glob is not
@@ -44,17 +46,6 @@ export function denySources(deny: readonly string[]): string[] {
   return List([...deny, ...core])
     .distinct()
     .toArray()
-}
-
-/**
- * The packages a declared `@types/*` package describes: `@types/lodash` describes `lodash`,
- * and `@types/babel__core` describes `@babel/core`.
- */
-export function typedPackages(declared: readonly string[]): string[] {
-  return declared
-    .filter((name) => name.startsWith("@types/"))
-    .map((name) => name.slice("@types/".length))
-    .map((name) => (name.includes("__") ? `@${name.replace("__", "/")}` : name))
 }
 
 /**

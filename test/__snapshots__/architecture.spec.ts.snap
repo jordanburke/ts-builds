@@ -35,6 +35,7 @@ exports[`architecture boundaries on the pnpm fixture > classifies every import t
   "packages/rules/src/violations/unknown-local.ts:1 There is no policy allowing dependencies from elements of type "@fx/rules" to entities of module with origin "local"",
   "packages/rules/src/violations/workspace-subpath.ts:1 There is no policy allowing dependencies from elements of type "@fx/rules" to elements of type "@fx/shared"",
   "packages/rules/src/violations/workspace.ts:1 There is no policy allowing dependencies from elements of type "@fx/rules" to elements of type "@fx/shared"",
+  "packages/rules/test/reaches-denied.ts:3 There is no policy allowing dependencies from file of category "test" belonging to elements of type "@fx/rules" to elements of type "@fx/types"",
   "packages/rules/test/uses-runner.ts:1 There is no policy allowing dependencies from file of category "test" belonging to elements of type "@fx/rules" to entities of module with origin "external" and module source "test-runner"",
   "packages/rules/test/uses-src.ts:1 There is no policy allowing dependencies from file of category "test" belonging to elements of type "@fx/rules" to entities of module with origin "external" and module source "test-helper"",
   "packages/rules/test/uses-src.ts:3 There is no policy allowing dependencies from file of category "test" belonging to elements of type "@fx/rules" to elements of type "@fx/rules"",

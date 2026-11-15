@@ -83,32 +83,39 @@ export const describeDepcruise = (finding: DepcruiseFinding): string =>
 
 const RULES = "deny-reachable:@fx/rules"
 const reach = (file: string, to: string, via: string[] = []): string =>
-  `${RULES}: packages/rules/src/${file} → ${to}${via.length > 0 ? ` via ${via.join(" → ")}` : ""}`
+  `${RULES}: packages/rules/${file} → ${to}${via.length > 0 ? ` via ${via.join(" → ")}` : ""}`
+const unresolved = (workspace: string, file: string, to: string): string =>
+  `not-to-unresolvable:${workspace}: ${file} → ${to}`
 
 /**
- * What dependency-cruiser must report on the fixture. ESLint reports the one-hop deny cases
- * too; the two transitive ones (`reaches-denied.ts` through `@fx/types/runtime`, and
- * `workspace-subpath.ts` through `@fx/shared/data`) only dependency-cruiser can see. The
- * type-only cycle in `packages/shared` must not appear.
+ * What dependency-cruiser must report on the fixture, ordered by rule and then file, as it
+ * reports them. ESLint reports the one-hop deny cases too. The transitive ones only
+ * dependency-cruiser can see: both `reaches-denied.ts` files (one in `src`, one in `test`)
+ * through `@fx/types/runtime`, and `workspace-subpath.ts` through `@fx/shared/data`. The
+ * unresolved `db-pool` imports are undeclared, so dependency-cruiser fails them as well as
+ * ESLint. The type-only cycle in `packages/shared` must not appear.
  */
 export const EXPECTED_DEPCRUISE = [
-  reach("reaches-denied.ts", "db-client/index.js", ["packages/types/src/runtime.ts"]),
-  reach("violations/denied-core.ts", "fs"),
-  reach("violations/denied-declared.ts", "db-client/index.js"),
-  reach("violations/denied-glob.ts", "@ai/openai/index.js"),
-  reach("violations/denied-subpath.ts", "db-client/utils.js"),
-  reach("violations/disable-comment.ts", "db-client/index.js"),
-  reach("violations/dynamic-import.ts", "db-client/index.js"),
-  reach("violations/import-equals.cts", "db-client/index.js"),
-  reach("violations/reexport-star.ts", "db-client/index.js"),
-  reach("violations/require.cts", "db-client/index.js"),
-  reach("violations/type-only.ts", "db-client/index.js"),
-  reach("violations/workspace-subpath.ts", "db-client/index.js", [
+  reach("src/reaches-denied.ts", "db-client/index.js", ["packages/types/src/runtime.ts"]),
+  reach("src/violations/denied-core.ts", "fs"),
+  reach("src/violations/denied-declared.ts", "db-client/index.js"),
+  reach("src/violations/denied-glob.ts", "@ai/openai/index.js"),
+  reach("src/violations/denied-subpath.ts", "db-client/utils.js"),
+  reach("src/violations/disable-comment.ts", "db-client/index.js"),
+  reach("src/violations/dynamic-import.ts", "db-client/index.js"),
+  reach("src/violations/import-equals.cts", "db-client/index.js"),
+  reach("src/violations/reexport-star.ts", "db-client/index.js"),
+  reach("src/violations/require.cts", "db-client/index.js"),
+  reach("src/violations/type-only.ts", "db-client/index.js"),
+  reach("src/violations/workspace-subpath.ts", "db-client/index.js", [
     "packages/shared/src/data.ts",
     "packages/db/src/index.ts",
   ]),
+  reach("test/reaches-denied.ts", "db-client/index.js", ["packages/types/src/runtime.ts"]),
   "no-circular: packages/shared/src/cycle-a.ts → packages/shared/src/cycle-b.ts via packages/shared/src/cycle-a.ts",
-  "not-to-unresolvable-local: packages/shared/src/unresolved-local.ts → ./does-not-exist.ts",
+  unresolved("@fx/api", "apps/api/src/undeclared.ts", "db-pool"),
+  unresolved("@fx/rules", "packages/rules/src/violations/undeclared-transitive.ts", "db-pool"),
+  unresolved("@fx/shared", "packages/shared/src/unresolved-local.ts", "./does-not-exist.ts"),
 ]
 
 export type DepcruiseRun = { exitCode: number; violations: DepcruiseFinding[]; output: string }

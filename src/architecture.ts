@@ -105,6 +105,17 @@ export function coreModulesMatching(entry: string): string[] {
 }
 
 /**
+ * The packages an `@types/*` declaration stands for: `@types/x` is `x`, and
+ * `@types/scope__name` is `@scope/name`.
+ */
+export function typedPackages(declared: readonly string[]): string[] {
+  return declared
+    .filter((name) => name.startsWith("@types/"))
+    .map((name) => name.slice("@types/".length))
+    .map((name) => (name.includes("__") ? `@${name.replace("__", "/")}` : name))
+}
+
+/**
  * The directories below `rootDir` that the root's `packages:` globs list and that hold
  * a `package.json`, as POSIX paths relative to `rootDir`. Skips `node_modules` and hidden
  * directories.
