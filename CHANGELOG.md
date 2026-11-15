@@ -6,6 +6,8 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+## 4.6.0 (2026-11-15)
+
 ### Features
 
 - **architecture (preview):** two named escapes for legitimate imports the boundary policy had no
@@ -63,15 +65,18 @@ conventional commits via `ts-builds changelog`.
 
 ### Dependencies
 
-- raise bundled dependency ranges to their newest installable releases (#240): `functype` /
-  `functype-os` `^1.26.0`, `eslint-plugin-functype` / `eslint-config-functype` `^2.126.0`,
-  `typescript-eslint` `^8.72.2`, `prettier` `^3.10.1`, `eslint` `^10.14.0`, `eslint-plugin-prettier`
+- raise bundled dependency ranges to their newest installable releases (#240, #247): `functype` /
+  `functype-os` `^1.27.0`, `eslint-plugin-functype` / `eslint-config-functype` `^2.127.0`,
+  `typescript-eslint` `^8.72.2`, `prettier` `^3.10.1`, `eslint` `^10.15.0`, `eslint-plugin-prettier`
   `^5.5.7`, `globals` `^17.14.0`, and `vitest` and the `@vitest/*` packages `^5.1.0`. A consumer's
   install now resolves at least these versions. Two are held:
   - TypeScript stays on 6.0, because `typescript-eslint` 8.72.2, its newest release, supports only
     `typescript <6.1.0`.
-  - `eslint` 10.15.0 was under a day old, so pnpm's one-day `minimumReleaseAge` kept the floor at
-    10.14.0. The `^10.14.0` range already admits it.
+  - `eslint-plugin-boundaries` stays pinned at 7.4.3. 7.4.4 was under a day old at release, inside
+    pnpm's one-day `minimumReleaseAge`.
+
+  The functype ESLint packages' 2.127.0 changes no rule or config, so lint results don't move.
+
 - **lint (`ts-builds/eslint-functype`):** `eslint-plugin-functype` 2.126.0 changes how
   `functype/prefer-option` reports, still as a warning. A three-state type such as `a?: T | null`
   now reports under a new message id, `preferWireForThreeStates`, with no suggestions. A nested
