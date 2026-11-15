@@ -11,6 +11,7 @@ exports[`architecture boundaries on the pnpm fixture > classifies every import t
   "packages/rules/src/colocated.test.ts:1 There is no policy allowing dependencies from file of category "test" belonging to elements of type "@fx/rules" to entities of module with origin "external" and module source "test-helper"",
   "packages/rules/src/index.ts:1 There is no policy allowing dependencies from elements of type "@fx/rules" to elements of type "@fx/types"",
   "packages/rules/src/node-core.ts:1 There is no policy allowing dependencies from elements of type "@fx/rules" to entities of module with origin "core" and module source "node:path"",
+  "packages/rules/src/reaches-denied.ts:3 There is no policy allowing dependencies from elements of type "@fx/rules" to elements of type "@fx/types"",
   "packages/rules/src/test/not-a-test-dir.ts:1 There is no policy allowing dependencies from elements of type "@fx/rules" to entities of module with origin "external" and module source "test-runner"",
   "packages/rules/src/type-from-dev.ts:1 There is no policy allowing dependencies from elements of type "@fx/rules" to entities of module with origin "external" and module source "test-helper"",
   "packages/rules/src/typed.ts:1 There is no policy allowing dependencies from elements of type "@fx/rules" to entities of module with origin "external" and module source "typed-lib"",
@@ -34,9 +35,12 @@ exports[`architecture boundaries on the pnpm fixture > classifies every import t
   "packages/rules/src/violations/unknown-local.ts:1 There is no policy allowing dependencies from elements of type "@fx/rules" to entities of module with origin "local"",
   "packages/rules/src/violations/workspace-subpath.ts:1 There is no policy allowing dependencies from elements of type "@fx/rules" to elements of type "@fx/shared"",
   "packages/rules/src/violations/workspace.ts:1 There is no policy allowing dependencies from elements of type "@fx/rules" to elements of type "@fx/shared"",
+  "packages/rules/test/reaches-denied.ts:3 There is no policy allowing dependencies from file of category "test" belonging to elements of type "@fx/rules" to elements of type "@fx/types"",
   "packages/rules/test/uses-runner.ts:1 There is no policy allowing dependencies from file of category "test" belonging to elements of type "@fx/rules" to entities of module with origin "external" and module source "test-runner"",
   "packages/rules/test/uses-src.ts:1 There is no policy allowing dependencies from file of category "test" belonging to elements of type "@fx/rules" to entities of module with origin "external" and module source "test-helper"",
   "packages/rules/test/uses-src.ts:3 There is no policy allowing dependencies from file of category "test" belonging to elements of type "@fx/rules" to elements of type "@fx/rules"",
   "packages/shared/src/data.ts:1 There is no policy allowing dependencies from elements of type "@fx/shared" to elements of type "@fx/db"",
+  "packages/shared/src/unresolved-local.ts:1 There is no policy allowing dependencies from elements of type "@fx/shared" to entities of module with origin "local"",
+  "packages/types/src/runtime.ts:3 There is no policy allowing dependencies from elements of type "@fx/types" to entities of module with origin "external" and module source "db-client"",
 ]
 `;

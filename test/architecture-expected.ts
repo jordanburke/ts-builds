@@ -36,6 +36,7 @@ export const EXPECTED = [
   violation("unknown-local.ts", NO_POLICY),
   violation("workspace-subpath.ts", NO_POLICY),
   violation("workspace.ts", NO_POLICY),
+  `packages/shared/src/unresolved-local.ts:1 ${NO_POLICY}`,
 ]
 
 export const DENY_MESSAGE = "@fx/rules (pure) denies imports of db-client, @ai/*, fs in its architecture policy"
@@ -70,4 +71,61 @@ export function lintFixture(fixtureRoot: string, cwd: string, probe?: "--classif
   const warning = STDERR_WARNINGS.find((text) => result.stderr.includes(text))
   if (warning !== undefined) throw new Error(`lint.mjs warned "${warning}":\n${result.stderr}`)
   return JSON.parse(result.stdout) as Finding[]
+}
+
+/** A dependency-cruiser finding as `rule: from → to [via …]`, with package paths shortened. */
+export type DepcruiseFinding = { rule: string; from: string; to: string; via: string[] }
+
+const short = (path: string): string => path.replace(/^(.*\/)?node_modules\//, "")
+
+export const describeDepcruise = (finding: DepcruiseFinding): string =>
+  `${finding.rule}: ${finding.from} → ${short(finding.to)}${finding.via.length > 0 ? ` via ${finding.via.map(short).join(" → ")}` : ""}`
+
+const RULES = "deny-reachable:@fx/rules"
+const reach = (file: string, to: string, via: string[] = []): string =>
+  `${RULES}: packages/rules/${file} → ${to}${via.length > 0 ? ` via ${via.join(" → ")}` : ""}`
+const unresolved = (workspace: string, file: string, to: string): string =>
+  `not-to-unresolvable:${workspace}: ${file} → ${to}`
+
+/**
+ * What dependency-cruiser must report on the fixture, ordered by rule and then file, as it
+ * reports them. ESLint reports the one-hop deny cases too. The transitive ones only
+ * dependency-cruiser can see: both `reaches-denied.ts` files (one in `src`, one in `test`)
+ * through `@fx/types/runtime`, and `workspace-subpath.ts` through `@fx/shared/data`. The
+ * unresolved `db-pool` imports are undeclared, so dependency-cruiser fails them as well as
+ * ESLint. The type-only cycle in `packages/shared` must not appear.
+ */
+export const EXPECTED_DEPCRUISE = [
+  reach("src/reaches-denied.ts", "db-client/index.js", ["packages/types/src/runtime.ts"]),
+  reach("src/violations/denied-core.ts", "fs"),
+  reach("src/violations/denied-declared.ts", "db-client/index.js"),
+  reach("src/violations/denied-glob.ts", "@ai/openai/index.js"),
+  reach("src/violations/denied-subpath.ts", "db-client/utils.js"),
+  reach("src/violations/disable-comment.ts", "db-client/index.js"),
+  reach("src/violations/dynamic-import.ts", "db-client/index.js"),
+  reach("src/violations/import-equals.cts", "db-client/index.js"),
+  reach("src/violations/reexport-star.ts", "db-client/index.js"),
+  reach("src/violations/require.cts", "db-client/index.js"),
+  reach("src/violations/type-only.ts", "db-client/index.js"),
+  reach("src/violations/workspace-subpath.ts", "db-client/index.js", [
+    "packages/shared/src/data.ts",
+    "packages/db/src/index.ts",
+  ]),
+  reach("test/reaches-denied.ts", "db-client/index.js", ["packages/types/src/runtime.ts"]),
+  "no-circular: packages/shared/src/cycle-a.ts → packages/shared/src/cycle-b.ts via packages/shared/src/cycle-a.ts",
+  unresolved("@fx/api", "apps/api/src/undeclared.ts", "db-pool"),
+  unresolved("@fx/rules", "packages/rules/src/violations/undeclared-transitive.ts", "db-pool"),
+  unresolved("@fx/shared", "packages/shared/src/unresolved-local.ts", "./does-not-exist.ts"),
+]
+
+export type DepcruiseRun = { exitCode: number; violations: DepcruiseFinding[]; output: string }
+
+/** Runs `depcruise.mjs` from `fixtureRoot` in a child process whose working directory is `cwd`. */
+export function depcruiseFixture(fixtureRoot: string, cwd: string): DepcruiseRun {
+  const result = spawnSync(process.execPath, [join(fixtureRoot, "depcruise.mjs")], {
+    cwd: join(fixtureRoot, cwd),
+    encoding: "utf-8",
+  })
+  if (result.status !== 0) throw new Error(`depcruise.mjs exited ${result.status}:\n${result.stderr}`)
+  return JSON.parse(result.stdout) as DepcruiseRun
 }

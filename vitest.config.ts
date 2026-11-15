@@ -5,5 +5,7 @@ import { configDefaults, defineConfig } from "vitest/config"
 export default defineConfig({
   test: {
     exclude: [...configDefaults.exclude, "test/fixtures/**"],
+    // Installs test/fixtures/architecture once, before any spec copies or lints it.
+    globalSetup: ["test/setup-fixtures.ts"],
   },
 })

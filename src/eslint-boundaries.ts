@@ -1,10 +1,12 @@
-import { builtinModules, createRequire } from "node:module"
+import { createRequire } from "node:module"
 
 import type { Linter, Rule } from "eslint"
 import boundaries from "eslint-plugin-boundaries"
 import { List, Map } from "functype"
 
-import { type Architecture, matchesPackagePattern, type ResolvedWorkspace } from "./architecture"
+import { type Architecture, coreModulesMatching, type ResolvedWorkspace, typedPackages } from "./architecture"
+
+export { typedPackages }
 
 /**
  * Every source file a workspace can hold, under `src` or `test`. The glob is not
@@ -34,32 +36,16 @@ const toExternal = (source: readonly string[]): Record<string, unknown> => ({
   to: { module: { origin: "external", source: [...source] } },
 })
 
-const CORE_MODULES = builtinModules.map((name) => name.replace(/^node:/, ""))
-
 /**
  * A `deny` list as module sources. The plugin matches a core module by its literal
  * spelling, so an entry naming one, or a glob matching some, also gets the other spelling:
  * `fs` adds `node:fs`, and `node:o*` adds `os` and `node:os`.
  */
 export function denySources(deny: readonly string[]): string[] {
-  const core = deny.flatMap((entry) => {
-    const bare = entry.replace(/^node:/, "")
-    return CORE_MODULES.filter((name) => matchesPackagePattern(bare, name)).flatMap((name) => [name, `node:${name}`])
-  })
+  const core = deny.flatMap((entry) => coreModulesMatching(entry).flatMap((name) => [name, `node:${name}`]))
   return List([...deny, ...core])
     .distinct()
     .toArray()
-}
-
-/**
- * The packages a declared `@types/*` package describes: `@types/lodash` describes `lodash`,
- * and `@types/babel__core` describes `@babel/core`.
- */
-export function typedPackages(declared: readonly string[]): string[] {
-  return declared
-    .filter((name) => name.startsWith("@types/"))
-    .map((name) => name.slice("@types/".length))
-    .map((name) => (name.includes("__") ? `@${name.replace("__", "/")}` : name))
 }
 
 /**
@@ -136,6 +122,24 @@ type DirectiveSource = {
 }
 
 /**
+ * `sourceCode` as a directive source, or a clear error. ESLint's JavaScript language always has
+ * both methods, and `createBoundaries` only enables this rule for JS and TS files. A language
+ * plugin without them would otherwise fail with a bare TypeError; it must not pass silently.
+ *
+ * @interop ESLint calls the rule, so a misuse throws: a rule has no way to return an error.
+ */
+export function asDirectiveSource(sourceCode: unknown): DirectiveSource {
+  const methods = typeof sourceCode === "object" && sourceCode !== null ? (sourceCode as Record<string, unknown>) : {}
+  if (typeof methods.getDisableDirectives !== "function" || typeof methods.applyInlineConfig !== "function") {
+    throw new Error(
+      "ts-builds/no-boundaries-disable needs ESLint's JavaScript language (sourceCode.getDisableDirectives and " +
+        "applyInlineConfig). Enable it only for JS and TS files, as createBoundaries does.",
+    )
+  }
+  return sourceCode as DirectiveSource
+}
+
+/**
  * The directives in a file, read from ESLint's own parse rather than from the comment text,
  * so every shape ESLint accepts (quotes, escapes, no commas, braces, reasons) is seen the way
  * ESLint sees it. The raw text is scanned too, so a name in a reason is also reported.
@@ -196,7 +200,7 @@ export const noBoundariesDisable: Rule.RuleModule = {
     return {
       Program(program) {
         const lastLine = program.loc?.end.line ?? 1
-        directivesOf(context.sourceCode as unknown as DirectiveSource).forEach((directive) => {
+        directivesOf(asDirectiveSource(context.sourceCode)).forEach((directive) => {
           const { start } = directive.loc
           const loc = { line: reportLine(directive.kind, start.line, start.column, lastLine), column: 0 }
           if (directive.blanket) {

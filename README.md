@@ -592,6 +592,51 @@ Known limits:
 - **Run the boundary lint from the repo root.** With several tsconfigs, an `@/*` path alias has been
   seen to fail to resolve when linting from inside an app. The fixture's single alias resolves
   from both places.
+- **Use `import type { X }`, not `import { type X }`, for a type from a devDependency in `src`.**
+  The first always passes. The inline form is reported, because under `verbatimModuleSyntax`
+  TypeScript keeps it as a runtime import (`import {} from "pkg"`); without that option both forms
+  compile away, but the inline one is still reported.
+
+#### Transitive purity and cycles (CI)
+
+The ESLint rules check one file at a time, so they can't see `@acme/rules` reaching `pg` through a
+workspace it is allowed to import. `ts-builds depcruise` checks the whole graph with
+[dependency-cruiser](https://github.com/sverweij/dependency-cruiser), from the same policy:
+
+```bash
+ts-builds depcruise                    # nearest architecture.mjs, .js or .ts, here or above
+ts-builds depcruise ./architecture.mjs # or name the file
+```
+
+It exits 0 when clean, 1 on a violation and 2 when it couldn't check, such as a policy that
+throws while loading. It reports:
+
+- **`deny-reachable:<workspace>`:** the workspace's `src` or `test` reaches a package its `deny`
+  lists, through other workspace modules. Type-only imports count, as they do for ESLint.
+- **`no-circular`:** a runtime import cycle between workspace modules. A cycle through type-only
+  imports is erased at runtime and isn't reported.
+- **`not-to-unresolvable:<workspace>`:** an import that doesn't resolve, unless it names a package
+  the workspace declares (directly or through `@types/*`). An unresolved import would end a
+  reachability chain silently, and ESLint's resolver can resolve an alias that dependency-cruiser
+  can't, so neither half would report a reach through it.
+
+It fails rather than passes when a rule matches no cruised file, or when dependency-cruiser can't
+load TypeScript. It never reads the working directory: run it from the root or from any workspace.
+Under pnpm a consumer can't run dependency-cruiser's own CLI, so ts-builds runs it in-process;
+`createDepcruise` and `runDepcruise` from `ts-builds/depcruise` expose the generated config and
+the run.
+
+Known limits:
+
+- **External packages aren't followed.** A denied package reached only through another external
+  package (an allowed `orm` that imports `pg`) isn't reported. Deny the outer package too.
+- **Aliases resolve from each workspace's own `tsconfig.json`.** `paths` inherited from a base in
+  another directory without `baseUrl`, or kept in a referenced `tsconfig.app.json` behind a
+  solution-style `tsconfig.json`, don't resolve, so those imports fail as unresolved. Add a
+  `baseUrl`, or move the `paths` into the workspace's `tsconfig.json`.
+- **Workspaces must export their source,** as for the ESLint half. A `types` condition is ignored,
+  so `{ "types": …, "import": "./src/index.ts" }` follows the code. An export that points at an
+  unbuilt `dist` fails as unresolved.
 
 ## Bundled Packages
 

@@ -5,7 +5,14 @@ import { join } from "node:path"
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
-import { describeFinding, EXPECTED, lintFixture } from "./architecture-expected"
+import {
+  depcruiseFixture,
+  describeDepcruise,
+  describeFinding,
+  EXPECTED,
+  EXPECTED_DEPCRUISE,
+  lintFixture,
+} from "./architecture-expected"
 
 /**
  * The in-repo fixture can't prove how ts-builds resolves its own dependencies: Node
@@ -69,14 +76,39 @@ describe("architecture boundaries from a packed install", () => {
     if (scratch !== "") rmSync(scratch, { recursive: true, force: true })
   })
 
-  it("leaves the resolver out of the consumer's reach, so ts-builds must load it", () => {
-    const check = spawnSync(process.execPath, ["-e", 'require.resolve("eslint-import-resolver-typescript")'], {
-      cwd: consumer,
-    })
-    expect(check.status).not.toBe(0)
-  })
+  it.each(["eslint-import-resolver-typescript", "dependency-cruiser"])(
+    "leaves %s out of the consumer's reach, so ts-builds must load it",
+    (name) => {
+      const check = spawnSync(process.execPath, ["-e", `require.resolve(${JSON.stringify(name)})`], { cwd: consumer })
+      expect(check.status).not.toBe(0)
+    },
+  )
 
   it("reports exactly the seeded violations, as the in-repo fixture does", () => {
     expect(lintFixture(consumer, ".").map(describeFinding)).toEqual(EXPECTED)
+  }, 60_000)
+
+  it.each([".", "packages/rules"])(
+    "runs dependency-cruiser from %s with the same findings",
+    (cwd) => {
+      const run = depcruiseFixture(consumer, cwd)
+      expect(run.exitCode).toBe(1)
+      expect(run.violations.map(describeDepcruise)).toEqual(EXPECTED_DEPCRUISE)
+    },
+    60_000,
+  )
+
+  it("runs the installed ts-builds depcruise command from a workspace", () => {
+    const run = spawnSync(
+      process.execPath,
+      [join(consumer, "node_modules", "ts-builds", "dist", "cli.js"), "depcruise"],
+      {
+        cwd: join(consumer, "apps", "api"),
+        encoding: "utf-8",
+      },
+    )
+    expect(run.stderr).toBe("")
+    expect(run.status).toBe(1)
+    expect(run.stdout).toContain(`✘ ${EXPECTED_DEPCRUISE.length} dependency violations`)
   }, 60_000)
 })

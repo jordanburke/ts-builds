@@ -7,6 +7,8 @@
     ".": "./src/index.ts",
     "./*": "./src/*.ts"
   },
-  "dependencies": {},
+  "dependencies": {
+    "db-client": "file:../../vendor/db-client"
+  },
   "devDependencies": {}
 }
