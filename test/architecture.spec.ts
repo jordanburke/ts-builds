@@ -1,4 +1,3 @@
-import { spawnSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -7,7 +6,7 @@ import { Linter } from "eslint"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import { ArchitectureError, defineArchitecture, type ArchitectureInput } from "../src/architecture"
-import { denySources, noBoundariesDisable, typedPackages } from "../src/eslint-boundaries"
+import { asDirectiveSource, denySources, noBoundariesDisable, typedPackages } from "../src/eslint-boundaries"
 import { describeFinding, DENY_MESSAGE, EXPECTED, type Finding, lintFixture as lintFrom } from "./architecture-expected"
 
 /**
@@ -31,15 +30,7 @@ describe("architecture boundaries on the pnpm fixture", () => {
   let rootFindings: Finding[] = []
 
   beforeAll(() => {
-    // A failed install must fail the suite: this fixture is the only proof the pinned
-    // plugin and resolver still behave, so it must never be skipped.
-    const install = spawnSync("pnpm", ["install", "--frozen-lockfile", "--prefer-offline"], {
-      cwd: fixture,
-      encoding: "utf-8",
-    })
-    if (install.status !== 0) {
-      throw new Error(`pnpm install in the fixture failed:\n${install.stdout}\n${install.stderr}`)
-    }
+    // test/setup-fixtures.ts has installed the fixture.
     rootFindings = lintFixture(".")
   }, 120_000)
 
@@ -397,6 +388,14 @@ describe("no-boundaries-disable", () => {
     expect(lint("const a = 1\n/* eslint-disable -- legacy code */\nconst b = 2")).toEqual([
       { line: 1, messageId: "blanket" },
     ])
+  })
+
+  it.each([
+    ["a source code without directive methods", {}],
+    ["one with only getDisableDirectives", { getDisableDirectives: () => ({ directives: [] }) }],
+    ["no source code at all", null],
+  ])("throws a clear error for %s", (_label, sourceCode) => {
+    expect(() => asDirectiveSource(sourceCode)).toThrow("needs ESLint's JavaScript language")
   })
 
   it("leaves a disable of an unrelated rule alone", () => {

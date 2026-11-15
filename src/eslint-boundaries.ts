@@ -131,6 +131,24 @@ type DirectiveSource = {
 }
 
 /**
+ * `sourceCode` as a directive source, or a clear error. ESLint's JavaScript language always has
+ * both methods, and `createBoundaries` only enables this rule for JS and TS files. A language
+ * plugin without them would otherwise fail with a bare TypeError; it must not pass silently.
+ *
+ * @interop ESLint calls the rule, so a misuse throws: a rule has no way to return an error.
+ */
+export function asDirectiveSource(sourceCode: unknown): DirectiveSource {
+  const methods = typeof sourceCode === "object" && sourceCode !== null ? (sourceCode as Record<string, unknown>) : {}
+  if (typeof methods.getDisableDirectives !== "function" || typeof methods.applyInlineConfig !== "function") {
+    throw new Error(
+      "ts-builds/no-boundaries-disable needs ESLint's JavaScript language (sourceCode.getDisableDirectives and " +
+        "applyInlineConfig). Enable it only for JS and TS files, as createBoundaries does.",
+    )
+  }
+  return sourceCode as DirectiveSource
+}
+
+/**
  * The directives in a file, read from ESLint's own parse rather than from the comment text,
  * so every shape ESLint accepts (quotes, escapes, no commas, braces, reasons) is seen the way
  * ESLint sees it. The raw text is scanned too, so a name in a reason is also reported.
@@ -191,7 +209,7 @@ export const noBoundariesDisable: Rule.RuleModule = {
     return {
       Program(program) {
         const lastLine = program.loc?.end.line ?? 1
-        directivesOf(context.sourceCode as unknown as DirectiveSource).forEach((directive) => {
+        directivesOf(asDirectiveSource(context.sourceCode)).forEach((directive) => {
           const { start } = directive.loc
           const loc = { line: reportLine(directive.kind, start.line, start.column, lastLine), column: 0 }
           if (directive.blanket) {

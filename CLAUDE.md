@@ -406,8 +406,10 @@ fail, with one exception, noted under the resolver:
   parsing comments by hand.
 
 `test/fixtures/architecture` is an on-disk pnpm workspace. Its "registry" packages are local
-`file:` packages, so installing it needs no network. `test/architecture.spec.ts` installs it
-frozen and lints it through the built package in child processes with real working directories.
+`file:` packages, so installing it needs no network. Vitest's global setup
+(`test/setup-fixtures.ts`) installs it frozen once, before any spec runs: per-spec installs raced
+the packed spec copying the fixture. `test/architecture.spec.ts` lints it through the built
+package in child processes with real working directories.
 An in-process `cwd` option doesn't move `process.cwd()` and gave a false green. The spec covers:
 
 - one seeded violation per import form, each reported exactly once;

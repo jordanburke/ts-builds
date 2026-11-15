@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 
-import { beforeAll, describe, expect, it } from "vitest"
+import { describe, expect, it } from "vitest"
 
 import { defineArchitecture } from "../src/architecture"
 import {
@@ -32,15 +32,6 @@ function runCli(cwd: string, args: string[] = []): { status: number | null; stdo
 }
 
 describe("depcruise on the pnpm fixture", () => {
-  beforeAll(() => {
-    // A failed install must fail the suite rather than skip it.
-    const install = spawnSync("pnpm", ["install", "--frozen-lockfile", "--prefer-offline"], {
-      cwd: fixture,
-      encoding: "utf-8",
-    })
-    if (install.status !== 0) throw new Error(`fixture install failed:\n${install.stdout}\n${install.stderr}`)
-  }, 120_000)
-
   it("reports exactly the seeded violations, transitive ones included", () => {
     const run = depcruiseFixture(fixture, ".")
     expect(run.exitCode).toBe(1)
