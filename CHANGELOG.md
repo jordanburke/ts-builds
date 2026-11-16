@@ -6,14 +6,16 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+## 4.7.0 (2026-11-15)
+
 ### Features
 
-- **lint:** `lint.maxWarnings` in `ts-builds.config.json` fails `lint` when it finds more warnings than
+- **lint:** `lint.maxWarnings` in `ts-builds.config.json` (#252) fails `lint` when it finds more warnings than
   that, as ESLint's `--max-warnings` does, with ESLint's message plus the count and exit code 1. `0`
   makes every warning fail, and warnings fixed in fix mode don't count. The sidecar is still written,
   and with `lint.useProjectEslint` the limit is passed to your ESLint as `--max-warnings`. A value
   that isn't a whole number of 0 or more stops `lint` with exit code 2 and, on the bundled path, a
-  `fatal` sidecar. `lint:summary` still gates on errors only.
+  `fatal` sidecar. `lint:summary` still gates on errors and fatal reports only, not on the limit.
 
 ### Bug Fixes
 
