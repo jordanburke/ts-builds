@@ -122,8 +122,8 @@ export const defaultReleaseAgeProbe: PnpmReleaseAgeProbe = (dir) => {
       return { stdout: "", stderr: "", status: -1 }
     }
     return {
-      stdout: result.stdout ?? "",
-      stderr: result.stderr ?? "",
+      stdout: result.stdout,
+      stderr: result.stderr,
       status: result.status ?? 1,
       // Read before the `finally` restores the files.
       autoExcluded: snapshots.flatMap(addedExcludeEntries),
@@ -372,7 +372,7 @@ function readHoistPatterns(npmrc: string): string[] {
     .split("\n")
     .map((line) => HOIST_LINE.exec(line.trim()))
     .filter((m): m is RegExpExecArray => m !== null)
-    .map((m) => m[1])
+    .flatMap((m) => Option(m[1]).toArray())
 }
 
 export function detectPnpm11Issues(
@@ -558,12 +558,7 @@ function insertMapEntries(yaml: string, blockKey: string, entries: Array<[string
 }
 
 function safeWrite(path: string, content: string): boolean {
-  try {
-    writeFileSync(path, content)
-    return true
-  } catch {
-    return false
-  }
+  return Try(() => writeFileSync(path, content)).isSuccess()
 }
 
 /** The result of one source-file edit, run after pnpm-workspace.yaml is safely written. */
@@ -616,15 +611,13 @@ function migrateNpmrcHoist(dir: string, ws: string): MigrationStep {
 
   const rewriteNpmrc: SourceMutation = () => {
     if (remaining.trim() === "") {
-      try {
-        rmSync(npmrcPath)
-        return { actions: [{ kind: "removed", message: "Removed empty .npmrc" }], errors: 0 }
-      } catch {
-        return {
+      return Try(() => rmSync(npmrcPath)).fold(
+        (): MigrationReport => ({
           actions: [{ kind: "manual", message: "Could not remove .npmrc — delete the migrated hoist lines manually" }],
           errors: 1,
-        }
-      }
+        }),
+        (): MigrationReport => ({ actions: [{ kind: "removed", message: "Removed empty .npmrc" }], errors: 0 }),
+      )
     }
     if (!safeWrite(npmrcPath, remaining.endsWith("\n") ? remaining : `${remaining}\n`)) {
       return {

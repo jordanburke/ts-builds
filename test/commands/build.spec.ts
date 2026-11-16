@@ -145,16 +145,16 @@ describe("prettierFormatArgs", () => {
   const workspace = "/repo/.prettierignore"
 
   it("check mode targets the whole tree", () => {
-    expect(prettierFormatArgs(true, null, noConfig, noWorkspace)[0]).toBe("--check")
-    expect(prettierFormatArgs(false, null, noConfig, noWorkspace)[0]).toBe("--write")
-    expect(prettierFormatArgs(true, null, noConfig, noWorkspace)).toContain(".")
+    expect(prettierFormatArgs(true, Option.none(), noConfig, noWorkspace)[0]).toBe("--check")
+    expect(prettierFormatArgs(false, Option.none(), noConfig, noWorkspace)[0]).toBe("--write")
+    expect(prettierFormatArgs(true, Option.none(), noConfig, noWorkspace)).toContain(".")
   })
 
   it("passes BOTH the bundled ignore and the consumer's ./.prettierignore (additive, quoted)", () => {
     // Explicit --ignore-path overrides prettier's default discovery, so the consumer's own
     // ./.prettierignore must be passed too or their entries would be silently dropped. The
     // bundled path is quoted so a spaced install path survives shell:true.
-    expect(prettierFormatArgs(true, ignore, noConfig, noWorkspace)).toEqual([
+    expect(prettierFormatArgs(true, Option(ignore), noConfig, noWorkspace)).toEqual([
       "--check",
       ".",
       "--ignore-path",
@@ -165,7 +165,7 @@ describe("prettierFormatArgs", () => {
   })
 
   it("adds the workspace root's .prettierignore, quoted, before the consumer's own", () => {
-    expect(prettierFormatArgs(true, ignore, noConfig, Option(workspace))).toEqual([
+    expect(prettierFormatArgs(true, Option(ignore), noConfig, Option(workspace))).toEqual([
       "--check",
       ".",
       "--ignore-path",
@@ -179,7 +179,7 @@ describe("prettierFormatArgs", () => {
 
   it("still passes the consumer's ./.prettierignore when only the workspace ignore is found", () => {
     // Any explicit --ignore-path turns off prettier's own discovery of ./.prettierignore.
-    expect(prettierFormatArgs(false, null, noConfig, Option(workspace))).toEqual([
+    expect(prettierFormatArgs(false, Option.none(), noConfig, Option(workspace))).toEqual([
       "--write",
       ".",
       "--ignore-path",
@@ -190,11 +190,11 @@ describe("prettierFormatArgs", () => {
   })
 
   it("falls back to bare args when the bundled ignore can't be located", () => {
-    expect(prettierFormatArgs(false, null, noConfig, noWorkspace)).toEqual(["--write", "."])
+    expect(prettierFormatArgs(false, Option.none(), noConfig, noWorkspace)).toEqual(["--write", "."])
   })
 
   it("appends the quoted bundled --config when the consumer has none", () => {
-    expect(prettierFormatArgs(false, null, Option(config), noWorkspace)).toEqual([
+    expect(prettierFormatArgs(false, Option.none(), Option(config), noWorkspace)).toEqual([
       "--write",
       ".",
       "--config",
@@ -205,11 +205,25 @@ describe("prettierFormatArgs", () => {
   it("omits --config entirely when the consumer has their own", () => {
     // An explicit --config disables prettier's discovery, so passing ours would silently override
     // a config the consumer deliberately wrote.
-    expect(prettierFormatArgs(false, null, noConfig, noWorkspace)).not.toContain("--config")
+    expect(prettierFormatArgs(false, Option.none(), noConfig, noWorkspace)).not.toContain("--config")
   })
 })
 
 describe("consumerHasPrettierConfig", () => {
+  it("treats a package.json that is literally null as no config", () => {
+    const dir = makeTempDir()
+    try {
+      writeFileSync(join(dir, "package.json"), "null")
+      expect(consumerHasPrettierConfig(dir)).toBe(false)
+      // The workspace-root search starts at the parent, so the null file sits one level up.
+      const pkg = join(dir, "pkg")
+      mkdirSync(pkg)
+      expect(workspacePrettierIgnorePath(pkg).isNone()).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it("finds a config file in the starting directory", () => {
     const dir = makeTempDir()
     try {

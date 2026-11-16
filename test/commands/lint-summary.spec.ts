@@ -121,17 +121,21 @@ describe("formatLintSummaryTable", () => {
 
 describe("parseLintReport", () => {
   it("accepts a well-formed report", () => {
-    expect(parseLintReport(JSON.stringify(report({ package: "a", errorCount: 1 })))?.package).toBe("a")
+    expect(
+      parseLintReport(JSON.stringify(report({ package: "a", errorCount: 1 })))
+        .map((r) => r.package)
+        .orElse(""),
+    ).toBe("a")
   })
   it("rejects invalid JSON", () => {
-    expect(parseLintReport("{not json")).toBeNull()
+    expect(parseLintReport("{not json").isNone()).toBe(true)
   })
   it("rejects a wrong version", () => {
-    expect(parseLintReport(JSON.stringify({ ...report({}), version: 999 }))).toBeNull()
+    expect(parseLintReport(JSON.stringify({ ...report({}), version: 999 })).isNone()).toBe(true)
   })
   it("rejects non-numeric counts (would poison the aggregate with NaN)", () => {
     const bad = { ...report({}), errorCount: undefined }
-    expect(parseLintReport(JSON.stringify(bad))).toBeNull()
+    expect(parseLintReport(JSON.stringify(bad)).isNone()).toBe(true)
   })
 })
 

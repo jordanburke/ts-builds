@@ -11,7 +11,7 @@ import { loadConfig } from "./cli/config"
 import { runCommand } from "./cli/process"
 import { builtinOverride, isBuiltinStepName, runConfiguredCommand, runValidate, stepName } from "./cli/runner"
 
-const command = process.argv[2] || "init"
+const command = process.argv[2] ?? "init"
 const subCommand = process.argv[3]
 
 // A chain or `commands` entry named after a built-in step replaces it here too, resolved as

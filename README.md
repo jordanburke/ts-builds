@@ -152,6 +152,25 @@ This tells ts-builds to use your project's ESLint installation instead of the bu
 - The fp and functype configs turn off the rules that misread a test's shape, for test files only: `@typescript-eslint/require-await` and `@typescript-eslint/no-unnecessary-condition`, plus `functype/prefer-option`, `prefer-either` and `prefer-try` in the functype config. The rule lists come from functype's `test-overrides` and `tests` configs. The base config enables none of these, so it has no override.
 - The fp and functype configs use type-aware rules, so every test file has to be in a tsconfig. Add `test/**/*` to `include`, or point `parserOptions.project` at a `tsconfig.eslint.json` that has it. On the bundled path, test files outside any tsconfig count as errors and print as one message naming this fix. With `lint.useProjectEslint`, your ESLint reports each one itself.
 
+### Limiting Warnings
+
+Set `lint.maxWarnings` to fail `lint` when it finds more warnings than that, as ESLint's `--max-warnings` does. `0` makes every warning fail the build:
+
+```json
+{
+  "lint": {
+    "maxWarnings": 0
+  }
+}
+```
+
+- Errors fail `lint` as before. Warnings alone fail it only past the limit, with exit code 1 and ESLint's own message plus the count: `✗ ESLint found too many warnings (maximum: 0): 3. Set by lint.maxWarnings.` Unset, warnings never fail it.
+- In `lint` (fix mode), warnings it fixes don't count, as with ESLint.
+- It counts the same files `lint` does, so with `lint.includeTests` it counts `testDir` too.
+- `.ts-builds/lint-report.json` is still written, so `lint:summary` shows the counts. The summary gates on errors and crashed packages only, so it doesn't apply the limit: gate on each package's `lint` for that.
+- With `lint.useProjectEslint`, it is passed to your ESLint as `--max-warnings`.
+- A value that isn't a whole number of 0 or more stops `lint` with exit code 2 before anything is linted. On the bundled path it writes a `fatal` report, as a crash does, so an older passing report can't pass `lint:summary`.
+
 ### For SPAs/React Apps (Vite)
 
 Use Vite instead of tsdown for SPA builds:

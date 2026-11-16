@@ -82,8 +82,8 @@ function forgetLintReportIfLint(step: string): void {
 /** Run a `commands` entry on its own: check its cwd, then run it through the shell */
 export async function runConfiguredCommand(name: string, cmdDef: CommandDef): Promise<number> {
   const cwdError = escapingValidateCwdError(name, cmdDef)
-  if (cwdError) {
-    console.error(cwdError)
+  if (cwdError.isSome()) {
+    cwdError.forEach((message) => console.error(message))
     return 1
   }
   forgetLintReportIfLint(name)
@@ -166,9 +166,9 @@ async function runStep(
     return 1
   }
 
-  const cwdError = isRunFnCommand(cmdDef) ? undefined : escapingValidateCwdError(step, cmdDef)
-  if (cwdError) {
-    console.error(cwdError)
+  const cwdError = isRunFnCommand(cmdDef) ? Option.none<string>() : escapingValidateCwdError(step, cmdDef)
+  if (cwdError.isSome()) {
+    cwdError.forEach((message) => console.error(message))
     return 1
   }
 

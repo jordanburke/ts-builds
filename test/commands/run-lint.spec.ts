@@ -225,4 +225,144 @@ export default [{ files: ["**/*.ts"], languageOptions: { parser: tseslint.parser
       },
     )
   })
+
+  describe("lint.maxWarnings", () => {
+    const warnUnused = 'export default [{ rules: { "no-unused-vars": "warn" } }]'
+    const twoWarnings = "const a = 1\nconst b = 2\nexport default 3\n"
+    const withLimit = (maxWarnings: unknown, extra: Record<string, unknown> = {}): string =>
+      JSON.stringify({ lint: { maxWarnings, ...extra } })
+
+    const inFixture = (config: string, files: Record<string, string>, run: (dir: string) => void): void => {
+      const dir = makeFixture(config, files)
+      try {
+        run(dir)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    }
+
+    itIfBuilt("unset: warnings alone pass", () => {
+      inFixture(warnUnused, { "src/a.js": twoWarnings }, (dir) => {
+        expect(runCli(dir, "lint:check").status).toBe(0)
+        expect(readReport(dir).warningCount).toBe(2)
+      })
+    })
+
+    itIfBuilt("more warnings than the limit → exit 1, with ESLint's wording, sidecar still written", () => {
+      inFixture(warnUnused, { "ts-builds.config.json": withLimit(1), "src/a.js": twoWarnings }, (dir) => {
+        const res = spawnSync(process.execPath, [cliPath, "lint:check"], {
+          cwd: dir,
+          encoding: "utf-8",
+          env: quietEnv(),
+        })
+        expect(res.status).toBe(1)
+        expect(res.stderr).toContain("ESLint found too many warnings (maximum: 1): 2")
+        expect(readReport(dir).warningCount).toBe(2)
+        expect(readReport(dir).fatal).toBeUndefined()
+      })
+    })
+
+    itIfBuilt("check mode: a fixable warning counts once, like any other", () => {
+      const fixable = 'export default [{ rules: { "prefer-const": "warn" } }]'
+      inFixture(
+        fixable,
+        { "ts-builds.config.json": withLimit(1), "src/a.js": "let a = 1\nexport default a\n" },
+        (dir) => {
+          expect(runCli(dir, "lint:check").status).toBe(0)
+          expect(readReport(dir).fixableWarningCount).toBe(1)
+        },
+      )
+    })
+
+    itIfBuilt("exactly the limit passes", () => {
+      inFixture(warnUnused, { "ts-builds.config.json": withLimit(2), "src/a.js": twoWarnings }, (dir) => {
+        expect(runCli(dir, "lint:check").status).toBe(0)
+      })
+    })
+
+    itIfBuilt("0 with a clean run passes", () => {
+      inFixture(warnUnused, { "ts-builds.config.json": withLimit(0), "src/a.js": "export default 1\n" }, (dir) => {
+        expect(runCli(dir, "lint:check").status).toBe(0)
+      })
+    })
+
+    it.each([-1, 1.5, "0"])("rejects %j before linting → exit 2", (maxWarnings) => {
+      if (!existsSync(cliPath)) return
+      inFixture(warnUnused, { "ts-builds.config.json": withLimit(maxWarnings), "src/a.js": twoWarnings }, (dir) => {
+        const res = spawnSync(process.execPath, [cliPath, "lint:check"], {
+          cwd: dir,
+          encoding: "utf-8",
+          env: quietEnv(),
+        })
+        expect(res.status).toBe(2)
+        expect(res.stderr).toContain("lint.maxWarnings in ts-builds.config.json must be a whole number of 0 or more")
+        expect(readReport(dir).fatal).toBe(true)
+      })
+    })
+
+    itIfBuilt("an invalid limit replaces a passing report, so lint:summary can't pass on it", () => {
+      inFixture(warnUnused, { "src/a.js": "export default 1\n" }, (dir) => {
+        expect(runCli(dir, "lint:check").status).toBe(0)
+        expect(readReport(dir).fatal).toBeUndefined()
+        writeFileSync(join(dir, "ts-builds.config.json"), withLimit(-1))
+        expect(runCli(dir, "lint:check").status).toBe(2)
+        expect(readReport(dir).fatal).toBe(true)
+        expect(runCli(dir, "lint:summary").status).not.toBe(0)
+      })
+    })
+
+    itIfBuilt("with errors, the error fails lint and no limit message is printed", () => {
+      const errorAndWarnings = 'export default [{ rules: { "no-unused-vars": "warn", "no-undef": "error" } }]'
+      inFixture(
+        errorAndWarnings,
+        { "ts-builds.config.json": withLimit(0), "src/a.js": "const a = 1\nexport default missing\n" },
+        (dir) => {
+          const res = spawnSync(process.execPath, [cliPath, "lint:check"], {
+            cwd: dir,
+            encoding: "utf-8",
+            env: quietEnv(),
+          })
+          expect(res.status).toBe(1)
+          expect(res.stderr).not.toContain("too many warnings")
+        },
+      )
+    })
+
+    itIfBuilt("fix mode: fixed warnings don't count; ones left over the limit still fail", () => {
+      const fixable = 'export default [{ rules: { "prefer-const": "warn" } }]'
+      inFixture(
+        fixable,
+        { "ts-builds.config.json": withLimit(0), "src/a.js": "let a = 1\nexport default a\n" },
+        (dir) => {
+          expect(runCli(dir, "lint").status).toBe(0)
+          expect(readFileSync(join(dir, "src", "a.js"), "utf-8")).toContain("const a = 1")
+        },
+      )
+      inFixture(warnUnused, { "ts-builds.config.json": withLimit(1), "src/a.js": twoWarnings }, (dir) => {
+        expect(runCli(dir, "lint").status).toBe(1)
+      })
+    })
+
+    // The stub is a shell script, which npx can't run on Windows.
+    it.skipIf(!existsSync(cliPath) || process.platform === "win32")(
+      "with useProjectEslint: passed to the project's eslint as --max-warnings, in both modes",
+      () => {
+        inFixture(
+          "export default []",
+          {
+            "ts-builds.config.json": withLimit(0, { useProjectEslint: true }),
+            "src/a.js": "",
+            "node_modules/.bin/eslint": '#!/bin/sh\necho "$@" > eslint-args.txt\n',
+          },
+          (dir) => {
+            chmodSync(join(dir, "node_modules", ".bin", "eslint"), 0o755)
+            expect(runCli(dir, "lint:check").status).toBe(0)
+            expect(readFileSync(join(dir, "eslint-args.txt"), "utf-8").trim()).toBe("--max-warnings 0 ./src")
+            expect(runCli(dir, "lint").status).toBe(0)
+            expect(readFileSync(join(dir, "eslint-args.txt"), "utf-8").trim()).toBe("--fix --max-warnings 0 ./src")
+          },
+        )
+      },
+    )
+  })
 })

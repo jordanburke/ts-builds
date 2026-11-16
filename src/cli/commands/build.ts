@@ -3,11 +3,19 @@ import { readdir, rm, stat } from "node:fs/promises"
 import { dirname, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath } from "node:url"
 
-import { List, Map, Option, Set } from "functype"
+import type { ESLint } from "eslint"
+import { List, Map, Option, Set, Try } from "functype"
 import { Fs } from "functype-os"
 
 import { loadConfig, type ResolvedConfig, targetDir } from "../config"
-import { buildLintReport, fatalLintReport, packageJsonName, readPackageName, writeLintReport } from "../lint-report"
+import {
+  buildLintReport,
+  fatalLintReport,
+  type LintReport,
+  packageJsonName,
+  readPackageName,
+  writeLintReport,
+} from "../lint-report"
 import { runCommand } from "../process"
 import { reportLintTelemetry } from "../telemetry"
 
@@ -30,19 +38,20 @@ export function cleanDir(absPath: string): Promise<number> {
 }
 
 async function removeWithRetry(absPath: string, attempt: number): Promise<number> {
-  try {
-    await rm(absPath, { recursive: true, force: true })
-    return 0
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code ?? ""
-    const delay = RETRY_DELAYS_MS[attempt]
-    if (!TRANSIENT_RM_ERRORS.has(code) || delay === undefined) {
-      console.error(`Failed to clean ${absPath}: ${(err as Error).message}`)
-      return 1
-    }
-    await new Promise((r) => setTimeout(r, delay))
-    return removeWithRetry(absPath, attempt + 1)
-  }
+  const removed = await Try.fromPromise(rm(absPath, { recursive: true, force: true }))
+  return removed.fold(
+    async (err) => {
+      const code = (err as NodeJS.ErrnoException).code ?? ""
+      const delay = RETRY_DELAYS_MS[attempt]
+      if (!TRANSIENT_RM_ERRORS.has(code) || delay === undefined) {
+        console.error(`Failed to clean ${absPath}: ${err.message}`)
+        return 1
+      }
+      await new Promise((r) => setTimeout(r, delay))
+      return removeWithRetry(absPath, attempt + 1)
+    },
+    () => Promise.resolve(0),
+  )
 }
 
 async function cleanDist(): Promise<number> {
@@ -57,9 +66,9 @@ async function cleanDist(): Promise<number> {
  * broke it would otherwise silently degrade to bare formatting). The `existsSync` guard makes a
  * missing asset fall back to bare discovery rather than break `format` outright.
  */
-export function bundledPrettierIgnorePath(): string | null {
+export function bundledPrettierIgnorePath(): Option<string> {
   const p = fileURLToPath(new URL("../.prettierignore", import.meta.url))
-  return existsSync(p) ? p : null
+  return Option(existsSync(p) ? p : undefined)
 }
 
 /**
@@ -105,21 +114,18 @@ function hasPrettierConfigFile(dir: string): boolean {
 
 /** True when `dir`'s package.json declares a `prettier` key (a path, a package name, or inline options). */
 function packageJsonDeclaresPrettier(dir: string): boolean {
-  return Fs.readFileSync(join(dir, "package.json"))
-    .toOption()
-    .flatMap((content) => {
-      try {
-        return Option((JSON.parse(content) as { prettier?: unknown }).prettier)
-      } catch {
-        // An unparseable package.json is the consumer's problem, not ours — treat it as no config
-        // and let prettier surface its own error.
-        return Option.none<unknown>()
-      }
-    })
-    .fold(
-      () => false,
-      () => true,
-    )
+  return (
+    Fs.readFileSync(join(dir, "package.json"))
+      .toOption()
+      // An unparseable package.json is the consumer's problem, not ours — treat it as no config
+      // and let prettier surface its own error.
+      .flatMap((content) => Try(() => JSON.parse(content) as { prettier?: unknown } | null).toOption())
+      .flatMap((pkg) => Option(pkg?.prettier))
+      .fold(
+        () => false,
+        () => true,
+      )
+  )
 }
 
 /** `dir` and every ancestor up to the filesystem root, nearest first. */
@@ -157,13 +163,8 @@ function isWorkspaceRoot(dir: string): boolean {
   if (Fs.existsSync(join(dir, "pnpm-workspace.yaml"))) return true
   return Fs.readFileSync(join(dir, "package.json"))
     .toOption()
-    .flatMap((content) => {
-      try {
-        return Option((JSON.parse(content) as { workspaces?: unknown }).workspaces)
-      } catch {
-        return Option.none<unknown>()
-      }
-    })
+    .flatMap((content) => Try(() => JSON.parse(content) as { workspaces?: unknown } | null).toOption())
+    .flatMap((pkg) => Option(pkg?.workspaces))
     .fold(
       () => false,
       () => true,
@@ -213,7 +214,7 @@ export function workspacePrettierIgnorePath(startDir: string = targetDir): Optio
  */
 export function prettierFormatArgs(
   check: boolean,
-  bundledIgnore: string | null = bundledPrettierIgnorePath(),
+  bundledIgnore: Option<string> = bundledPrettierIgnorePath(),
   bundledConfig: Option<string> = prettierConfigArg(),
   workspaceIgnore: Option<string> = workspacePrettierIgnorePath(),
 ): string[] {
@@ -221,7 +222,7 @@ export function prettierFormatArgs(
   // Any explicit --ignore-path turns off prettier's own discovery of ./.prettierignore (and of
   // ./.gitignore, which ts-builds has never re-added), so once one is passed the consumer's
   // ./.prettierignore must be passed too.
-  const explicit = List([Option(bundledIgnore), workspaceIgnore]).flatMap((path) =>
+  const explicit = List([bundledIgnore, workspaceIgnore]).flatMap((path) =>
     path.fold(
       () => List.empty<string>(),
       (p) => List(["--ignore-path", `"${p}"`]),
@@ -301,12 +302,13 @@ const notInTsconfig = (result: { messages: ReadonlyArray<{ fatal?: boolean; mess
  * Project path (`useProjectEslint: true`): keeps the spawn to the consumer's eslint
  * (which may be a different major with a different Node API). That path writes NO
  * sidecar and prints no warning; those packages simply don't appear in `lint:summary`
- * (documented). Returns 0/1 iff there are lint errors.
+ * (documented). Returns ESLint's own exit code; `lint.maxWarnings` is passed as `--max-warnings`.
  *
  * Exit codes are RETURNED, never `process.exit`ed: `runLint` runs in-process inside
  * the `validate` chain (see runner.ts), so exiting here would kill the chain with no
- * `✗ lint failed` line. `cli.ts` owns process exit. Bundled path: 1 iff errorCount>0,
- * 0 on warnings-only/clean, 2 on a thrown analysis error (bad config, no matching
+ * `✗ lint failed` line. `cli.ts` owns process exit. Bundled path: 1 iff errorCount>0 or
+ * warnings exceed `lint.maxWarnings`, 0 otherwise, 2 on an invalid `lint.maxWarnings` (before
+ * linting, no sidecar) or a thrown analysis error (bad config, no matching
  * files) — the analysis phase is guarded, not just `lintFiles`, so a throw in the
  * constructor/`outputFixes` writes a `fatal` sidecar (so a stale prior report can't
  * green-light CI) rather than leaking an unhandled rejection. Once the report is
@@ -315,66 +317,115 @@ const notInTsconfig = (result: { messages: ReadonlyArray<{ fatal?: boolean; mess
  */
 export async function runLint(check = false): Promise<number> {
   const config = loadConfig()
-
-  if (config.lint.useProjectEslint) {
-    const targets = lintTargets(config, targetDir)
-    return runCommand("npx eslint", check ? targets : ["--fix", ...targets])
-  }
-
   const fix = !check
-  const pkg = readPackageName(targetDir)
-
-  try {
-    const { ESLint } = await import("eslint")
-    const eslint = new ESLint({ fix, cwd: targetDir })
-    const startedAt = performance.now()
-    const results = await eslint.lintFiles(lintTargets(config, targetDir))
-    if (fix) await ESLint.outputFixes(results)
-    const durationMs = performance.now() - startedAt
-
-    // Persist the sidecar BEFORE printing: a broken pipe (`ts-builds lint | head`)
-    // must not lose an already-computed report or downgrade a real result to fatal.
-    const report = buildLintReport(results, fix, pkg)
-    await writeLintReport(report, targetDir)
-
-    // Printing is best-effort: a formatter bug or a closed pipe must not overwrite the
-    // saved report with a fatal one nor change the real exit code below.
-    try {
-      const testDir = resolve(targetDir, config.testDir)
-      const unparsed = config.lint.includeTests
-        ? results.filter((result) => isInside(result.filePath, testDir) && notInTsconfig(result))
-        : []
-      const formatter = await eslint.loadFormatter("stylish")
-      const output = await formatter.format(results.filter((result) => !unparsed.includes(result)))
-      if (output) await writeAll(process.stdout, output)
-      if (unparsed.length > 0)
-        await writeAll(
-          process.stdout,
-          `\n✗ ${unparsed.length} file(s) in ${config.testDir} aren't in a tsconfig, so type-aware rules can't read them.\n  Add "${relative(targetDir, testDir).split(sep).join("/")}/**/*" to "include" in tsconfig.json, or point parserOptions.project at a tsconfig.eslint.json that has it.\n`,
-        )
-    } catch {
-      // report is saved; the exit code below is authoritative
-    }
-
-    // Opt-in, and off unless TS_BUILDS_TELEMETRY=1. Never throws or changes the exit code.
-    const firstFile = results.at(0)?.filePath
-    await reportLintTelemetry({
-      results,
-      fix,
-      durationMs,
-      packageName: packageJsonName(targetDir),
-      eslintVersion: ESLint.version,
-      dir: targetDir,
-      configFor: () =>
-        firstFile === undefined ? Promise.resolve(undefined) : eslint.calculateConfigForFile(firstFile),
-    })
-
-    return report.errorCount > 0 ? 1 : 0
-  } catch (err) {
-    console.error((err as Error).message)
-    await writeLintReport(fatalLintReport(fix, pkg), targetDir)
+  const invalidLimit = maxWarningsProblem(config.lint.maxWarnings)
+  if (invalidLimit.isSome()) {
+    console.error(invalidLimit.orElse(""))
+    // The project path never writes a sidecar; the bundled one must replace any old report.
+    if (!config.lint.useProjectEslint)
+      await writeLintReport(fatalLintReport(fix, readPackageName(targetDir)), targetDir)
     return 2
   }
+
+  if (config.lint.useProjectEslint) {
+    const limit = config.lint.maxWarnings.fold(
+      () => [],
+      (max) => ["--max-warnings", String(max)],
+    )
+    return runCommand("npx eslint", [...(check ? [] : ["--fix"]), ...limit, ...lintTargets(config, targetDir)])
+  }
+
+  const pkg = readPackageName(targetDir)
+  const linted = await Try.fromPromise(lintWithNodeApi(config, fix, pkg))
+  return linted.fold(
+    async (err) => {
+      console.error(err.message)
+      await writeLintReport(fatalLintReport(fix, pkg), targetDir)
+      return 2
+    },
+    (report) => {
+      warningLimitMessage(report, config.lint.maxWarnings).forEach((message) => console.error(message))
+      return Promise.resolve(lintExitCode(report, config.lint.maxWarnings))
+    },
+  )
+}
+
+/** A `lint.maxWarnings` that isn't a non-negative integer. The config is JSON, so the type isn't a guarantee. */
+export function maxWarningsProblem(maxWarnings: Option<number>): Option<string> {
+  return maxWarnings
+    .filter((max) => !Number.isInteger(max) || max < 0)
+    .map(
+      (max) =>
+        `✗ lint.maxWarnings in ts-builds.config.json must be a whole number of 0 or more, not ${JSON.stringify(max)}`,
+    )
+}
+
+/** 1 for any error, or for more warnings than `lint.maxWarnings` allows; 0 otherwise. */
+export function lintExitCode(
+  report: Pick<LintReport, "errorCount" | "warningCount">,
+  maxWarnings: Option<number>,
+): number {
+  if (report.errorCount > 0) return 1
+  return maxWarnings.exists((max) => report.warningCount > max) ? 1 : 0
+}
+
+/** The line explaining a warnings-only failure: ESLint's own `--max-warnings` message, plus the count. */
+export function warningLimitMessage(
+  report: Pick<LintReport, "errorCount" | "warningCount">,
+  maxWarnings: Option<number>,
+): Option<string> {
+  return maxWarnings
+    .filter((max) => report.errorCount === 0 && report.warningCount > max)
+    .map(
+      (max) => `✗ ESLint found too many warnings (maximum: ${max}): ${report.warningCount}. Set by lint.maxWarnings.`,
+    )
+}
+
+/** Lints through ESLint's Node API, writes the sidecar, prints, and sends telemetry. A throw is fatal. */
+async function lintWithNodeApi(config: ResolvedConfig, fix: boolean, pkg: string): Promise<LintReport> {
+  const { ESLint } = await import("eslint")
+  const eslint = new ESLint({ fix, cwd: targetDir })
+  const startedAt = performance.now()
+  const results = await eslint.lintFiles(lintTargets(config, targetDir))
+  if (fix) await ESLint.outputFixes(results)
+  const durationMs = performance.now() - startedAt
+
+  // Persist the sidecar BEFORE printing: a broken pipe (`ts-builds lint | head`)
+  // must not lose an already-computed report or downgrade a real result to fatal.
+  const report = buildLintReport(results, fix, pkg)
+  await writeLintReport(report, targetDir)
+
+  // Printing is best-effort: a formatter bug or a closed pipe must not overwrite the
+  // saved report with a fatal one nor change the real exit code.
+  await Try.fromPromise(printLintResults(eslint, results, config))
+
+  // Opt-in, and off unless TS_BUILDS_TELEMETRY=1. Never throws or changes the exit code.
+  const firstFile = results.at(0)?.filePath
+  await reportLintTelemetry({
+    results,
+    fix,
+    durationMs,
+    packageName: packageJsonName(targetDir),
+    eslintVersion: ESLint.version,
+    dir: targetDir,
+    configFor: () => (firstFile === undefined ? Promise.resolve(undefined) : eslint.calculateConfigForFile(firstFile)),
+  })
+  return report
+}
+
+async function printLintResults(eslint: ESLint, results: ESLint.LintResult[], config: ResolvedConfig): Promise<void> {
+  const testDir = resolve(targetDir, config.testDir)
+  const unparsed = config.lint.includeTests
+    ? results.filter((result) => isInside(result.filePath, testDir) && notInTsconfig(result))
+    : []
+  const formatter = await eslint.loadFormatter("stylish")
+  const output = await formatter.format(results.filter((result) => !unparsed.includes(result)))
+  if (output) await writeAll(process.stdout, output)
+  if (unparsed.length > 0)
+    await writeAll(
+      process.stdout,
+      `\n✗ ${unparsed.length} file(s) in ${config.testDir} aren't in a tsconfig, so type-aware rules can't read them.\n  Add "${relative(targetDir, testDir).split(sep).join("/")}/**/*" to "include" in tsconfig.json, or point parserOptions.project at a tsconfig.eslint.json that has it.\n`,
+    )
 }
 
 export async function runTypecheck(): Promise<number> {
@@ -410,14 +461,15 @@ async function collectMtimes(dir: string): Promise<Array<[string, number]>> {
     const path = join(dir, entry.name)
     if (entry.isDirectory()) return [...acc, ...(await collectMtimes(path))]
     const mtime = await statMtime(path)
-    return mtime === undefined ? acc : [...acc, [path, mtime]]
+    return mtime.fold(
+      () => acc,
+      (ms): Array<[string, number]> => [...acc, [path, ms]],
+    )
   }, Promise.resolve([]))
 }
 
-function statMtime(path: string): Promise<number | undefined> {
-  return stat(path)
-    .then((s) => s.mtimeMs)
-    .catch(() => undefined)
+async function statMtime(path: string): Promise<Option<number>> {
+  return (await Try.fromPromise(stat(path))).toOption().map((s) => s.mtimeMs)
 }
 
 /**
@@ -437,7 +489,7 @@ function statMtime(path: string): Promise<number | undefined> {
 export async function pruneOrphans(distDir: string, before: Map<string, number>): Promise<void> {
   await [...before].reduce<Promise<void>>(async (pending, [path, mtimeBefore]) => {
     await pending
-    if ((await statMtime(path)) === mtimeBefore) await rm(path, { force: true }).catch(() => undefined)
+    if ((await statMtime(path)).contains(mtimeBefore)) await rm(path, { force: true }).catch(() => undefined)
   }, Promise.resolve())
 }
 

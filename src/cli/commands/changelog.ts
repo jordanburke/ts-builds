@@ -87,18 +87,13 @@ export function getCommitsSince(since: Option<string>): List<RawCommit> {
   )
 }
 
-export function parseConventionalCommit(
-  subject: string,
-): { type: string; scope: Option<string>; breaking: boolean; description: string } | null {
-  const match = subject.match(/^(\w+)(?:\(([^)]+)\))?(!)?:\s+(.+)$/)
-  if (!match) return null
+export type ConventionalCommit = { type: string; scope: Option<string>; breaking: boolean; description: string }
 
-  return {
-    type: match[1],
-    scope: Option(match[2]),
-    breaking: match[3] === "!",
-    description: match[4],
-  }
+export function parseConventionalCommit(subject: string): Option<ConventionalCommit> {
+  const [, type, scope, bang, description] = /^(\w+)(?:\(([^)]+)\))?(!)?:\s+(.+)$/.exec(subject) ?? []
+  return type === undefined || description === undefined
+    ? Option.none<ConventionalCommit>()
+    : Option({ type, scope: Option(scope), breaking: bang === "!", description })
 }
 
 export function extractIssueRefs(text: string): List<string> {
@@ -237,26 +232,25 @@ export function runChangelog(args: string[]): number {
 
   const repoUrl = getRepoUrl()
 
-  const parsed = rawCommits
-    .map((raw) => {
-      const conv = parseConventionalCommit(raw.subject)
-      if (!conv) return null
+  const parsed = rawCommits.flatMap((raw) =>
+    parseConventionalCommit(raw.subject)
+      .map((conv): ParsedCommit => {
+        const bodyBreaking = raw.body.includes("BREAKING CHANGE")
+        const issues = extractIssueRefs(raw.subject).concat(extractIssueRefs(raw.body)).distinct()
 
-      const bodyBreaking = raw.body.includes("BREAKING CHANGE")
-      const issues = extractIssueRefs(raw.subject).concat(extractIssueRefs(raw.body)).distinct()
-
-      return {
-        hash: raw.hash,
-        type: conv.type,
-        scope: conv.scope,
-        breaking: conv.breaking || bodyBreaking,
-        description: conv.description,
-        author: raw.author,
-        date: raw.date,
-        issues,
-      } satisfies ParsedCommit
-    })
-    .filter((c): c is ParsedCommit => c !== null)
+        return {
+          hash: raw.hash,
+          type: conv.type,
+          scope: conv.scope,
+          breaking: conv.breaking || bodyBreaking,
+          description: conv.description,
+          author: raw.author,
+          date: raw.date,
+          issues,
+        }
+      })
+      .toList(),
+  )
 
   if (parsed.isEmpty) {
     console.log("No conventional commits found")
