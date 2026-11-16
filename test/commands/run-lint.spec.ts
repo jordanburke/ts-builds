@@ -262,6 +262,18 @@ export default [{ files: ["**/*.ts"], languageOptions: { parser: tseslint.parser
       })
     })
 
+    itIfBuilt("check mode: a fixable warning counts once, like any other", () => {
+      const fixable = 'export default [{ rules: { "prefer-const": "warn" } }]'
+      inFixture(
+        fixable,
+        { "ts-builds.config.json": withLimit(1), "src/a.js": "let a = 1\nexport default a\n" },
+        (dir) => {
+          expect(runCli(dir, "lint:check").status).toBe(0)
+          expect(readReport(dir).fixableWarningCount).toBe(1)
+        },
+      )
+    })
+
     itIfBuilt("exactly the limit passes", () => {
       inFixture(warnUnused, { "ts-builds.config.json": withLimit(2), "src/a.js": twoWarnings }, (dir) => {
         expect(runCli(dir, "lint:check").status).toBe(0)
@@ -284,13 +296,56 @@ export default [{ files: ["**/*.ts"], languageOptions: { parser: tseslint.parser
         })
         expect(res.status).toBe(2)
         expect(res.stderr).toContain("lint.maxWarnings in ts-builds.config.json must be a whole number of 0 or more")
-        expect(existsSync(join(dir, ".ts-builds", "lint-report.json"))).toBe(false)
+        expect(readReport(dir).fatal).toBe(true)
+      })
+    })
+
+    itIfBuilt("an invalid limit replaces a passing report, so lint:summary can't pass on it", () => {
+      inFixture(warnUnused, { "src/a.js": "export default 1\n" }, (dir) => {
+        expect(runCli(dir, "lint:check").status).toBe(0)
+        expect(readReport(dir).fatal).toBeUndefined()
+        writeFileSync(join(dir, "ts-builds.config.json"), withLimit(-1))
+        expect(runCli(dir, "lint:check").status).toBe(2)
+        expect(readReport(dir).fatal).toBe(true)
+        expect(runCli(dir, "lint:summary").status).not.toBe(0)
+      })
+    })
+
+    itIfBuilt("with errors, the error fails lint and no limit message is printed", () => {
+      const errorAndWarnings = 'export default [{ rules: { "no-unused-vars": "warn", "no-undef": "error" } }]'
+      inFixture(
+        errorAndWarnings,
+        { "ts-builds.config.json": withLimit(0), "src/a.js": "const a = 1\nexport default missing\n" },
+        (dir) => {
+          const res = spawnSync(process.execPath, [cliPath, "lint:check"], {
+            cwd: dir,
+            encoding: "utf-8",
+            env: quietEnv(),
+          })
+          expect(res.status).toBe(1)
+          expect(res.stderr).not.toContain("too many warnings")
+        },
+      )
+    })
+
+    itIfBuilt("fix mode: fixed warnings don't count; ones left over the limit still fail", () => {
+      const fixable = 'export default [{ rules: { "prefer-const": "warn" } }]'
+      inFixture(
+        fixable,
+        { "ts-builds.config.json": withLimit(0), "src/a.js": "let a = 1\nexport default a\n" },
+        (dir) => {
+          expect(runCli(dir, "lint").status).toBe(0)
+          expect(readFileSync(join(dir, "src", "a.js"), "utf-8")).toContain("const a = 1")
+        },
+      )
+      inFixture(warnUnused, { "ts-builds.config.json": withLimit(1), "src/a.js": twoWarnings }, (dir) => {
+        expect(runCli(dir, "lint").status).toBe(1)
       })
     })
 
     // The stub is a shell script, which npx can't run on Windows.
     it.skipIf(!existsSync(cliPath) || process.platform === "win32")(
-      "with useProjectEslint: passed to the project's eslint as --max-warnings",
+      "with useProjectEslint: passed to the project's eslint as --max-warnings, in both modes",
       () => {
         inFixture(
           "export default []",
@@ -303,6 +358,8 @@ export default [{ files: ["**/*.ts"], languageOptions: { parser: tseslint.parser
             chmodSync(join(dir, "node_modules", ".bin", "eslint"), 0o755)
             expect(runCli(dir, "lint:check").status).toBe(0)
             expect(readFileSync(join(dir, "eslint-args.txt"), "utf-8").trim()).toBe("--max-warnings 0 ./src")
+            expect(runCli(dir, "lint").status).toBe(0)
+            expect(readFileSync(join(dir, "eslint-args.txt"), "utf-8").trim()).toBe("--fix --max-warnings 0 ./src")
           },
         )
       },

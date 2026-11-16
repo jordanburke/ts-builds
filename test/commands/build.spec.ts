@@ -210,6 +210,20 @@ describe("prettierFormatArgs", () => {
 })
 
 describe("consumerHasPrettierConfig", () => {
+  it("treats a package.json that is literally null as no config", () => {
+    const dir = makeTempDir()
+    try {
+      writeFileSync(join(dir, "package.json"), "null")
+      expect(consumerHasPrettierConfig(dir)).toBe(false)
+      // The workspace-root search starts at the parent, so the null file sits one level up.
+      const pkg = join(dir, "pkg")
+      mkdirSync(pkg)
+      expect(workspacePrettierIgnorePath(pkg).isNone()).toBe(true)
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
   it("finds a config file in the starting directory", () => {
     const dir = makeTempDir()
     try {

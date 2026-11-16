@@ -119,8 +119,8 @@ function packageJsonDeclaresPrettier(dir: string): boolean {
       .toOption()
       // An unparseable package.json is the consumer's problem, not ours — treat it as no config
       // and let prettier surface its own error.
-      .flatMap((content) => Try(() => JSON.parse(content) as { prettier?: unknown }).toOption())
-      .flatMap((pkg) => Option(pkg.prettier))
+      .flatMap((content) => Try(() => JSON.parse(content) as { prettier?: unknown } | null).toOption())
+      .flatMap((pkg) => Option(pkg?.prettier))
       .fold(
         () => false,
         () => true,
@@ -163,8 +163,8 @@ function isWorkspaceRoot(dir: string): boolean {
   if (Fs.existsSync(join(dir, "pnpm-workspace.yaml"))) return true
   return Fs.readFileSync(join(dir, "package.json"))
     .toOption()
-    .flatMap((content) => Try(() => JSON.parse(content) as { workspaces?: unknown }).toOption())
-    .flatMap((pkg) => Option(pkg.workspaces))
+    .flatMap((content) => Try(() => JSON.parse(content) as { workspaces?: unknown } | null).toOption())
+    .flatMap((pkg) => Option(pkg?.workspaces))
     .fold(
       () => false,
       () => true,
@@ -317,9 +317,13 @@ const notInTsconfig = (result: { messages: ReadonlyArray<{ fatal?: boolean; mess
  */
 export async function runLint(check = false): Promise<number> {
   const config = loadConfig()
+  const fix = !check
   const invalidLimit = maxWarningsProblem(config.lint.maxWarnings)
   if (invalidLimit.isSome()) {
     console.error(invalidLimit.orElse(""))
+    // The project path never writes a sidecar; the bundled one must replace any old report.
+    if (!config.lint.useProjectEslint)
+      await writeLintReport(fatalLintReport(fix, readPackageName(targetDir)), targetDir)
     return 2
   }
 
@@ -331,7 +335,6 @@ export async function runLint(check = false): Promise<number> {
     return runCommand("npx eslint", [...(check ? [] : ["--fix"]), ...limit, ...lintTargets(config, targetDir)])
   }
 
-  const fix = !check
   const pkg = readPackageName(targetDir)
   const linted = await Try.fromPromise(lintWithNodeApi(config, fix, pkg))
   return linted.fold(
@@ -366,7 +369,7 @@ export function lintExitCode(
   return maxWarnings.exists((max) => report.warningCount > max) ? 1 : 0
 }
 
-/** The line explaining a warnings-only failure, worded like ESLint's own `--max-warnings` message. */
+/** The line explaining a warnings-only failure: ESLint's own `--max-warnings` message, plus the count. */
 export function warningLimitMessage(
   report: Pick<LintReport, "errorCount" | "warningCount">,
   maxWarnings: Option<number>,

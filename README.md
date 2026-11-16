@@ -164,11 +164,12 @@ Set `lint.maxWarnings` to fail `lint` when it finds more warnings than that, as 
 }
 ```
 
-- Errors fail `lint` as before. Warnings alone fail it only past the limit, with exit code 1 and ESLint's own wording: `ESLint found too many warnings (maximum: 0): 3`. Unset, warnings never fail it.
+- Errors fail `lint` as before. Warnings alone fail it only past the limit, with exit code 1 and ESLint's own message plus the count: `✗ ESLint found too many warnings (maximum: 0): 3. Set by lint.maxWarnings.` Unset, warnings never fail it.
+- In `lint` (fix mode), warnings it fixes don't count, as with ESLint.
 - It counts the same files `lint` does, so with `lint.includeTests` it counts `testDir` too.
-- `.ts-builds/lint-report.json` is still written, so `lint:summary` shows the counts.
+- `.ts-builds/lint-report.json` is still written, so `lint:summary` shows the counts. The summary gates on errors and crashed packages only, so it doesn't apply the limit: gate on each package's `lint` for that.
 - With `lint.useProjectEslint`, it is passed to your ESLint as `--max-warnings`.
-- A value that isn't a whole number of 0 or more stops `lint` with exit code 2 before anything is linted.
+- A value that isn't a whole number of 0 or more stops `lint` with exit code 2 before anything is linted. On the bundled path it writes a `fatal` report, as a crash does, so an older passing report can't pass `lint:summary`.
 
 ### For SPAs/React Apps (Vite)
 
