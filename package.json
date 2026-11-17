@@ -128,7 +128,7 @@
     "test:watch": "vitest",
     "build": "node dist/cli.js build",
     "dev": "node dist/cli.js dev",
-    "prepublishOnly": "pnpm validate:bootstrap"
+    "prepublishOnly": "pnpm ci:bootstrap"
   },
   "engines": {
     "node": "^22.12.0 || ^24.0.0 || >=26.0.0"

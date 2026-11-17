@@ -91,6 +91,7 @@ Add these to delegate all commands to ts-builds:
 {
   "scripts": {
     "validate": "ts-builds validate",
+    "ci": "ts-builds ci",
     "format": "ts-builds format",
     "format:check": "ts-builds format:check",
     "lint": "ts-builds lint",
@@ -100,10 +101,12 @@ Add these to delegate all commands to ts-builds:
     "test:watch": "ts-builds test:watch",
     "build": "ts-builds build",
     "dev": "ts-builds dev",
-    "prepublishOnly": "pnpm validate"
+    "prepublishOnly": "pnpm run ci"
   }
 }
 ```
+
+Run `validate` locally: it fixes format and lint. CI, publish workflows and `prepublishOnly` run `pnpm run ci`, the same chain checking format and lint without fixing. Type `run`: `pnpm ci` is pnpm's clean install.
 
 ## Configuration
 

@@ -8,6 +8,7 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
 
     permissions:
       contents: write # Required for GitHub release
@@ -51,7 +52,7 @@ jobs:
           esac
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@v6.1.0
 
       - name: Setup Node.js
         uses: actions/setup-node@v7
@@ -63,8 +64,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Bootstrap and validate
-        run: pnpm validate:bootstrap
+      - name: Bootstrap and check
+        run: pnpm ci:bootstrap
 
       - name: Verify package contents
         run: |
