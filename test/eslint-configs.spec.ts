@@ -1,5 +1,9 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+
 import { ESLint, Linter } from "eslint"
-import { describe, expect, it } from "vitest"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 // Helper to collect all plugins from a flat config array
 function getAllPlugins(configArray: Array<{ plugins?: Record<string, unknown> }>): Record<string, unknown> {
@@ -38,6 +42,7 @@ const typeAwareRules: Record<string, "off"> = {
   "@typescript-eslint/prefer-optional-chain": "off",
   "@typescript-eslint/no-unnecessary-condition": "off",
   "@typescript-eslint/strict-boolean-expressions": "off",
+  "@typescript-eslint/unbound-method": "off",
 }
 
 // Helper to lint code with a flat config and return messages.
@@ -286,7 +291,12 @@ describe("rules for test files", () => {
     (await configs[name]()).default as Linter.Config[]
 
   const shared = ["@typescript-eslint/require-await", "@typescript-eslint/no-unnecessary-condition"]
-  const functypeOnly = ["functype/prefer-option", "functype/prefer-either", "functype/prefer-try"]
+  const functypeOnly = [
+    "functype/prefer-option",
+    "functype/prefer-either",
+    "functype/prefer-try",
+    "@typescript-eslint/unbound-method",
+  ]
   const testFiles = ["test/foo.spec.ts", "src/foo.test.ts", "src/__tests__/foo.ts"]
 
   describe.each(testFiles)("%s", (file) => {
@@ -326,5 +336,124 @@ describe("rules for test files", () => {
       { files: ["test/**"], rules: { "functype/prefer-option": "error" as const } },
     ]
     expect(await severity(config, "test/foo.ts", "functype/prefer-option")).toBe(2)
+  })
+})
+
+describe("functype config: @typescript-eslint/unbound-method", () => {
+  const RULE = "@typescript-eslint/unbound-method"
+
+  const presets = {
+    "eslint.config.base.js": () => import("../eslint.config.base.js"),
+    "eslint.config.fp.js": () => import("../eslint.config.fp.js"),
+    "eslint.config.functype.js": () => import("../eslint.config.functype.js"),
+  }
+
+  const resolved = async (file: string, name: keyof typeof presets): Promise<unknown> => {
+    const config = (await presets[name]()).default as Linter.Config[]
+    const eslint = new ESLint({ overrideConfig: config, overrideConfigFile: true })
+    return ((await eslint.calculateConfigForFile(file)) as { rules: Record<string, unknown> }).rules[RULE]
+  }
+
+  it("warns, ignoring class statics", async () => {
+    expect(await resolved("src/foo.ts", "eslint.config.functype.js")).toEqual([1, { ignoreStatic: true }])
+  })
+
+  it.each(["eslint.config.base.js", "eslint.config.fp.js"] as const)("is not set by %s", async (name) => {
+    expect(await resolved("src/foo.ts", name)).toBeUndefined()
+  })
+
+  /**
+   * The rule needs type information, which the `lint()` helper strips, so this lints a throwaway
+   * project with a tsconfig. `Box` stands in for a functype value on 1.x: `orElse` uses method
+   * syntax, as Option does, and `map` is an arrow-typed property, as most of Try, Either and List are.
+   */
+  describe("on a type-checked project", () => {
+    const files: Record<string, string> = {
+      "tsconfig.json": JSON.stringify({
+        compilerOptions: {
+          strict: true,
+          target: "ES2022",
+          module: "ESNext",
+          moduleResolution: "Bundler",
+          noEmit: true,
+        },
+        include: ["src/**/*"],
+      }),
+      "src/box.ts": [
+        "export interface Box {",
+        "  orElse(fallback: number): number",
+        "  readonly map: (f: (n: number) => number) => Box",
+        "}",
+        "",
+      ].join("\n"),
+      "src/detached.ts": [
+        'import type { Box } from "./box"',
+        "declare const box: Box",
+        "export const fallbacks = [1, 2].map(box.orElse)",
+        "export const { orElse } = box",
+        "",
+      ].join("\n"),
+      "src/called.ts": [
+        'import type { Box } from "./box"',
+        "declare const box: Box",
+        "export const value = box.orElse(1)",
+        "export const fallbacks = [1, 2].map((n) => box.orElse(n))",
+        "",
+      ].join("\n"),
+      "src/arrow-property.ts": [
+        'import type { Box } from "./box"',
+        "declare const box: Box",
+        "export const boxes = [(n: number) => n + 1].map(box.map)",
+        "export const { map } = box",
+        "",
+      ].join("\n"),
+    }
+
+    let dir = ""
+    let results: Record<string, ESLint.LintResult> = {}
+
+    beforeAll(async () => {
+      dir = mkdtempSync(join(tmpdir(), "ts-builds-unbound-method-"))
+      for (const [rel, contents] of Object.entries(files)) {
+        mkdirSync(join(dir, rel, ".."), { recursive: true })
+        writeFileSync(join(dir, rel), contents)
+      }
+      const { default: config } = (await import("../eslint.config.functype.js")) as { default: Linter.Config[] }
+      const eslint = new ESLint({
+        cwd: dir,
+        overrideConfigFile: true,
+        overrideConfig: [...config, { languageOptions: { parserOptions: { tsconfigRootDir: dir } } }],
+      })
+      const linted = await eslint.lintFiles(["src/*.ts"])
+      results = Object.fromEntries(linted.map((r) => [r.filePath.slice(dir.length + 1), r]))
+    }, 60_000)
+
+    afterAll(() => {
+      if (dir) rmSync(dir, { recursive: true, force: true })
+    })
+
+    const hits = (file: string): Linter.LintMessage[] =>
+      (results[join("src", file)]?.messages ?? []).filter((m) => m.ruleId === RULE)
+
+    it("type-checks every file", () => {
+      expect(Object.keys(results)).toHaveLength(4)
+      for (const result of Object.values(results)) expect(result.messages.filter((m) => m.fatal)).toEqual([])
+    })
+
+    it("warns on a method passed or destructured without its value", () => {
+      const found = hits("detached.ts")
+      expect(found.map((m) => [m.line, m.severity])).toEqual([
+        [3, 1],
+        [4, 1],
+      ])
+    })
+
+    it("stays quiet when the method is called on its value", () => {
+      expect(hits("called.ts")).toEqual([])
+    })
+
+    it("misses an arrow-typed property, the limit on functype 1.x", () => {
+      expect(hits("arrow-property.ts")).toEqual([])
+    })
   })
 })

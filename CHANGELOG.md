@@ -6,6 +6,17 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+### Features
+
+- **eslint:** the functype preset (`ts-builds/eslint-functype`) warns on
+  `@typescript-eslint/unbound-method`, with `ignoreStatic: true`. functype 2.0 moves value methods
+  onto shared prototypes, so a detached call such as `xs.map(opt.orElse)` or `const { map } = opt`
+  will throw, and the warning finds those calls first. On functype 1.x it only sees members declared
+  with method syntax: it finds Option's, but misses most of Try's, Either's and List's, which are
+  arrow-typed properties, such as `tr.map` and `const { map } = tr`. It is off for test files. A
+  repo that lints with `lint.maxWarnings: 0` or `--max-warnings=0` fails `lint` if it has such
+  calls, until it fixes them or turns the rule off. The base and fp presets don't change.
+
 ## 4.7.0 (2026-11-15)
 
 ### Features
