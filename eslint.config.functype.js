@@ -43,9 +43,22 @@ export default [
     rules: {
       ...functypeConfig.configs.recommended.rules,
       ...functypePlugin.configs.recommended.rules,
+      // functype 2.0 moves value methods onto shared prototypes, so a detached call such as
+      // `xs.map(opt.orElse)` or `const { map } = opt` will throw. This warns about those calls now.
+      // The rule only checks members declared with method syntax. On functype 1.x that is Option,
+      // but not most of Try, Either and List, which use arrow-typed properties; 2.0 switches them.
+      // `ignoreStatic` skips class statics, which are usually called without `this`.
+      "@typescript-eslint/unbound-method": ["warn", { ignoreStatic: true }],
     },
   },
   // Last, so they win over the rules above, and a consumer's own blocks after them win over them.
   functypeConfig.configs.testOverrides,
   functypePlugin.configs.tests,
+  // Tests pass methods to `expect(obj.method)` without calling them, and a detached call that
+  // throws in 2.0 fails the test run anyway, so unbound-method is off for test files.
+  {
+    name: "ts-builds/functype-tests",
+    files: functypeConfig.configs.testOverrides.files,
+    rules: { "@typescript-eslint/unbound-method": "off" },
+  },
 ]
