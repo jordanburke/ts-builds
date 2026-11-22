@@ -9,7 +9,7 @@ conventional commits via `ts-builds changelog`.
 ### Bug Fixes
 
 - **lint (`ts-builds/eslint-functype`):** `eslint-config-functype` and `eslint-plugin-functype` are
-  capped at `>=2.127.2 <2.200.0`. ts-builds 4.8.0 asked for `^2.127.0`, which admits
+  capped at `>=2.127.0 <2.200.0`. ts-builds 4.8.0 asked for `^2.127.0`, which admits
   eslint-plugin-functype 2.200.0, the functype 2.0 release. That version's `recommended` preset turns
   every rule it enables to `error`, including `prefer-list` and `no-array-mutation`, so a fresh
   install of 4.8.0 can fail `lint` on code that passed the day before. On ts-builds' own `src/` it
@@ -18,9 +18,11 @@ conventional commits via `ts-builds changelog`.
 ### Dependencies
 
 - `typescript-eslint` `^8.73.0`, and `vitest` and the `@vitest/*` packages `^5.1.1`. `functype` and
-  `functype-os` resolve 1.27.2, the last 1.x release.
-- The exact pins move: `eslint-plugin-boundaries` 7.4.3 → 7.4.4 (its only change is
-  `@boundaries/elements` 3.3.3 → 3.3.4), and `dependency-cruiser` 18.7.2 → 18.8.0. 18.9.0 was under
+  `functype-os` stay `^1.27.0`, which now resolves 1.27.2, the last 1.x release. The floors stay at
+  versions over a day old, so a consumer under pnpm's `minimumReleaseAge` can install this release
+  the day it ships.
+- The exact pins move: `eslint-plugin-boundaries` 7.4.3 → 7.4.4 (its dependencies `@boundaries/elements`,
+  `@boundaries/config` and `@boundaries/policies` move a patch each, with no change to their code), and `dependency-cruiser` 18.7.2 → 18.8.0. 18.9.0 was under
   a day old, inside pnpm's one-day `minimumReleaseAge`.
 - TypeScript stays on 6.0: `typescript-eslint` 8.73.0, its newest release, still supports only
   `typescript <6.1.0`.
