@@ -6,6 +6,8 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+## 4.8.1 (2026-11-22)
+
 ### Bug Fixes
 
 - **lint (`ts-builds/eslint-functype`):** `eslint-config-functype` and `eslint-plugin-functype` are
