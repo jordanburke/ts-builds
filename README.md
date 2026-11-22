@@ -149,7 +149,7 @@ This tells ts-builds to use your project's ESLint installation instead of the bu
 }
 ```
 
-- It's off by default in 4.x, because turning it on can fail `validate` in a repo whose tests were never linted. 5.0 turns it on.
+- It's off by default, because turning it on can fail `validate` in a repo whose tests were never linted. A later major will turn it on.
 - A `testDir` that doesn't exist is skipped. One with nothing ESLint can lint, such as only JSON fixtures, stops `lint` with exit code 2, the same as an empty `srcDir`.
 - `.ts-builds/lint-report.json` and `lint:summary` count both directories.
 - The fp and functype configs turn off the rules that misread a test's shape, for test files only: `@typescript-eslint/require-await` and `@typescript-eslint/no-unnecessary-condition`, plus `functype/prefer-option`, `prefer-either`, `prefer-try`, `no-floating-result`, `no-serialize-container` and `@typescript-eslint/unbound-method` in the functype config. The rule lists come from functype's `test-overrides` and `tests` configs, except `unbound-method`, which ts-builds adds. The base config enables none of these, so it has no override.
@@ -475,7 +475,7 @@ export default [...baseConfig]
 
 `ts-builds/eslint-fp` adds strict functional TypeScript rules, and `ts-builds/eslint-functype` adds the functype plugin on top.
 
-`ts-builds/eslint-functype` uses eslint-plugin-functype 2.200's `recommended` preset, for functype 2.0, where every rule it turns on is an error: mutable array types (`prefer-list`), in-place array changes (`no-array-mutation`), nullable and throwing APIs (`prefer-option`, `prefer-either`, `prefer-try`), unsafe unwraps (`no-get-unsafe`) and dropped results (`no-floating-io`, `no-floating-result`). To turn a rule off, set it to `"off"` in a block after the preset. Projects still on functype 1.x stay on ts-builds 4.8.
+`ts-builds/eslint-functype` uses eslint-plugin-functype 2.200's `recommended` preset, for functype 2.0, where every functype rule it turns on is an error: mutable array types (`prefer-list`), in-place array changes (`no-array-mutation`), nullable and throwing APIs (`prefer-option`, `prefer-either`, `prefer-try`), unsafe unwraps (`no-get-unsafe`) and dropped results (`no-floating-io`, `no-floating-result`). To turn a rule off, set it to `"off"` in a block after the preset. Projects still on functype 1.x stay on ts-builds 4.8.
 
 #### Detached method calls (functype preset)
 

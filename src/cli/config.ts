@@ -51,7 +51,7 @@ export interface CommandDef {
 
 export interface LintConfig {
   useProjectEslint?: boolean
-  /** Lint `testDir` as well as `srcDir`, when it exists. Off by default until 5.0. */
+  /** Lint `testDir` as well as `srcDir`, when it exists. Off by default; a later major turns it on. */
   includeTests?: boolean
   /** Fail lint when it finds more warnings than this, as ESLint's `--max-warnings` does. */
   maxWarnings?: number

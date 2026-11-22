@@ -1,3 +1,5 @@
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { execSync, spawnSync } from "node:child_process"
 import { describe, expect, it } from "vitest"
@@ -71,13 +73,42 @@ describe("ts-builds changelog", () => {
       expect(output.length).toBeGreaterThan(0)
     })
 
-    it("exits 1 with the reason when --output can't be written", () => {
-      const res = spawnSync(process.execPath, [cliPath, "changelog", "--output", "no-such-dir-for-test/CHANGELOG.md"], {
-        encoding: "utf-8",
+    // A repo of its own with one conventional commit: the checkout's history (CI clones a single
+    // merge commit) would otherwise end the run at "No conventional commits found", before the write.
+    const inRepo = (run: (dir: string) => void): void => {
+      const dir = mkdtempSync(join(tmpdir(), "ts-builds-changelog-"))
+      try {
+        const git = (...args: string[]) =>
+          execSync(`git -c user.name=test -c user.email=test@example.com ${args.join(" ")}`, { cwd: dir })
+        git("init", "-q")
+        git("commit", "-q", "--allow-empty", "-m", '"feat: add a thing"')
+        run(dir)
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    }
+
+    it("--output writes the changelog and exits 0", () => {
+      inRepo((dir) => {
+        const res = spawnSync(process.execPath, [cliPath, "changelog", "--output", "CHANGELOG.md"], {
+          cwd: dir,
+          encoding: "utf-8",
+        })
+        expect(res.status).toBe(0)
+        expect(res.stdout).toContain("Changelog written to CHANGELOG.md")
       })
-      expect(res.status).toBe(1)
-      expect(res.stderr).toContain("Couldn't write the changelog to no-such-dir-for-test/CHANGELOG.md")
-      expect(res.stdout).not.toContain("Changelog written")
+    })
+
+    it("exits 1 with the reason when --output can't be written", () => {
+      inRepo((dir) => {
+        const res = spawnSync(process.execPath, [cliPath, "changelog", "--output", "no-such-dir/CHANGELOG.md"], {
+          cwd: dir,
+          encoding: "utf-8",
+        })
+        expect(res.status).toBe(1)
+        expect(res.stderr).toContain("Couldn't write the changelog to no-such-dir/CHANGELOG.md")
+        expect(res.stdout).not.toContain("Changelog written")
+      })
     })
 
     it("should accept --since flag", () => {
