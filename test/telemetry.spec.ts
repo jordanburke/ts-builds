@@ -175,7 +175,7 @@ describe("pluginPackage", () => {
     ["@scope/rule", "@scope/eslint-plugin"],
     ["a/b/c", "eslint-plugin-a"],
   ])("%s comes from %s", (ruleId, pkg) => {
-    expect(pluginPackage(ruleId).orElse("none")).toBe(pkg)
+    expect(pluginPackage(ruleId).getOrElse(() => "none")).toBe(pkg)
   })
 
   it("has no plugin for a core rule", () => {
@@ -185,7 +185,7 @@ describe("pluginPackage", () => {
 
 describe("environment detection", () => {
   it("detects Claude Code from CLAUDECODE=1", () => {
-    expect(detectAgent({ CLAUDECODE: "1" }).orElse("none")).toBe("claude-code")
+    expect(detectAgent({ CLAUDECODE: "1" }).getOrElse(() => "none")).toBe("claude-code")
     expect(detectAgent({}).isNone()).toBe(true)
   })
 
@@ -210,7 +210,7 @@ describe("installedVersion", () => {
     mkdirSync(join(root, "node_modules", "eslint-plugin-x"), { recursive: true })
     writeFileSync(join(root, "node_modules", "eslint-plugin-x", "package.json"), JSON.stringify({ version: "2.3.4" }))
     mkdirSync(join(root, "packages", "a"), { recursive: true })
-    expect(installedVersion("eslint-plugin-x", join(root, "packages", "a")).orElse("none")).toBe("2.3.4")
+    expect(installedVersion("eslint-plugin-x", join(root, "packages", "a")).getOrElse(() => "none")).toBe("2.3.4")
     expect(installedVersion("eslint-plugin-missing", join(root, "packages", "a")).isNone()).toBe(true)
   })
 
@@ -221,7 +221,7 @@ describe("installedVersion", () => {
     mkdirSync(join(store, "ts-builds"), { recursive: true })
     mkdirSync(join(store, "eslint-plugin-y"), { recursive: true })
     writeFileSync(join(store, "eslint-plugin-y", "package.json"), JSON.stringify({ version: "5.6.7" }))
-    expect(installedVersion("eslint-plugin-y", join(store, "ts-builds")).orElse("none")).toBe("5.6.7")
+    expect(installedVersion("eslint-plugin-y", join(store, "ts-builds")).getOrElse(() => "none")).toBe("5.6.7")
   })
 })
 
@@ -249,7 +249,7 @@ describe("activeConfig", () => {
       "@typescript-eslint/eslint-plugin",
       "eslint-plugin-nameless",
     ])
-    expect(active.plugins[0]?.metaVersion.orElse("none")).toBe("2.0.0")
+    expect(active.plugins[0]?.metaVersion.getOrElse(() => "none")).toBe("2.0.0")
     expect(active.plugins[2]?.metaVersion.isNone()).toBe(true)
   })
 

@@ -9,7 +9,7 @@
  * the end, up to the next top-level key (a line starting with neither whitespace
  * nor `#`). Returns [] when the block is absent.
  */
-export function blockLines(yaml: string, header: RegExp): string[] {
+export function blockLines(yaml: string, header: RegExp): ReadonlyArray<string> {
   const lines = yaml.split("\n").map((raw) => raw.trimEnd())
   const start = lines.findIndex((line) => header.test(line))
   if (start === -1) return []
@@ -25,7 +25,7 @@ const YAML_LIST_ENTRY = /^\s*-\s*(["']?)([^"'\s#]+)\1\s*(?:#.*)?$/
  * The unquoted items of the top-level list whose header matches `header`: a block list
  * (`- item` lines below it) or a flow list on the header line (`key: [a, 'b']`).
  */
-export function readListBlock(yaml: string, header: RegExp): string[] {
+export function readListBlock(yaml: string, header: RegExp): ReadonlyArray<string> {
   // A flow list may span lines, so match from the header to the first closing bracket.
   const lines = yaml.split("\n")
   const start = lines.findIndex((line) => header.test(line))
@@ -42,7 +42,7 @@ export function readListBlock(yaml: string, header: RegExp): string[] {
 }
 
 /** The `packages:` globs of a `pnpm-workspace.yaml`, quotes stripped. */
-export function readWorkspacePackageGlobs(yaml: string): string[] {
+export function readWorkspacePackageGlobs(yaml: string): ReadonlyArray<string> {
   return readListBlock(yaml, /^packages:/)
 }
 
@@ -72,7 +72,7 @@ function globRegExp(glob: string): RegExp {
  * path segment), `**` (any depth, including none), `?`, and a leading `!` to exclude.
  * Listed means some include matches and no exclude does.
  */
-export function isListedPackage(relDir: string, globs: string[]): boolean {
+export function isListedPackage(relDir: string, globs: ReadonlyArray<string>): boolean {
   const path = normalizeGlobPath(relDir)
   const matches = (glob: string): boolean => globRegExp(glob).test(path)
   const includes = globs.filter((glob) => !glob.startsWith("!"))

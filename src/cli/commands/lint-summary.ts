@@ -25,14 +25,14 @@ const SKIP_UNLESS_PACKAGE = Set.of("dist", "lib", "coverage")
  * `readdir` does not resolve symlinks, so a symlink-to-dir reports `isDirectory() ===
  * false` and is skipped by the guard below (no cycles, no escaping the tree).
  */
-export async function findLintReports(root: string): Promise<string[]> {
-  return (await walk(root)).sort()
+export async function findLintReports(root: string): Promise<ReadonlyArray<string>> {
+  return (await walk(root)).toSorted()
 }
 
 /** Visits entries one at a time, so a large tree never opens many handles at once. */
-async function walk(dir: string): Promise<string[]> {
+async function walk(dir: string): Promise<ReadonlyArray<string>> {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
-  return entries.reduce<Promise<string[]>>(async (pending, entry) => {
+  return entries.reduce<Promise<ReadonlyArray<string>>>(async (pending, entry) => {
     const found = await pending
     const target = classifyEntry(dir, entry)
     switch (target.kind) {
@@ -71,7 +71,7 @@ export interface LintSummaryRow {
 }
 
 export interface LintSummaryTotals {
-  rows: LintSummaryRow[]
+  rows: ReadonlyArray<LintSummaryRow>
   totalErrors: number
   totalWarnings: number
   fatalCount: number
@@ -86,7 +86,7 @@ export interface LintSummaryTotals {
  * silently pass CI. Returns the typed report, or None (the caller counts None as invalid).
  */
 export function parseLintReport(raw: string): Option<LintReport> {
-  const obj: unknown = Try((): unknown => JSON.parse(raw)).orElse(null)
+  const obj: unknown = Try((): unknown => JSON.parse(raw)).getOrElse(() => null)
   return Option(isLintReport(obj) ? obj : undefined)
 }
 
@@ -164,7 +164,7 @@ export function formatLintSummaryTable(totals: LintSummaryTotals): string {
  * exits nonzero. An empty sweep (wrong dir, fresh clone, missing Turbo `outputs`
  * declaration) or a truncated sidecar must not green-light CI on absent evidence.
  */
-export async function runLintSummary(args: string[]): Promise<number> {
+export async function runLintSummary(args: ReadonlyArray<string>): Promise<number> {
   const dirArg = args.find((a) => !a.startsWith("-"))
   const root = dirArg ? (isAbsolute(dirArg) ? dirArg : join(targetDir, dirArg)) : targetDir
 
@@ -185,7 +185,7 @@ export async function runLintSummary(args: string[]): Promise<number> {
     report: Try(() => readFileSync(path, "utf-8"))
       .toOption()
       .flatMap(parseLintReport)
-      .orElse(null),
+      .getOrElse(() => null),
   }))
   const reports = read.flatMap(({ report }) => (report ? [report] : []))
   const invalid = read.filter(({ report }) => !report)

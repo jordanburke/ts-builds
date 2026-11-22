@@ -295,6 +295,8 @@ describe("rules for test files", () => {
     "functype/prefer-option",
     "functype/prefer-either",
     "functype/prefer-try",
+    "functype/no-floating-result",
+    "functype/no-serialize-container",
     "@typescript-eslint/unbound-method",
   ]
   const testFiles = ["test/foo.spec.ts", "src/foo.test.ts", "src/__tests__/foo.ts"]
@@ -354,8 +356,8 @@ describe("functype config: @typescript-eslint/unbound-method", () => {
     return ((await eslint.calculateConfigForFile(file)) as { rules: Record<string, unknown> }).rules[RULE]
   }
 
-  it("warns, ignoring class statics", async () => {
-    expect(await resolved("src/foo.ts", "eslint.config.functype.js")).toEqual([1, { ignoreStatic: true }])
+  it("is an error, ignoring class statics", async () => {
+    expect(await resolved("src/foo.ts", "eslint.config.functype.js")).toEqual([2, { ignoreStatic: true }])
   })
 
   it.each(["eslint.config.base.js", "eslint.config.fp.js"] as const)("is not set by %s", async (name) => {
@@ -364,8 +366,8 @@ describe("functype config: @typescript-eslint/unbound-method", () => {
 
   /**
    * The rule needs type information, which the `lint()` helper strips, so this lints a throwaway
-   * project with a tsconfig. `Box` stands in for a functype value on 1.x: `orElse` uses method
-   * syntax, as Option does, and `map` is an arrow-typed property, as most of Try, Either and List are.
+   * project with a tsconfig. `Box` stands in for a functype value: `orElse` uses method syntax, as
+   * every functype 2.0 value type does, and `map` is an arrow-typed property, which the rule can't see.
    */
   describe("on a type-checked project", () => {
     const files: Record<string, string> = {
@@ -440,11 +442,11 @@ describe("functype config: @typescript-eslint/unbound-method", () => {
       for (const result of Object.values(results)) expect(result.messages.filter((m) => m.fatal)).toEqual([])
     })
 
-    it("warns on a method passed or destructured without its value", () => {
+    it("reports a method passed or destructured without its value", () => {
       const found = hits("detached.ts")
       expect(found.map((m) => [m.line, m.severity])).toEqual([
-        [3, 1],
-        [4, 1],
+        [3, 2],
+        [4, 2],
       ])
     })
 
@@ -452,7 +454,7 @@ describe("functype config: @typescript-eslint/unbound-method", () => {
       expect(hits("called.ts")).toEqual([])
     })
 
-    it("misses an arrow-typed property, the limit on functype 1.x", () => {
+    it("misses an arrow-typed property, the rule's limit", () => {
       expect(hits("arrow-property.ts")).toEqual([])
     })
   })

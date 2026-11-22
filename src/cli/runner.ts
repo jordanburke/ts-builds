@@ -141,7 +141,7 @@ export async function runChain(
 }
 
 async function runSteps(
-  steps: string[],
+  steps: ReadonlyArray<string>,
   config: ResolvedConfig,
   builtins: Record<string, BuiltinCommand>,
   path: Set<string>,

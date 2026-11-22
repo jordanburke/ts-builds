@@ -63,7 +63,7 @@ const toExternal = (source: readonly string[]): Record<string, unknown> => ({
  * spelling, so an entry naming one, or a glob matching some, also gets the other spelling:
  * `fs` adds `node:fs`, and `node:o*` adds `os` and `node:os`.
  */
-export function denySources(deny: readonly string[]): string[] {
+export function denySources(deny: readonly string[]): ReadonlyArray<string> {
   const core = deny.flatMap((entry) => coreModulesMatching(entry).flatMap((name) => [name, `node:${name}`]))
   return List([...deny, ...core])
     .distinct()
@@ -78,7 +78,7 @@ function workspacePolicies(
   ws: ResolvedWorkspace,
   testExternals: readonly string[],
   rootFiles: readonly string[],
-): Policy[] {
+): ReadonlyArray<Policy> {
   const label = `${ws.name} (${ws.type})`
   const deny = ws.deny ?? []
   // A type-only import is erased, so it may come from a devDependency, or from a package
@@ -142,13 +142,13 @@ const isGuarded = (rule: string): boolean =>
   rule.startsWith("boundaries/") || rule === "ts-builds/no-boundaries-disable"
 
 /** Every guarded name a text mentions, however it is quoted or separated. */
-const guardedNames = (text: string): string[] => [...text.matchAll(GUARDED_NAME)].map((match) => match[0])
+const guardedNames = (text: string): ReadonlyArray<string> => [...text.matchAll(GUARDED_NAME)].map((match) => match[0])
 
 type DirectiveKind = "block" | "line" | "next-line" | "config"
 type Location = { start: { line: number; column: number } }
 
 /** A comment ESLint will apply, as ESLint itself parsed it. */
-type Directive = { kind: DirectiveKind; loc: Location; blanket: boolean; names: string[] }
+type Directive = { kind: DirectiveKind; loc: Location; blanket: boolean; names: ReadonlyArray<string> }
 
 const DISABLE_KINDS = Map<string, DirectiveKind>([
   ["disable", "block"],
@@ -160,8 +160,8 @@ const DISABLE_KINDS = Map<string, DirectiveKind>([
 type DisableDirective = { type: string; value: string; node: { value: string; loc: Location } }
 type InlineConfig = { config: { rules?: Record<string, unknown> }; loc: Location }
 type DirectiveSource = {
-  getDisableDirectives(): { directives: DisableDirective[] }
-  applyInlineConfig(): { configs: InlineConfig[] }
+  getDisableDirectives(): { directives: ReadonlyArray<DisableDirective> }
+  applyInlineConfig(): { configs: ReadonlyArray<InlineConfig> }
 }
 
 /**
@@ -187,13 +187,13 @@ export function asDirectiveSource(sourceCode: unknown): DirectiveSource {
  * so every shape ESLint accepts (quotes, escapes, no commas, braces, reasons) is seen the way
  * ESLint sees it. The raw text is scanned too, so a name in a reason is also reported.
  */
-function directivesOf(sourceCode: DirectiveSource): Directive[] {
-  const disables = sourceCode.getDisableDirectives().directives.flatMap((directive): Directive[] => {
+function directivesOf(sourceCode: DirectiveSource): ReadonlyArray<Directive> {
+  const disables = sourceCode.getDisableDirectives().directives.flatMap((directive): ReadonlyArray<Directive> => {
     const { loc, value: text } = directive.node
     const names = [...guardedNames(directive.value), ...guardedNames(text)]
     return DISABLE_KINDS.get(directive.type)
-      .map((kind): Directive[] => [{ kind, loc, blanket: directive.value.trim().length === 0, names }])
-      .orElse([])
+      .map((kind): ReadonlyArray<Directive> => [{ kind, loc, blanket: directive.value.trim().length === 0, names }])
+      .getOrElse(() => [])
   })
   const configs = sourceCode.applyInlineConfig().configs.map((inline): Directive => ({
     kind: "config",
@@ -260,7 +260,7 @@ export const noBoundariesDisable: Rule.RuleModule = {
 
 export type BoundariesConfig = {
   /** Flat-config blocks to spread into `eslint.config.js`. */
-  readonly configs: Linter.Config[]
+  readonly configs: ReadonlyArray<Linter.Config>
   /** The plugin settings alone, for a config that reuses them, such as a fast hook config. */
   readonly settings: Record<string, unknown>
   /** The `boundaries/dependencies` policies alone. */
@@ -315,7 +315,7 @@ export function createBoundaries(architecture: Architecture): BoundariesConfig {
   const policies = workspaces.flatMap((ws) =>
     workspacePolicies(ws, architecture.testPolicy.allowExternals, architecture.testPolicy.allowRootFiles),
   )
-  const configs: Linter.Config[] = [
+  const configs: ReadonlyArray<Linter.Config> = [
     {
       name: "ts-builds/boundaries",
       files: [BOUNDARY_FILES],

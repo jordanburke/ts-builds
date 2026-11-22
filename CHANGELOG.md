@@ -6,6 +6,58 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+### ⚠ Breaking changes
+
+#### functype 2.0 only
+
+ts-builds now depends on the functype 2.0 family: `functype` and `functype-os` `^2.0.0`, and
+`eslint-config-functype` and `eslint-plugin-functype` `^2.200.0`. 4.8.x stays on 1.x, capped below
+2.200. The family moves together, because functype-os 2.0 needs functype `>=2.0.0`. To move a
+codebase from functype 1.x, follow [Upgrading to functype 2.0](https://functype.org/upgrading-to-2).
+
+`ts-builds/eslint-functype` is the only preset that changes. The base and fp presets don't:
+
+- **Every functype rule the preset turns on is an error.** eslint-plugin-functype 2.200's
+  `recommended` preset has no warnings. These are new errors, or were warnings before:
+  `prefer-list` and `no-array-mutation` (mutable array types and in-place changes), `prefer-option`,
+  `prefer-either` and `prefer-try`, `no-get-unsafe`, `no-floating-io`, `no-floating-result` and
+  `no-serialize-container`, and the React rules `no-getOrThrow-in-render` and
+  `must-fold-on-component-return`. `prefer-fold` also reports a guard followed by an unwrap.
+  `prefer-flatmap` and `prefer-do-notation` are off. On ts-builds' own `src/` it reported over 100
+  errors, nearly all `prefer-list`. The preset's two TypeScript warnings,
+  `no-unnecessary-condition` and `strict-boolean-expressions`, stay warnings.
+- **`@typescript-eslint/unbound-method` is an error.** On functype 2.0 a method used without its
+  value, as in `xs.map(opt.getOrElse)` or `const { map } = opt`, throws. It was a warning in 4.8.
+- **Test files** also turn off `no-floating-result` and `no-serialize-container`, from the plugin's
+  `tests` config, alongside `prefer-option`, `prefer-either`, `prefer-try` and `unbound-method`.
+
+#### Arrays in the published types are `ReadonlyArray`
+
+The types `ts-builds/architecture`, `ts-builds/eslint-boundaries` and `ts-builds/depcruise` export now
+use `ReadonlyArray` for arrays the caller only reads. The values are unchanged at runtime.
+
+- `ts-builds/eslint-boundaries`: `BoundariesConfig.configs`, `denySources()`'s return, and
+  `DirectiveSource`'s arrays.
+- `ts-builds/depcruise`: `DepcruiseConfig.forbidden` and `.entries`, `DepcruiseReport.violations`,
+  `DepcruiseViolation.via`, and `rulesMatchingNothing()`'s return.
+- `ts-builds/architecture`: `coreModulesMatching()` and `typedPackages()`'s returns.
+
+Code that assigns one to a mutable array type, mutates it, or passes it where a mutable array is
+expected no longer compiles. Copy it: `[...createBoundaries(architecture).configs]`, or
+`Array.from(config.entries)` for dependency-cruiser's `cruise()`. `defineConfig(...configs)` and the
+README's `[...baseConfig, ...createBoundaries(architecture).configs]` compile unchanged;
+`defineConfig(configs)` without the spread doesn't.
+
+**Upgrade:** run `ts-builds lint` and fix what it reports. eslint-plugin-functype offers a
+`ReadonlyArray<…>` suggestion for most `prefer-list` findings, which an editor can apply. To keep a
+rule off, set it to `"off"` in a block after the preset.
+
+ts-builds' own CLI code moved too: `orElse(value)` became `getOrElse(() => value)` and `or(x)` became
+`orElse(() => x)`, its arrays are `ReadonlyArray` (see above for the published ones), and its
+dropped results are handled.
+`ts-builds changelog --output` and `ts-builds size --save` now exit 1 when they can't write their
+file, where they used to report success.
+
 ## 4.8.1 (2026-11-22)
 
 ### Bug Fixes

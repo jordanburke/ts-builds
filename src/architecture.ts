@@ -119,7 +119,7 @@ const CORE_MODULES = builtinModules.map((name) => name.replace(/^node:/, ""))
  * be written either way, and may be a glob such as `node:o*`. An entry that names no core
  * module returns [].
  */
-export function coreModulesMatching(entry: string): string[] {
+export function coreModulesMatching(entry: string): ReadonlyArray<string> {
   const bare = entry.replace(/^node:/, "")
   return CORE_MODULES.filter((name) => matchesPackagePattern(bare, name))
 }
@@ -128,7 +128,7 @@ export function coreModulesMatching(entry: string): string[] {
  * The packages an `@types/*` declaration stands for: `@types/x` is `x`, and
  * `@types/scope__name` is `@scope/name`.
  */
-export function typedPackages(declared: readonly string[]): string[] {
+export function typedPackages(declared: readonly string[]): ReadonlyArray<string> {
   return declared
     .filter((name) => name.startsWith("@types/"))
     .map((name) => name.slice("@types/".length))
@@ -140,8 +140,8 @@ export function typedPackages(declared: readonly string[]): string[] {
  * a `package.json`, as POSIX paths relative to `rootDir`. Skips `node_modules` and hidden
  * directories.
  */
-function listedWorkspaceDirs(rootDir: string, globs: readonly string[]): string[] {
-  const walk = (dir: string): string[] =>
+function listedWorkspaceDirs(rootDir: string, globs: readonly string[]): ReadonlyArray<string> {
+  const walk = (dir: string): ReadonlyArray<string> =>
     readdirSync(dir, { withFileTypes: true })
       .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules")
       .map((entry) => join(dir, entry.name))
@@ -151,13 +151,18 @@ function listedWorkspaceDirs(rootDir: string, globs: readonly string[]): string[
     .filter((rel) => isFile(join(rootDir, rel, "package.json")) && isListedPackage(rel, [...globs]))
 }
 
-const declaredNames = (pkg: PackageJson, fields: ReadonlyArray<keyof PackageJson>): string[] =>
+const declaredNames = (pkg: PackageJson, fields: ReadonlyArray<keyof PackageJson>): ReadonlyArray<string> =>
   fields.flatMap((field) => Object.keys((pkg[field] as Record<string, string> | undefined) ?? {}))
 
 /** A policy `dir` as a POSIX path relative to rootDir, with no trailing slash. */
 const normalizeDir = (dir: string): string => toPosix(normalize(dir)).replace(/\/+$/, "")
 
-function workspaceProblems(rootDir: string, name: string, policy: WorkspacePolicy, listed: Set<string>): string[] {
+function workspaceProblems(
+  rootDir: string,
+  name: string,
+  policy: WorkspacePolicy,
+  listed: Set<string>,
+): ReadonlyArray<string> {
   const dir = normalizeDir(policy.dir)
   if (isAbsolute(policy.dir) || dir.startsWith("..") || dir === ".") {
     return [`${name}: dir "${policy.dir}" must be a path inside rootDir, relative to it`]
@@ -170,28 +175,24 @@ function workspaceProblems(rootDir: string, name: string, policy: WorkspacePolic
       `${name}: dir "${policy.dir}" has one of * ? [ ] { } ( ) ! \\, which the boundary plugin reads as a pattern`,
     ]
   }
-  const read = Try(() => readPackageJson(join(rootDir, dir)))
-  if (read.isFailure())
-    return [
-      `${dir}/package.json can't be read: ${read.fold(
-        (error) => error.message,
-        () => "",
-      )}`,
-    ]
-  const pkgName = read.orThrow().name
-  return [
-    ...(pkgName === name ? [] : [`${name}: ${dir}/package.json is named "${pkgName ?? "(no name)"}", not "${name}"`]),
-    ...(isDirectory(join(rootDir, dir, "src"))
-      ? []
-      : [`${name}: ${dir} has no src directory. Boundary rules check src and test, so code elsewhere is unchecked`]),
-  ]
+  return Try(() => readPackageJson(join(rootDir, dir))).fold(
+    (error) => [`${dir}/package.json can't be read: ${error.message}`],
+    (pkg) => [
+      ...(pkg.name === name
+        ? []
+        : [`${name}: ${dir}/package.json is named "${pkg.name ?? "(no name)"}", not "${name}"`]),
+      ...(isDirectory(join(rootDir, dir, "src"))
+        ? []
+        : [`${name}: ${dir} has no src directory. Boundary rules check src and test, so code elsewhere is unchecked`]),
+    ],
+  )
 }
 
 function denyProblems(
   name: string,
   policy: WorkspacePolicy,
   entries: ReadonlyArray<[string, WorkspacePolicy]>,
-): string[] {
+): ReadonlyArray<string> {
   return (policy.deny ?? []).flatMap((pattern) => {
     const workspaces = entries.filter(([other]) => matchesPackagePattern(pattern, other)).map(([other]) => other)
     return workspaces.length === 0
@@ -206,7 +207,7 @@ function allowProblems(
   name: string,
   policy: WorkspacePolicy,
   entries: ReadonlyArray<[string, WorkspacePolicy]>,
-): string[] {
+): ReadonlyArray<string> {
   const others = entries.filter(([other]) => other !== name)
   return (policy.allow ?? []).flatMap((pattern) => {
     const matched = others.filter(([other]) => matchesPackagePattern(pattern, other))
@@ -244,7 +245,7 @@ const onDisk = (rootDir: string, path: string): string =>
   toPosix(relative(realpathSync.native(rootDir), realpathSync.native(join(rootDir, path))))
 
 /** Every `package.json` below `dir`, relative to `rootDir`. Skips `node_modules`. */
-function manifestsBelow(rootDir: string, dir: string): string[] {
+function manifestsBelow(rootDir: string, dir: string): ReadonlyArray<string> {
   return readdirSync(join(rootDir, dir), { withFileTypes: true })
     .filter((entry) => entry.name !== "node_modules")
     .flatMap((entry) => {
@@ -254,7 +255,12 @@ function manifestsBelow(rootDir: string, dir: string): string[] {
     })
 }
 
-function ownDirProblems(rootDir: string, name: string, policy: WorkspacePolicy, listed: Set<string>): string[] {
+function ownDirProblems(
+  rootDir: string,
+  name: string,
+  policy: WorkspacePolicy,
+  listed: Set<string>,
+): ReadonlyArray<string> {
   const wsDir = normalizeDir(policy.dir)
   return (policy.ownDirs ?? []).flatMap((entry) => {
     const own = normalizeDir(entry)
@@ -283,8 +289,8 @@ function ownDirProblems(rootDir: string, name: string, policy: WorkspacePolicy, 
 }
 
 /** Every file below `rootDir`, as sorted POSIX paths. Skips `node_modules`, dotfiles, dot folders and symlinks. */
-function repoFiles(rootDir: string): string[] {
-  const walk = (dir: string): string[] =>
+function repoFiles(rootDir: string): ReadonlyArray<string> {
+  const walk = (dir: string): ReadonlyArray<string> =>
     readdirSync(dir, { withFileTypes: true })
       .filter((entry) => !entry.name.startsWith(".") && entry.name !== "node_modules")
       .flatMap((entry) => {
@@ -292,7 +298,7 @@ function repoFiles(rootDir: string): string[] {
         if (entry.isDirectory()) return walk(path)
         return entry.isFile() ? [toPosix(relative(rootDir, path))] : []
       })
-  return walk(rootDir).sort()
+  return walk(rootDir).toSorted()
 }
 
 type RootFiles = { readonly problems: readonly string[]; readonly files: readonly string[] }
@@ -306,7 +312,7 @@ function matchProblems(
   path: string,
   matches: readonly string[],
   listed: Set<string>,
-): string[] {
+): ReadonlyArray<string> {
   if (matches.length === 0) return [`${label} matches no file`]
   const patterned = matches.filter((file) => PATTERN_CHARS.test(file))
   if (patterned.length > 0) {
@@ -410,7 +416,7 @@ function aliasedWorkspaceProblems(
   policy: WorkspacePolicy,
   entries: readonly (readonly [string, WorkspacePolicy])[],
   listed: Set<string>,
-): string[] {
+): ReadonlyArray<string> {
   const dir = normalizeDir(policy.dir)
   const pkg = readPackageJson(join(rootDir, dir))
   const names = Set(entries.map(([other]) => other))
@@ -437,7 +443,7 @@ function aliasedWorkspaceProblems(
  * A workspace folder inside another workspace's `src` or `test`. Its files would sit inside
  * that workspace's element, so both halves would read them as that workspace's own code.
  */
-function nestedInSourcesProblems(listed: Set<string>): string[] {
+function nestedInSourcesProblems(listed: Set<string>): ReadonlyArray<string> {
   const dirs = listed.toArray()
   return dirs.flatMap((dir) =>
     dirs.flatMap((outer) =>
@@ -529,7 +535,7 @@ export function defineArchitecture(input: ArchitectureInput): Architecture {
       .toArray()
       .filter((dir) => !classifiedDirs.has(dir))
       .map((dir) => {
-        const pkgName = Try(() => readPackageJson(join(rootDir, dir)).name).orElse(undefined)
+        const pkgName = Try(() => readPackageJson(join(rootDir, dir)).name).getOrElse(() => undefined)
         return `${dir} is a workspace (${pkgName ?? "no name"}) with no policy`
       }),
   ]

@@ -51,7 +51,7 @@ function spawnShell(commandLine: string, label: string, options: RunOptions): Pr
  * rather than passing `args` to `spawn` gives the same command line Node built
  * before, without its DEP0190 warning, which flags exactly that unescaped join.
  */
-export function runCommand(command: string, args: string[], options: RunOptions = {}): Promise<number> {
+export function runCommand(command: string, args: ReadonlyArray<string>, options: RunOptions = {}): Promise<number> {
   return spawnShell([command, ...args].join(" "), ` ${command}`, options)
 }
 
@@ -59,7 +59,9 @@ export function runShellCommand(shellCmd: string, options: RunOptions = {}): Pro
   return spawnShell(shellCmd, "", options)
 }
 
-export async function runSequence(commands: Array<{ name: string; cmd: string; args: string[] }>): Promise<number> {
+export async function runSequence(
+  commands: ReadonlyArray<{ name: string; cmd: string; args: ReadonlyArray<string> }>,
+): Promise<number> {
   const [first, ...rest] = commands
   if (!first) return 0
   console.log(`\n▶ Running ${first.name}...`)

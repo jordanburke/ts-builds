@@ -138,10 +138,10 @@ type Hit = { readonly ruleId: string; readonly field: CountField }
 
 /** One hit per message that has a rule id. Messages without one are fatal, and counted apart. */
 function hits(result: ESLint.LintResult): ReadonlyArray<Hit> {
-  const reported = result.messages.flatMap((m): Hit[] =>
+  const reported = result.messages.flatMap((m): ReadonlyArray<Hit> =>
     m.ruleId === null ? [] : [{ ruleId: m.ruleId, field: m.severity === 2 ? "errors" : "warnings" }],
   )
-  const suppressed = result.suppressedMessages.flatMap((m): Hit[] =>
+  const suppressed = result.suppressedMessages.flatMap((m): ReadonlyArray<Hit> =>
     m.ruleId === null ? [] : [{ ruleId: m.ruleId, field: "silenced" }],
   )
   return [...reported, ...suppressed]
@@ -166,10 +166,12 @@ type Tagged = { readonly message: ESLint.LintResult["messages"][number]; readonl
 
 /** Every message with a rule id, reported or silenced, tagged with how it counts. */
 const tagged = (result: ESLint.LintResult): ReadonlyArray<Tagged> => [
-  ...result.messages.flatMap((m): Tagged[] =>
+  ...result.messages.flatMap((m): ReadonlyArray<Tagged> =>
     m.ruleId === null ? [] : [{ message: m, kind: m.severity === 2 ? "error" : "warning" }],
   ),
-  ...result.suppressedMessages.flatMap((m): Tagged[] => (m.ruleId === null ? [] : [{ message: m, kind: "silenced" }])),
+  ...result.suppressedMessages.flatMap((m): ReadonlyArray<Tagged> =>
+    m.ruleId === null ? [] : [{ message: m, kind: "silenced" }],
+  ),
 ]
 
 const FIELD: Readonly<Record<FindingKind, CountField>> = { error: "errors", warning: "warnings", silenced: "silenced" }
@@ -191,11 +193,11 @@ export function messageStats(results: readonly ESLint.LintResult[]): Record<stri
       if (rule === "") return acc
       return messageIdOf(message)
         .map((id) => {
-          const byId = own(acc, rule).orElse({})
-          const current = own(byId, id).orElse(NO_COUNTS)
+          const byId = own(acc, rule).getOrElse(() => ({}))
+          const current = own(byId, id).getOrElse(() => NO_COUNTS)
           return { ...acc, [rule]: { ...byId, [id]: { ...current, [FIELD[kind]]: current[FIELD[kind]] + 1 } } }
         })
-        .orElse(acc)
+        .getOrElse(() => acc)
     }, {})
   return sortKeys(Object.fromEntries(Object.entries(nested).map(([rule, byId]) => [rule, sortKeys(byId)])))
 }
@@ -215,7 +217,7 @@ export function traceCandidates(results: readonly ESLint.LintResult[], root: str
         rule: message.ruleId ?? "",
         ...messageIdOf(message)
           .map((id) => ({ message: id }))
-          .orElse({}),
+          .getOrElse(() => ({})),
         kind,
         file,
         line: Math.max(1, message.line),
@@ -230,7 +232,7 @@ const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"]
 function isAllowedEndpoint(endpoint: string): boolean {
   return Try(() => new URL(endpoint))
     .map((url) => url.protocol === "https:" || (url.protocol === "http:" && LOCAL_HOSTS.includes(url.hostname)))
-    .orElse(false)
+    .getOrElse(() => false)
 }
 
 /**
@@ -270,7 +272,7 @@ export function normalizeRemote(remote: string): string {
   if (scp) return `${scp[1]}/${scp[2]}`.replace(/^\/+/, "").toLowerCase()
   return Try(() => new URL(trimmed))
     .map((url) => `${url.hostname}${url.pathname}`.replace(/\/+$/, ""))
-    .orElse(trimmed)
+    .getOrElse(() => trimmed)
     .toLowerCase()
 }
 
@@ -351,7 +353,7 @@ function tsBuildsRoot(): Option<string> {
   const root = ancestors(here).find((dir) =>
     readJson(join(dir, "package.json"))
       .map((pkg) => pkg.name === "ts-builds")
-      .orElse(false),
+      .getOrElse(() => false),
   )
   return root === undefined ? Option.none<string>() : Option(root)
 }
@@ -417,8 +419,8 @@ export function gitTrace(results: readonly ESLint.LintResult[], dir: string): Op
             const t = yield* $(tracked)
             const c = yield* $(changed)
             return capped.filter((f) => t.has(f.file) && !c.has(f.file))
-          }) as Option<TraceFinding[]>
-        ).orElse([])
+          }) as Option<ReadonlyArray<TraceFinding>>
+        ).getOrElse(() => [])
         return { repo: name, commit: sha, findings, dropped: candidates.length - findings.length }
       }),
     ),
@@ -488,7 +490,7 @@ export function activeConfig(calculated: unknown): ActiveConfig {
       const meta = asRecord(asRecord(plugin).meta)
       return asString(meta.name)
         .filter((name) => name.length <= 214 && NPM_NAME.test(name))
-        .or(pluginPackage(`${namespace}/rule`))
+        .orElse(() => pluginPackage(`${namespace}/rule`))
         .map((name) => ({ name, metaVersion: asString(meta.version).filter((v) => SEMVER.test(v)) }))
         .toArray()
     })
@@ -517,25 +519,27 @@ function versionsFor(
 ): Record<string, string> {
   const root = tsBuildsRoot()
   const lookup = (name: string): Option<string> =>
-    installedVersion(name, run.dir).or(root.flatMap((dir) => installedVersion(name, dir)))
-  const configured = active.map((a) => a.plugins).orElse([])
+    installedVersion(name, run.dir).orElse(() => root.flatMap((dir) => installedVersion(name, dir)))
+  const configured = active.map((a) => a.plugins).getOrElse(() => [])
   const claimed = (name: string): Option<string> =>
     Option(configured.find((p) => p.name === name)).flatMap((p) => p.metaVersion)
-  const plugins = [...configured.map((p) => p.name), ...Object.keys(rules).flatMap((id) => pluginPackage(id).toArray())]
+  const plugins = configured
+    .map((p) => p.name)
+    .concat(Object.keys(rules).flatMap((id) => pluginPackage(id).toArray()))
     .filter((name, i, all) => all.indexOf(name) === i)
     .toSorted()
   const typescript = lookup("typescript")
     .map((v) => [["typescript", v] as const])
-    .orElse([])
+    .getOrElse(() => [])
   const pluginVersions = plugins.flatMap((name) =>
     lookup(name)
-      .or(claimed(name))
+      .orElse(() => claimed(name))
       .map((v) => [name, v] as const)
       .toArray(),
   )
   return {
     node: process.versions.node,
-    "ts-builds": root.flatMap((dir) => versionIn(join(dir, "package.json"))).orElse("unknown"),
+    "ts-builds": root.flatMap((dir) => versionIn(join(dir, "package.json"))).getOrElse(() => "unknown"),
     eslint: run.eslintVersion,
     ...Object.fromEntries([...typescript, ...pluginVersions]),
   }
@@ -557,20 +561,20 @@ export function buildTelemetryPayload(
   const trace = traceOn(env) ? gitTrace(run.results, run.dir) : Option.none<Trace>()
   const payload: TelemetryPayload = {
     schema: TELEMETRY_SCHEMA_VERSION,
-    ...run.packageName.map((name) => ({ package: name })).orElse({}),
-    ...project.map((id) => ({ project: id })).orElse({}),
+    ...run.packageName.map((name) => ({ package: name })).getOrElse(() => ({})),
+    ...project.map((id) => ({ project: id })).getOrElse(() => ({})),
     ci: isCi(env),
-    ...agent.map((name) => ({ agent: name })).orElse({}),
+    ...agent.map((name) => ({ agent: name })).getOrElse(() => ({})),
     fix: run.fix,
     durationMs: Math.round(run.durationMs),
     files: run.results.length,
     fatal: stats.fatal,
     versions: versionsFor(run, stats.rules, active),
-    ...active.map((a) => ({ enabled: a.enabled })).orElse({}),
+    ...active.map((a) => ({ enabled: a.enabled })).getOrElse(() => ({})),
     rules: stats.rules,
     ...(Object.keys(messages).length > 0 ? { messages } : {}),
   }
-  return trace.map((t) => ({ ...payload, trace: fitTrace(payload, t) })).orElse(payload)
+  return trace.map((t) => ({ ...payload, trace: fitTrace(payload, t) })).getOrElse(() => payload)
 }
 
 /**
@@ -592,7 +596,7 @@ export async function sendTelemetry(
     await res.body?.cancel()
     return res.ok
   })
-  return sent.orElse(false)
+  return sent.getOrElse(() => false)
 }
 
 /**
@@ -605,7 +609,7 @@ export async function reportLintTelemetry(
   log: (line: string) => void = (line) => process.stderr.write(`${line}\n`),
 ): Promise<void> {
   // Telemetry must never affect a lint run, so any failure in here is dropped.
-  await Try.async(async () => {
+  void (await Try.async(async () => {
     const mode = telemetryMode(env)
     if (mode.kind === "off") {
       if (mode.warning !== undefined) log(`${LOG_PREFIX} ${mode.warning}`)
@@ -620,5 +624,5 @@ export async function reportLintTelemetry(
       return
     }
     await sendTelemetry(payload, mode.endpoint)
-  })
+  }))
 }

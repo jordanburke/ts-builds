@@ -1,7 +1,7 @@
 import { existsSync, realpathSync, statSync } from "node:fs"
 import { join } from "node:path"
 
-import type { DependencyType, ICruiseResult, IForbiddenRuleType } from "dependency-cruiser"
+import type { cruise as Cruise, DependencyType, ICruiseResult, IForbiddenRuleType } from "dependency-cruiser"
 import { List, Option } from "functype"
 
 import { type Architecture, coreModulesMatching, type ResolvedWorkspace, typedPackages } from "./architecture"
@@ -18,7 +18,7 @@ const packageFragment = (pattern: string): string => escapeRegex(pattern).replac
 export const OWN_DIRS_RULE = "own-dirs"
 
 /** The dependency types of an import of a package, declared or not (`npm-no-pkg`). */
-const PACKAGE_DEPENDENCY_TYPES: DependencyType[] = [
+const PACKAGE_DEPENDENCY_TYPES: ReadonlyArray<DependencyType> = [
   "npm",
   "npm-dev",
   "npm-optional",
@@ -87,7 +87,10 @@ function unresolvedRule(ws: ResolvedWorkspace): IForbiddenRuleType {
  * `ownDirs` code is reported from `src` and `test`, and an unresolved import by
  * `unresolvedRule`. They see the files that `src` or `test` reach, since nothing else is cruised.
  */
-function ownDirRules(ws: ResolvedWorkspace, workspaces: readonly ResolvedWorkspace[]): IForbiddenRuleType[] {
+function ownDirRules(
+  ws: ResolvedWorkspace,
+  workspaces: readonly ResolvedWorkspace[],
+): ReadonlyArray<IForbiddenRuleType> {
   if (ws.ownDirs.length === 0) return []
   const from = { path: foldersOf(ws, ws.ownDirs) }
   const allowedSources = workspaces
@@ -141,7 +144,7 @@ function ownDirRules(ws: ResolvedWorkspace, workspaces: readonly ResolvedWorkspa
   ]
 }
 
-function denyRule(ws: ResolvedWorkspace): IForbiddenRuleType[] {
+function denyRule(ws: ResolvedWorkspace): ReadonlyArray<IForbiddenRuleType> {
   const deny = ws.deny ?? []
   if (deny.length === 0) return []
   return [
@@ -157,11 +160,11 @@ function denyRule(ws: ResolvedWorkspace): IForbiddenRuleType[] {
 
 export type DepcruiseConfig = {
   /** The dependency-cruiser rule set: transitive `deny` purity, cycles and an integrity check. */
-  forbidden: IForbiddenRuleType[]
+  forbidden: ReadonlyArray<IForbiddenRuleType>
   /** Cruise options, with `baseDir` fixed to the architecture's root. */
   options: Record<string, unknown>
   /** What to cruise: each workspace's `src`, and its `test` when it has one, relative to `rootDir`. */
-  entries: string[]
+  entries: ReadonlyArray<string>
 }
 
 /**
@@ -193,7 +196,7 @@ export function createDepcruise(architecture: Architecture): DepcruiseConfig {
   const allSources = `^(${workspaces.map((ws) => `${escapeRegex(ws.dir)}/(src|test)`).join("|")})/`
   const tsconfigDirs = workspaces.flatMap((ws) => (ws.tsconfig === undefined ? [] : [join(rootDir, ws.dir)]))
   const firstTsconfig = workspaces.find((ws) => ws.tsconfig !== undefined)?.dir
-  const forbidden: IForbiddenRuleType[] = [
+  const forbidden: ReadonlyArray<IForbiddenRuleType> = [
     ...workspaces.flatMap(denyRule),
     {
       name: "no-circular",
@@ -210,10 +213,10 @@ export function createDepcruise(architecture: Architecture): DepcruiseConfig {
     doNotFollow: { path: "node_modules" },
     tsPreCompilationDeps: true,
     enhancedResolveOptions: {
-      exportsFields: ["exports"],
+      exportsFields: Array.from(EXPORTS_FIELDS),
       // No "types": a workspace exporting `{ "types": "./dist/index.d.ts", "import": "./src/index.ts" }`
       // must resolve to the code, not to a declaration file that ends the chain.
-      conditionNames: ["import", "require", "node", "default"],
+      conditionNames: Array.from(CONDITION_NAMES),
       ...(firstTsconfig === undefined
         ? {}
         : { tsconfig: { configFile: join(rootDir, firstTsconfig, "tsconfig.json"), references: tsconfigDirs } }),
@@ -227,14 +230,14 @@ export function createDepcruise(architecture: Architecture): DepcruiseConfig {
   return { forbidden, options, entries }
 }
 
-export type DepcruiseViolation = { rule: string; from: string; to: string; via: string[] }
+export type DepcruiseViolation = { rule: string; from: string; to: string; via: ReadonlyArray<string> }
 
 export type DepcruiseReport = {
   /** 0 when clean, 1 when a rule is violated, 2 when the check itself couldn't run. */
   exitCode: 0 | 1 | 2
   /** Human-readable output, for a terminal. */
   output: string
-  violations: DepcruiseViolation[]
+  violations: ReadonlyArray<DepcruiseViolation>
 }
 
 /**
@@ -242,7 +245,10 @@ export type DepcruiseReport = {
  * anything. The `ownDirs` rules are exempt: their folder exists (`defineArchitecture` checks),
  * and when nothing in `src` or `test` imports from it there is no code of it to check.
  */
-export function rulesMatchingNothing(forbidden: readonly IForbiddenRuleType[], result: ICruiseResult): string[] {
+export function rulesMatchingNothing(
+  forbidden: readonly IForbiddenRuleType[],
+  result: ICruiseResult,
+): ReadonlyArray<string> {
   return forbidden
     .filter((rule) => !(rule.name ?? "").startsWith(`${OWN_DIRS_RULE}-`))
     .filter((rule) => {
@@ -300,17 +306,25 @@ export async function runDepcruise(architecture: Architecture): Promise<Depcruis
   )
 }
 
+const EXPORTS_FIELDS: ReadonlyArray<string> = ["exports"]
+const CONDITION_NAMES: ReadonlyArray<string> = ["import", "require", "node", "default"]
+
 async function checkArchitecture(architecture: Architecture): Promise<DepcruiseReport> {
   const { cruise, getAvailableTranspilers } = await import("dependency-cruiser")
-  const problem = transpilerProblem(getAvailableTranspilers())
-  if (problem.isSome()) return fatal(problem.orThrow())
+  return transpilerProblem(getAvailableTranspilers()).fold(
+    () => cruiseArchitecture(cruise, architecture),
+    (problem) => Promise.resolve(fatal(problem)),
+  )
+}
+
+async function cruiseArchitecture(cruise: typeof Cruise, architecture: Architecture): Promise<DepcruiseReport> {
   const config = createDepcruise(architecture)
   if (config.entries.length === 0) return fatal("No workspace has a src or test directory to cruise.")
 
-  const cruised = await cruise(config.entries, {
+  const cruised = await cruise(Array.from(config.entries), {
     ...config.options,
     validate: true,
-    ruleSet: { forbidden: config.forbidden },
+    ruleSet: { forbidden: Array.from(config.forbidden) },
   })
   const result = cruised.output as ICruiseResult
   if (result.summary.totalCruised === 0) return fatal("dependency-cruiser cruised no modules.")
