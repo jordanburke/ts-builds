@@ -6,6 +6,28 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+### Bug Fixes
+
+- **lint (`ts-builds/eslint-functype`):** `eslint-config-functype` and `eslint-plugin-functype` are
+  capped at `>=2.127.2 <2.200.0`. ts-builds 4.8.0 asked for `^2.127.0`, which admits
+  eslint-plugin-functype 2.200.0, the functype 2.0 release. That version's `recommended` preset turns
+  every rule it enables to `error`, including `prefer-list` and `no-array-mutation`, so a fresh
+  install of 4.8.0 can fail `lint` on code that passed the day before. On ts-builds' own `src/` it
+  reports 116 errors. The functype 2.0 family will come in a ts-builds major.
+
+### Dependencies
+
+- `typescript-eslint` `^8.73.0`, and `vitest` and the `@vitest/*` packages `^5.1.1`. `functype` and
+  `functype-os` resolve 1.27.2, the last 1.x release.
+- The exact pins move: `eslint-plugin-boundaries` 7.4.3 → 7.4.4 (its only change is
+  `@boundaries/elements` 3.3.3 → 3.3.4), and `dependency-cruiser` 18.7.2 → 18.8.0. 18.9.0 was under
+  a day old, inside pnpm's one-day `minimumReleaseAge`.
+- TypeScript stays on 6.0: `typescript-eslint` 8.73.0, its newest release, still supports only
+  `typescript <6.1.0`.
+- The `minimatch` override for GHSA-g3hv-75wg-m249 is gone. `@typescript-eslint/typescript-estree`
+  8.73.0 now asks for minimatch `^11.0.1`, so nothing in the graph asks for an affected version.
+  This only changed ts-builds' own install: overrides never reached consumers.
+
 ## 4.8.0 (2026-11-22)
 
 ### Features
