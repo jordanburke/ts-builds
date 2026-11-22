@@ -6,6 +6,8 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+## 5.0.0 (2026-11-22)
+
 ### ⚠ Breaking changes
 
 #### functype 2.0 only
