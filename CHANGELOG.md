@@ -6,6 +6,8 @@ conventional commits via `ts-builds changelog`.
 
 ## [Unreleased]
 
+## 4.8.0 (2026-11-22)
+
 ### Features
 
 - **eslint:** the functype preset (`ts-builds/eslint-functype`) warns on
