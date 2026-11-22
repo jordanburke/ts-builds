@@ -75,15 +75,15 @@
   ],
   "dependencies": {
     "@eslint/js": "^10.0.1",
-    "@vitest/coverage-v8": "^5.1.0",
-    "@vitest/ui": "^5.1.0",
-    "dependency-cruiser": "18.7.2",
+    "@vitest/coverage-v8": "^5.1.1",
+    "@vitest/ui": "^5.1.1",
+    "dependency-cruiser": "18.8.0",
     "eslint": "^10.15.0",
-    "eslint-config-functype": "^2.127.0",
+    "eslint-config-functype": ">=2.127.0 <2.200.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-import-resolver-typescript": "4.4.5",
-    "eslint-plugin-boundaries": "7.4.3",
-    "eslint-plugin-functype": "^2.127.0",
+    "eslint-plugin-boundaries": "7.4.4",
+    "eslint-plugin-functype": ">=2.127.0 <2.200.0",
     "eslint-plugin-prettier": "^5.5.7",
     "eslint-plugin-simple-import-sort": "^14.0.0",
     "functype": "^1.27.0",
@@ -92,9 +92,9 @@
     "prettier": "^3.10.1",
     "ts-node": "^10.9.2",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.72.2",
+    "typescript-eslint": "^8.73.0",
     "unrs-resolver": "^1.13.0",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   },
   "devDependencies": {
     "@types/node": "~26.6.6",
