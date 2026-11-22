@@ -1,5 +1,5 @@
 import { join } from "node:path"
-import { execSync } from "node:child_process"
+import { execSync, spawnSync } from "node:child_process"
 import { describe, expect, it } from "vitest"
 
 import { parseConventionalCommit, extractIssueRefs } from "../../src/cli/commands/changelog"
@@ -69,6 +69,15 @@ describe("ts-builds changelog", () => {
     it("should run changelog command", () => {
       const output = execSync(`node ${cliPath} changelog`, { encoding: "utf-8" })
       expect(output.length).toBeGreaterThan(0)
+    })
+
+    it("exits 1 with the reason when --output can't be written", () => {
+      const res = spawnSync(process.execPath, [cliPath, "changelog", "--output", "no-such-dir-for-test/CHANGELOG.md"], {
+        encoding: "utf-8",
+      })
+      expect(res.status).toBe(1)
+      expect(res.stderr).toContain("Couldn't write the changelog to no-such-dir-for-test/CHANGELOG.md")
+      expect(res.stdout).not.toContain("Changelog written")
     })
 
     it("should accept --since flag", () => {

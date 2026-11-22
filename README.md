@@ -475,6 +475,8 @@ export default [...baseConfig]
 
 `ts-builds/eslint-fp` adds strict functional TypeScript rules, and `ts-builds/eslint-functype` adds the functype plugin on top.
 
+`ts-builds/eslint-functype` uses eslint-plugin-functype 2.200's `recommended` preset, for functype 2.0, where every rule it turns on is an error: mutable array types (`prefer-list`), in-place array changes (`no-array-mutation`), nullable and throwing APIs (`prefer-option`, `prefer-either`, `prefer-try`), unsafe unwraps (`no-get-unsafe`) and dropped results (`no-floating-io`, `no-floating-result`). To turn a rule off, set it to `"off"` in a block after the preset. Projects still on functype 1.x stay on ts-builds 4.8.
+
 #### Detached method calls (functype preset)
 
 `ts-builds/eslint-functype` reports `@typescript-eslint/unbound-method` as an error, set to `["error", { ignoreStatic: true }]`.
