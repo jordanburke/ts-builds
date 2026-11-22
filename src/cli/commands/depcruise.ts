@@ -7,7 +7,7 @@ import { Option } from "functype"
 import type { Architecture } from "../../architecture"
 import { runDepcruise } from "../../depcruise"
 
-const DEFAULT_FILES = ["architecture.mjs", "architecture.js", "architecture.ts"]
+const DEFAULT_FILES: ReadonlyArray<string> = ["architecture.mjs", "architecture.js", "architecture.ts"]
 
 const USAGE = `Usage: ts-builds depcruise [file]
 
@@ -56,15 +56,18 @@ export async function runDepcruiseCommand(file: string | undefined): Promise<num
     return 0
   }
   const path = file === undefined ? findArchitectureFile(process.cwd()) : Option(resolve(file)).filter(isFile)
-  if (path.isNone()) {
+  return path.fold(() => {
     console.error(
       file === undefined
         ? `No ${DEFAULT_FILES.join(", ")} found here or above. Pass the file: ts-builds depcruise <file>`
         : `${resolve(file)} is not a file.`,
     )
-    return 2
-  }
-  const loaded = await loadArchitecture(path.orThrow())
+    return Promise.resolve(2)
+  }, checkArchitectureFile)
+}
+
+async function checkArchitectureFile(path: string): Promise<number> {
+  const loaded = await loadArchitecture(path)
   if (typeof loaded === "string") {
     console.error(loaded)
     return 2

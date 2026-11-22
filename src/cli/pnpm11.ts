@@ -29,7 +29,7 @@ export type PnpmProbeResult = {
    * the run (lenient mode). pnpm 12 run from a workspace package writes them without
    * printing anything about it, so the file is the only reliable signal.
    */
-  autoExcluded?: string[]
+  autoExcluded?: ReadonlyArray<string>
 }
 
 // A package token is `name@version`, where name may be scoped (`@scope/name`).
@@ -69,17 +69,17 @@ const AUTO_EXCLUDE_ENTRY = new RegExp(`^\\s+(${PKG_VERSION})$`)
  * de-duplicated. Returns [] for unrelated or empty output so callers never emit
  * false warnings.
  */
-export function parseReleaseAgeViolations(stdout: string, stderr: string): string[] {
+export function parseReleaseAgeViolations(stdout: string, stderr: string): ReadonlyArray<string> {
   const output = `${stdout}\n${stderr}`
   const unwrapped = output.replace(/-\r?\n\s+/g, "-").replace(/\s+/g, " ")
-  const strict = [...unwrapped.matchAll(RELEASE_AGE_VIOLATION)].map((match) => match[1])
+  const strict = Array.from(unwrapped.matchAll(RELEASE_AGE_VIOLATION), (match) => match[1])
   return List([...strict, ...autoExcludedEntries(output)])
     .distinct()
     .toArray()
 }
 
 /** The `pkg@version` lines listed under pnpm's lenient-mode "Added N entries" header. */
-function autoExcludedEntries(output: string): string[] {
+function autoExcludedEntries(output: string): ReadonlyArray<string> {
   const lines = output.split("\n").map((raw) => raw.trimEnd())
   const start = lines.findIndex((line) => AUTO_EXCLUDE_HEADER.test(line.trim()))
   if (start === -1) return []
@@ -136,7 +136,7 @@ export const defaultReleaseAgeProbe: PnpmReleaseAgeProbe = (dir) => {
 type FileSnapshot = { path: string; bytes: Option<Buffer> }
 
 /** The `minimumReleaseAgeExclude` entries a `pnpm-workspace.yaml` gained since its snapshot. */
-function addedExcludeEntries({ path, bytes }: FileSnapshot): string[] {
+function addedExcludeEntries({ path, bytes }: FileSnapshot): ReadonlyArray<string> {
   if (basename(path) !== "pnpm-workspace.yaml" || !isFile(path)) return []
   const before = readReleaseAgeExcludeEntries(
     bytes.fold(
@@ -154,7 +154,7 @@ function addedExcludeEntries({ path, bytes }: FileSnapshot): string[] {
  * if it has one. A path that exists but is not a regular file is left untracked,
  * since pnpm cannot have written it either.
  */
-function probeWrittenFiles(dir: string): string[] {
+function probeWrittenFiles(dir: string): ReadonlyArray<string> {
   const roots = findWorkspaceRoot(dir).fold(
     () => [dir],
     (root) => [dir, root],
@@ -205,8 +205,8 @@ function strayWorkspaceRoot(dir: string): Option<string> {
  * descending into one once found. Skips hidden directories, `node_modules` and
  * symlinks, like the lint-report walk; an unreadable directory counts as empty.
  */
-function nestedWorkspaceDirs(dir: string): string[] {
-  const entries = Try(() => readdirSync(dir, { withFileTypes: true })).orElse([])
+function nestedWorkspaceDirs(dir: string): ReadonlyArray<string> {
+  const entries = Try(() => readdirSync(dir, { withFileTypes: true })).getOrElse(() => [])
   const subdirs = entries
     .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && entry.name !== "node_modules")
     .map((entry) => join(dir, entry.name))
@@ -219,10 +219,10 @@ function nestedWorkspaceDirs(dir: string): string[] {
  * its globs list and that has its own `pnpm-workspace.yaml`. Returned as
  * `[root, packageDir]` pairs.
  */
-function findStrayWorkspaceFiles(dir: string): Array<[string, string]> {
+function findStrayWorkspaceFiles(dir: string): ReadonlyArray<[string, string]> {
   const asPackage = strayWorkspaceRoot(dir).fold(
-    (): Array<[string, string]> => [],
-    (root): Array<[string, string]> => [[root, dir]],
+    (): ReadonlyArray<[string, string]> => [],
+    (root): ReadonlyArray<[string, string]> => [[root, dir]],
   )
   const wsPath = join(dir, "pnpm-workspace.yaml")
   const globs = isFile(wsPath) ? readWorkspacePackageGlobs(readFileSync(wsPath, "utf-8")) : []
@@ -236,7 +236,7 @@ function findStrayWorkspaceFiles(dir: string): Array<[string, string]> {
   return [...asPackage, ...asRoot]
 }
 
-function detectStrayWorkspaceFiles(dir: string): CheckResult[] {
+function detectStrayWorkspaceFiles(dir: string): ReadonlyArray<CheckResult> {
   return findStrayWorkspaceFiles(dir).map(([root, pkgDir]) => {
     const rel = relative(root, pkgDir).split(sep).join("/")
     return {
@@ -295,11 +295,11 @@ export function readAllowBuildsKeys(yaml: string): Set<string> {
 }
 
 /** The first capture group of `pattern` for every line it matches. */
-function matchFirstGroups(lines: string[], pattern: RegExp): string[] {
+function matchFirstGroups(lines: ReadonlyArray<string>, pattern: RegExp): ReadonlyArray<string> {
   return lines.map((line) => pattern.exec(line)?.[1]).filter((group): group is string => group !== undefined)
 }
 
-function detectAllowBuildsIssues(dir: string): CheckResult[] {
+function detectAllowBuildsIssues(dir: string): ReadonlyArray<CheckResult> {
   const lockPath = join(dir, "pnpm-lock.yaml")
   if (!existsSync(lockPath)) {
     return []
@@ -324,7 +324,7 @@ function detectAllowBuildsIssues(dir: string): CheckResult[] {
     }))
 }
 
-function detectReleaseAgeIssues(dir: string, probe: PnpmReleaseAgeProbe): CheckResult[] {
+function detectReleaseAgeIssues(dir: string, probe: PnpmReleaseAgeProbe): ReadonlyArray<CheckResult> {
   const result = probe(dir)
   const { stdout, stderr, status } = result
   const violations = probeViolations(result)
@@ -337,12 +337,12 @@ function detectReleaseAgeIssues(dir: string, probe: PnpmReleaseAgeProbe): CheckR
     }))
   }
   return probeFailure(stdout, stderr, status)
-    .map((message): CheckResult[] => [{ severity: "warning", message }])
-    .orElse([])
+    .map((message): ReadonlyArray<CheckResult> => [{ severity: "warning", message }])
+    .getOrElse(() => [])
 }
 
 /** Every flagged `pkg@version`, from pnpm's output and from the entries it wrote. */
-function probeViolations({ stdout, stderr, autoExcluded = [] }: PnpmProbeResult): string[] {
+function probeViolations({ stdout, stderr, autoExcluded = [] }: PnpmProbeResult): ReadonlyArray<string> {
   return List([...parseReleaseAgeViolations(stdout, stderr), ...autoExcluded])
     .distinct()
     .toArray()
@@ -367,7 +367,7 @@ function probeFailure(stdout: string, stderr: string, status: number): Option<st
   return Option(`Could not check minimumReleaseAge: \`${command}\` exited ${status}${detail}`)
 }
 
-function readHoistPatterns(npmrc: string): string[] {
+function readHoistPatterns(npmrc: string): ReadonlyArray<string> {
   return npmrc
     .split("\n")
     .map((line) => HOIST_LINE.exec(line.trim()))
@@ -382,7 +382,7 @@ export function detectPnpm11Issues(
   const npmrcPath = join(dir, ".npmrc")
   const npmrc = existsSync(npmrcPath) ? readFileSync(npmrcPath, "utf-8") : ""
   const hoistCount = readHoistPatterns(npmrc).length
-  const hoistIssues: CheckResult[] =
+  const hoistIssues: ReadonlyArray<CheckResult> =
     hoistCount > 0
       ? [
           {
@@ -392,7 +392,7 @@ export function detectPnpm11Issues(
         ]
       : []
 
-  const pnpmFieldIssues: CheckResult[] = hasPnpmField(join(dir, "package.json"))
+  const pnpmFieldIssues: ReadonlyArray<CheckResult> = hasPnpmField(join(dir, "package.json"))
     ? [
         {
           severity: "warning",
@@ -424,7 +424,7 @@ export type MigrationAction = {
 }
 
 export type MigrationReport = {
-  actions: MigrationAction[]
+  actions: ReadonlyArray<MigrationAction>
   errors: number
 }
 
@@ -432,7 +432,7 @@ type PnpmField = {
   overrides?: Record<string, string>
   peerDependencyRules?: {
     allowedVersions?: Record<string, string>
-    ignoreMissing?: string[]
+    ignoreMissing?: ReadonlyArray<string>
   }
   [key: string]: unknown
 }
@@ -450,7 +450,7 @@ function appendBlock(existing: string, block: string): string {
   return `${base}\n${block}`
 }
 
-function renderPublicHoistPattern(patterns: string[]): string {
+function renderPublicHoistPattern(patterns: ReadonlyArray<string>): string {
   return `publicHoistPattern:\n${patterns.map((p) => `  - "${p}"`).join("\n")}\n`
 }
 
@@ -533,7 +533,7 @@ export function readReleaseAgeExcludeEntries(yaml: string): Set<string> {
  * top-level block, after its last list item and before the next top-level key.
  * Assumes the block exists; de-dup is the caller's responsibility.
  */
-function insertListEntries(yaml: string, blockKey: string, renderedLines: string[]): string {
+function insertListEntries(yaml: string, blockKey: string, renderedLines: ReadonlyArray<string>): string {
   if (renderedLines.length === 0) return yaml
   const lines = yaml.split("\n")
   const startRe = new RegExp(`^${blockKey}:`)
@@ -549,7 +549,7 @@ function insertListEntries(yaml: string, blockKey: string, renderedLines: string
 }
 
 /** Insert `  <key>: <value>` map entries into an existing top-level block. */
-function insertMapEntries(yaml: string, blockKey: string, entries: Array<[string, string]>): string {
+function insertMapEntries(yaml: string, blockKey: string, entries: ReadonlyArray<[string, string]>): string {
   return insertListEntries(
     yaml,
     blockKey,
@@ -567,13 +567,13 @@ type SourceMutation = () => MigrationReport
 /** One migration step: the workspace YAML it leaves, what it did, and the source edits it defers. */
 type MigrationStep = {
   ws: string
-  actions: MigrationAction[]
-  sourceMutations: SourceMutation[]
+  actions: ReadonlyArray<MigrationAction>
+  sourceMutations: ReadonlyArray<SourceMutation>
 }
 
 const noChange = (ws: string): MigrationStep => ({ ws, actions: [], sourceMutations: [] })
 
-function combineReports(reports: MigrationReport[]): MigrationReport {
+function combineReports(reports: ReadonlyArray<MigrationReport>): MigrationReport {
   return {
     actions: reports.flatMap((r) => r.actions),
     errors: reports.reduce((sum, r) => sum + r.errors, 0),
@@ -641,7 +641,7 @@ function migratePnpmKey<T extends object>(
   key: "overrides" | "peerDependencyRules",
   value: T | undefined,
   render: (value: T) => string,
-): { ws: string; actions: MigrationAction[]; migrated: boolean } {
+): { ws: string; actions: ReadonlyArray<MigrationAction>; migrated: boolean } {
   if (!value || Object.keys(value).length === 0) return { ws, actions: [], migrated: false }
   if (hasTopLevelKey(ws, key)) {
     return {
@@ -678,7 +678,7 @@ function migratePackageJsonPnpm(dir: string, ws: string): MigrationStep {
   ])
 
   const remainingPnpm = Object.fromEntries(Object.entries(pnpm).filter(([key]) => !migratedKeys.has(key)))
-  const manual: MigrationAction[] = Object.keys(remainingPnpm)
+  const manual: ReadonlyArray<MigrationAction> = Object.keys(remainingPnpm)
     .filter((key) => !KNOWN_PNPM_KEYS.has(key))
     .map((key) => ({ kind: "manual", message: `pnpm.${key} needs manual migration (left in package.json)` }))
 
@@ -756,7 +756,7 @@ function migrateReleaseAgeExcludes(dir: string, ws: string, probe: PnpmReleaseAg
 function migrateAllowBuilds(ws: string, lockfile: string | undefined): MigrationStep {
   if (lockfile === undefined) return noChange(ws)
   const decided = readAllowBuildsKeys(ws)
-  const toAdd: Array<[string, string]> = [...CURATED_ALLOW_BUILDS_FALSE]
+  const toAdd: ReadonlyArray<[string, string]> = [...CURATED_ALLOW_BUILDS_FALSE]
     .map(([pkg]) => pkg)
     .filter((pkg) => !decided.has(pkg) && LOCKFILE_PKG_PRESENCE(pkg).test(lockfile))
     .map((pkg) => [pkg, "false"])
@@ -834,7 +834,7 @@ export function migratePnpm11(
   const pkgJson = migratePackageJsonPnpm(dir, npmrc.ws)
   const releaseAge = migrateReleaseAgeExcludes(dir, pkgJson.ws, releaseAgeProbe)
   const allowBuilds = migrateAllowBuilds(releaseAge.ws, lockfile)
-  const steps = [npmrc, pkgJson, releaseAge, allowBuilds]
+  const steps: ReadonlyArray<MigrationStep> = [npmrc, pkgJson, releaseAge, allowBuilds]
   const { ws } = allowBuilds
   const actions = steps.flatMap((step) => step.actions)
 
@@ -843,7 +843,7 @@ export function migratePnpm11(
   // write nothing (a skipped probe, a key left for manual migration) report as usual.
   const wouldWrite = ws !== originalWs || steps.some((step) => step.sourceMutations.length > 0)
   const refusal = wouldWrite ? workspaceRefusal(dir) : Option.none<MigrationAction>()
-  if (refusal.isSome()) return { actions: [refusal.orThrow()], errors: 0 }
+  if (refusal.isSome()) return { actions: refusal.toArray(), errors: 0 }
 
   // Destructive edits to the SOURCE files are deferred until the destination
   // (pnpm-workspace.yaml) is safely on disk — otherwise a failed ws write would

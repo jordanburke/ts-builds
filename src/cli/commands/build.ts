@@ -217,7 +217,7 @@ export function prettierFormatArgs(
   bundledIgnore: Option<string> = bundledPrettierIgnorePath(),
   bundledConfig: Option<string> = prettierConfigArg(),
   workspaceIgnore: Option<string> = workspacePrettierIgnorePath(),
-): string[] {
+): ReadonlyArray<string> {
   const base = List([check ? "--check" : "--write", "."])
   // Any explicit --ignore-path turns off prettier's own discovery of ./.prettierignore (and of
   // ./.gitignore, which ts-builds has never re-added), so once one is passed the consumer's
@@ -320,7 +320,7 @@ export async function runLint(check = false): Promise<number> {
   const fix = !check
   const invalidLimit = maxWarningsProblem(config.lint.maxWarnings)
   if (invalidLimit.isSome()) {
-    console.error(invalidLimit.orElse(""))
+    console.error(invalidLimit.getOrElse(() => ""))
     // The project path never writes a sidecar; the bundled one must replace any old report.
     if (!config.lint.useProjectEslint)
       await writeLintReport(fatalLintReport(fix, readPackageName(targetDir)), targetDir)
@@ -397,7 +397,7 @@ async function lintWithNodeApi(config: ResolvedConfig, fix: boolean, pkg: string
 
   // Printing is best-effort: a formatter bug or a closed pipe must not overwrite the
   // saved report with a fatal one nor change the real exit code.
-  await Try.fromPromise(printLintResults(eslint, results, config))
+  void (await Try.fromPromise(printLintResults(eslint, results, config)))
 
   // Opt-in, and off unless TS_BUILDS_TELEMETRY=1. Never throws or changes the exit code.
   const firstFile = results.at(0)?.filePath
@@ -413,7 +413,11 @@ async function lintWithNodeApi(config: ResolvedConfig, fix: boolean, pkg: string
   return report
 }
 
-async function printLintResults(eslint: ESLint, results: ESLint.LintResult[], config: ResolvedConfig): Promise<void> {
+async function printLintResults(
+  eslint: ESLint,
+  results: ReadonlyArray<ESLint.LintResult>,
+  config: ResolvedConfig,
+): Promise<void> {
   const testDir = resolve(targetDir, config.testDir)
   const unparsed = config.lint.includeTests
     ? results.filter((result) => isInside(result.filePath, testDir) && notInTsconfig(result))
@@ -454,16 +458,16 @@ export async function snapshotMtimes(dir: string): Promise<Map<string, number>> 
 }
 
 /** Walks `dir` one entry at a time, so a large tree never opens many handles at once. */
-async function collectMtimes(dir: string): Promise<Array<[string, number]>> {
+async function collectMtimes(dir: string): Promise<ReadonlyArray<[string, number]>> {
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => [])
-  return entries.reduce<Promise<Array<[string, number]>>>(async (pending, entry) => {
+  return entries.reduce<Promise<ReadonlyArray<[string, number]>>>(async (pending, entry) => {
     const acc = await pending
     const path = join(dir, entry.name)
     if (entry.isDirectory()) return [...acc, ...(await collectMtimes(path))]
     const mtime = await statMtime(path)
     return mtime.fold(
       () => acc,
-      (ms): Array<[string, number]> => [...acc, [path, ms]],
+      (ms): ReadonlyArray<[string, number]> => [...acc, [path, ms]],
     )
   }, Promise.resolve([]))
 }
@@ -487,7 +491,7 @@ async function statMtime(path: string): Promise<Option<number>> {
  * the build.
  */
 export async function pruneOrphans(distDir: string, before: Map<string, number>): Promise<void> {
-  await [...before].reduce<Promise<void>>(async (pending, [path, mtimeBefore]) => {
+  await Array.from(before).reduce<Promise<void>>(async (pending, [path, mtimeBefore]) => {
     await pending
     if ((await statMtime(path)).contains(mtimeBefore)) await rm(path, { force: true }).catch(() => undefined)
   }, Promise.resolve())

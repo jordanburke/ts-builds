@@ -18,7 +18,7 @@ describe("ts-builds changelog", () => {
       const result = parseConventionalCommit("fix(cli): resolve path issue").orThrow()
       expect(result.type).toBe("fix")
       expect(result.scope.isSome()).toBe(true)
-      expect(result.scope.orElse("")).toBe("cli")
+      expect(result.scope.getOrElse(() => "")).toBe("cli")
       expect(result.breaking).toBe(false)
       expect(result.description).toBe("resolve path issue")
     })
@@ -34,7 +34,7 @@ describe("ts-builds changelog", () => {
     it("should parse scoped breaking change", () => {
       const result = parseConventionalCommit("refactor(config)!: change config format").orThrow()
       expect(result.type).toBe("refactor")
-      expect(result.scope.orElse("")).toBe("config")
+      expect(result.scope.getOrElse(() => "")).toBe("config")
       expect(result.breaking).toBe(true)
       expect(result.description).toBe("change config format")
     })

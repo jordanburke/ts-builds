@@ -161,7 +161,7 @@ function formatCommitLine(commit: ParsedCommit, repoUrl: Option<string>): string
   return `- ${scope}${commit.description} ${hashLink}${issueRef}`
 }
 
-function formatSection(title: string, commits: List<ParsedCommit>, repoUrl: Option<string>): string[] {
+function formatSection(title: string, commits: List<ParsedCommit>, repoUrl: Option<string>): ReadonlyArray<string> {
   return [`### ${title}`, "", ...commits.toArray().map((commit) => formatCommitLine(commit, repoUrl)), ""]
 }
 
@@ -192,7 +192,7 @@ const noArgs: ChangelogArgs = {
 }
 
 /** Each flag consumes the argument after it; unknown arguments are skipped. */
-function parseChangelogArgs(args: string[], parsed: ChangelogArgs = noArgs): ChangelogArgs {
+function parseChangelogArgs(args: ReadonlyArray<string>, parsed: ChangelogArgs = noArgs): ChangelogArgs {
   const [flag, value] = args
   switch (flag) {
     case undefined:
@@ -208,7 +208,7 @@ function parseChangelogArgs(args: string[], parsed: ChangelogArgs = noArgs): Cha
   }
 }
 
-export function runChangelog(args: string[]): number {
+export function runChangelog(args: ReadonlyArray<string>): number {
   const config = loadConfig()
   const changelogConfig: ChangelogConfig = config.changelog
 
@@ -260,14 +260,21 @@ export function runChangelog(args: string[]): number {
   const grouped = groupCommits(parsed, typeMap, exclude)
   const markdown = formatMarkdown(grouped, repoUrl, version)
 
-  output.fold(
-    () => console.log(markdown),
-    (file) => {
-      const outputPath = join(targetDir, file)
-      Fs.writeFileSync(outputPath, markdown)
-      console.log(`Changelog written to ${file}`)
+  return output.fold(
+    () => {
+      console.log(markdown)
+      return 0
     },
+    (file) =>
+      Fs.writeFileSync(join(targetDir, file), markdown).fold(
+        (error) => {
+          console.error(`Couldn't write the changelog to ${file}: ${error.message}`)
+          return 1
+        },
+        () => {
+          console.log(`Changelog written to ${file}`)
+          return 0
+        },
+      ),
   )
-
-  return 0
 }

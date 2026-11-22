@@ -7,7 +7,7 @@ import { targetDir } from "../config"
 // `globals` is imported by the standard flat eslint.config.js but isn't matched
 // by `*eslint*`, so without hoisting it the config fails to resolve at the repo
 // root under pnpm's strict linking (ERR_MODULE_NOT_FOUND on a clean install).
-const hoistPatterns = ["*eslint*", "*prettier*", "*vitest*", "typescript", "globals"]
+const hoistPatterns: ReadonlyArray<string> = ["*eslint*", "*prettier*", "*vitest*", "typescript", "globals"]
 
 function renderHoistBlock(): string {
   return `publicHoistPattern:\n${hoistPatterns.map((p) => `  - "${p}"`).join("\n")}\n`

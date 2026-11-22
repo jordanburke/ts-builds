@@ -24,7 +24,7 @@ interface PackageJson {
   types?: string
   bin?: string | Record<string, string>
   exports?: Record<string, unknown>
-  files?: string[]
+  files?: ReadonlyArray<string>
   peerDependencies?: Record<string, string>
   [key: string]: unknown
 }

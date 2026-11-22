@@ -152,7 +152,7 @@ This tells ts-builds to use your project's ESLint installation instead of the bu
 - It's off by default in 4.x, because turning it on can fail `validate` in a repo whose tests were never linted. 5.0 turns it on.
 - A `testDir` that doesn't exist is skipped. One with nothing ESLint can lint, such as only JSON fixtures, stops `lint` with exit code 2, the same as an empty `srcDir`.
 - `.ts-builds/lint-report.json` and `lint:summary` count both directories.
-- The fp and functype configs turn off the rules that misread a test's shape, for test files only: `@typescript-eslint/require-await` and `@typescript-eslint/no-unnecessary-condition`, plus `functype/prefer-option`, `prefer-either`, `prefer-try` and `@typescript-eslint/unbound-method` in the functype config. The rule lists come from functype's `test-overrides` and `tests` configs, except `unbound-method`, which ts-builds adds. The base config enables none of these, so it has no override.
+- The fp and functype configs turn off the rules that misread a test's shape, for test files only: `@typescript-eslint/require-await` and `@typescript-eslint/no-unnecessary-condition`, plus `functype/prefer-option`, `prefer-either`, `prefer-try`, `no-floating-result`, `no-serialize-container` and `@typescript-eslint/unbound-method` in the functype config. The rule lists come from functype's `test-overrides` and `tests` configs, except `unbound-method`, which ts-builds adds. The base config enables none of these, so it has no override.
 - The fp and functype configs use type-aware rules, so every test file has to be in a tsconfig. Add `test/**/*` to `include`, or point `parserOptions.project` at a `tsconfig.eslint.json` that has it. On the bundled path, test files outside any tsconfig count as errors and print as one message naming this fix. With `lint.useProjectEslint`, your ESLint reports each one itself.
 
 ### Limiting Warnings
@@ -477,13 +477,12 @@ export default [...baseConfig]
 
 #### Detached method calls (functype preset)
 
-`ts-builds/eslint-functype` warns on `@typescript-eslint/unbound-method`, set to `["warn", { ignoreStatic: true }]`.
+`ts-builds/eslint-functype` reports `@typescript-eslint/unbound-method` as an error, set to `["error", { ignoreStatic: true }]`.
 
-- functype 2.0 moves the methods of values such as Option, Either, Try and List onto shared prototypes. A method used without its value then throws, as in `xs.map(opt.orElse)` or `const { map } = opt`. The warning finds those calls before you upgrade. The fix is to call the method on its value: `xs.map((d) => opt.orElse(d))`.
-- On functype 1.x it finds only some of them. The rule checks members declared with method syntax. Option's are, but most of Try's, Either's and List's are arrow-typed properties, so `tr.map` and `const { map } = tr` pass unflagged. It sees them all once 2.0 switches those interfaces to method syntax.
+- functype 2.0 keeps the methods of values such as Option, Either, Try and List on shared prototypes. A method used without its value throws, as in `xs.map(opt.getOrElse)` or `const { map } = opt`. Call the method on its value instead: `xs.map((d) => opt.getOrElse(() => d))`.
+- The rule checks members declared with method syntax, which functype 2.0 uses for every value type.
 - `ignoreStatic` skips static class methods, which rarely use `this`. functype's companions, such as `Option.from`, are plain objects, so it doesn't hide any functype call.
 - It is off for test files. Tests pass methods to `expect(obj.method)` without calling them, and a detached call that throws fails the test run anyway.
-- It is a warning, so it fails `lint` only when you set `lint.maxWarnings` (or `--max-warnings`) and have such calls. Fix them, or turn the rule off in your own config.
 
 ### Vitest
 

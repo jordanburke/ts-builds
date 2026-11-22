@@ -665,6 +665,6 @@ describe("transpilerProblem", () => {
     ["missing", [{ name: "javascript", available: true }]],
     ["unavailable", [{ name: "typescript", available: false }]],
   ])("names the fix when TypeScript is %s", (_label, transpilers) => {
-    expect(transpilerProblem(transpilers).orElse("")).toContain("Install typescript")
+    expect(transpilerProblem(transpilers).getOrElse(() => "")).toContain("Install typescript")
   })
 })

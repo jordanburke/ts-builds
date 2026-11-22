@@ -66,7 +66,7 @@ export interface SizeConfig {
 
 export interface ChangelogConfig {
   types?: Record<string, string>
-  exclude?: string[]
+  exclude?: ReadonlyArray<string>
 }
 
 export interface TsBuildsConfig {
@@ -77,8 +77,8 @@ export interface TsBuildsConfig {
   size?: SizeConfig
   changelog?: ChangelogConfig
   commands?: Record<string, string | CommandDef>
-  chains?: Record<string, string[]>
-  validateChain?: string[]
+  chains?: Record<string, ReadonlyArray<string>>
+  validateChain?: ReadonlyArray<string>
 }
 
 export interface ResolvedConfig {
@@ -89,12 +89,12 @@ export interface ResolvedConfig {
   size: SizeConfig
   changelog: ChangelogConfig
   commands: Record<string, CommandDef>
-  chains: Record<string, string[]>
+  chains: Record<string, ReadonlyArray<string>>
   /** Why the derived `ci` chain can't be trusted, one message per cause; empty when it can. See `ciProblems`. */
-  ciProblems: string[]
+  ciProblems: ReadonlyArray<string>
 }
 
-export const defaultChains: Record<string, string[]> = {
+export const defaultChains: Record<string, ReadonlyArray<string>> = {
   validate: ["format", "lint", "typecheck", "test", "build"],
 }
 
@@ -118,9 +118,9 @@ export const CHECK_TWINS: Readonly<Record<string, string>> = {
  */
 export function deriveCiChain(
   chain: readonly string[],
-  chains: Readonly<Record<string, string[]>>,
+  chains: Readonly<Record<string, ReadonlyArray<string>>>,
   expanding: readonly string[] = [],
-): string[] {
+): ReadonlyArray<string> {
   return chain.flatMap((step) => {
     const twin = CHECK_TWINS[step]
     if (twin !== undefined) return [twin]
@@ -133,9 +133,9 @@ export function deriveCiChain(
 /** The steps in `CHECK_TWINS` that `chain` reaches, directly or through nested chains. */
 function writersReached(
   chain: readonly string[],
-  chains: Readonly<Record<string, string[]>>,
+  chains: Readonly<Record<string, ReadonlyArray<string>>>,
   expanding: readonly string[] = [],
-): string[] {
+): ReadonlyArray<string> {
   return chain.flatMap((step) => {
     if (CHECK_TWINS[step] !== undefined) return [step]
     const nested = chains[step]
@@ -153,9 +153,9 @@ function writersReached(
  */
 export function ciProblems(
   validate: readonly string[],
-  chains: Readonly<Record<string, string[]>>,
+  chains: Readonly<Record<string, ReadonlyArray<string>>>,
   commands: Readonly<Record<string, CommandDef>>,
-): string[] {
+): ReadonlyArray<string> {
   const replaced = (step: string): boolean => commands[step] !== undefined || chains[step] !== undefined
   return writersReached(validate, chains)
     .filter((writer, i, all) => all.indexOf(writer) === i)
@@ -190,7 +190,7 @@ export function loadConfig(): ResolvedConfig {
     ]),
   )
 
-  const chains: Record<string, string[]> = { ...defaultChains }
+  const chains: Record<string, ReadonlyArray<string>> = { ...defaultChains }
   if (userConfig.validateChain) {
     chains.validate = userConfig.validateChain
   }

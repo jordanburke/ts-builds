@@ -43,7 +43,7 @@ export interface LintReport {
   fixableErrorCount: number
   fixableWarningCount: number
   fileCount: number
-  files: LintReportFile[]
+  files: ReadonlyArray<LintReportFile>
   /**
    * Per-rule counts, keyed by rule id and sorted: errors, warnings, and findings silenced by an
    * `eslint-disable` comment. Added in 4.2; absent from a fatal report and from reports written
@@ -76,7 +76,7 @@ export function packageJsonName(dir: string = targetDir): Option<string> {
 
 /** Package name from `<dir>/package.json`, falling back to the directory name. For local use only. */
 export function readPackageName(dir: string = targetDir): string {
-  return packageJsonName(dir).orElse(basename(dir))
+  return packageJsonName(dir).getOrElse(() => basename(dir))
 }
 
 /** Build a report from ESLint results. */

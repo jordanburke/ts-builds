@@ -65,7 +65,8 @@ function loadBaseline(baselinePath: string): Option<SizeBaseline> {
     .flatMap((baseline) => Option(baseline))
 }
 
-function saveBaseline(baselinePath: string, files: List<FileSize>): void {
+/** Writes the baseline; false, with the reason printed, when it can't. */
+function saveBaseline(baselinePath: string, files: List<FileSize>): boolean {
   const absPath = join(targetDir, baselinePath)
   const totalRaw = files.fold(0, (sum, f) => sum + f.raw)
   const totalGzip = files.fold(0, (sum, f) => sum + f.gzip)
@@ -76,7 +77,13 @@ function saveBaseline(baselinePath: string, files: List<FileSize>): void {
     files: Object.fromEntries(files.map((f) => [f.path, { raw: f.raw, gzip: f.gzip }] as const).toArray()),
   }
 
-  Fs.writeFileSync(absPath, `${JSON.stringify(baseline, null, 2)}\n`)
+  return Fs.writeFileSync(absPath, `${JSON.stringify(baseline, null, 2)}\n`).fold(
+    (error) => {
+      console.error(`\nCouldn't save the baseline to ${baselinePath}: ${error.message}`)
+      return false
+    },
+    () => true,
+  )
 }
 
 function formatBytes(bytes: number): string {
@@ -126,7 +133,7 @@ function formatSizeTable(files: List<FileSize>, baseline: Option<SizeBaseline>, 
   return [header, separator, ...rows, separator, totalRow].join("\n")
 }
 
-export function runSize(args: string[]): number {
+export function runSize(args: ReadonlyArray<string>): number {
   const config = loadConfig()
   const sizeConfig = config.size
   const showGzip = sizeConfig.gzip !== false
@@ -151,10 +158,8 @@ export function runSize(args: string[]): number {
     return b
   })
 
-  if (save) {
-    saveBaseline(baselineFile, files)
-    console.log(`\nBaseline saved to ${baselineFile}`)
-  }
+  const saveFailed = save && !saveBaseline(baselineFile, files)
+  if (save && !saveFailed) console.log(`\nBaseline saved to ${baselineFile}`)
 
   const { maxTotal, maxFile } = sizeConfig
   const totalRaw = files.fold(0, (sum, f) => sum + f.raw)
@@ -171,5 +176,5 @@ export function runSize(args: string[]): number {
       : List.empty<string>()
   oversized.forEach((message) => console.error(`\n${message}`))
 
-  return totalTooBig || !oversized.isEmpty ? 1 : 0
+  return saveFailed || totalTooBig || !oversized.isEmpty ? 1 : 0
 }

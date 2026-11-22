@@ -124,7 +124,7 @@ describe("parseLintReport", () => {
     expect(
       parseLintReport(JSON.stringify(report({ package: "a", errorCount: 1 })))
         .map((r) => r.package)
-        .orElse(""),
+        .getOrElse(() => ""),
     ).toBe("a")
   })
   it("rejects invalid JSON", () => {

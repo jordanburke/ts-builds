@@ -210,8 +210,8 @@ importers:
         specifier: ^10.15.0
         version: 10.15.0(supports-color@7.2.0)
       eslint-config-functype:
-        specifier: '>=2.127.0 <2.200.0'
-        version: 2.127.2(@typescript-eslint/eslint-plugin@8.73.0(@typescript-eslint/parser@8.73.0(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(@typescript-eslint/parser@8.73.0(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint-plugin-prettier@5.5.7(eslint-config-prettier@10.1.8(eslint@10.15.0(supports-color@7.2.0)))(eslint@10.15.0(supports-color@7.2.0))(prettier@3.10.1))(eslint-plugin-simple-import-sort@14.0.0(eslint@10.15.0(supports-color@7.2.0)))(eslint@10.15.0(supports-color@7.2.0))(prettier@3.10.1)
+        specifier: ^2.200.0
+        version: 2.200.0(@typescript-eslint/eslint-plugin@8.73.0(@typescript-eslint/parser@8.73.0(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(@typescript-eslint/parser@8.73.0(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint-plugin-prettier@5.5.7(eslint-config-prettier@10.1.8(eslint@10.15.0(supports-color@7.2.0)))(eslint@10.15.0(supports-color@7.2.0))(prettier@3.10.1))(eslint-plugin-simple-import-sort@14.0.0(eslint@10.15.0(supports-color@7.2.0)))(eslint@10.15.0(supports-color@7.2.0))(prettier@3.10.1)
       eslint-config-prettier:
         specifier: ^10.1.8
         version: 10.1.8(eslint@10.15.0(supports-color@7.2.0))
@@ -222,8 +222,8 @@ importers:
         specifier: 7.4.4
         version: 7.4.4(@typescript-eslint/parser@8.73.0(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint-import-resolver-typescript@4.4.5(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0))(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0)
       eslint-plugin-functype:
-        specifier: '>=2.127.0 <2.200.0'
-        version: 2.127.2(eslint@10.15.0(supports-color@7.2.0))
+        specifier: ^2.200.0
+        version: 2.200.0(eslint@10.15.0(supports-color@7.2.0))
       eslint-plugin-prettier:
         specifier: ^5.5.7
         version: 5.5.7(eslint-config-prettier@10.1.8(eslint@10.15.0(supports-color@7.2.0)))(eslint@10.15.0(supports-color@7.2.0))(prettier@3.10.1)
@@ -231,11 +231,11 @@ importers:
         specifier: ^14.0.0
         version: 14.0.0(eslint@10.15.0(supports-color@7.2.0))
       functype:
-        specifier: ^1.27.0
-        version: 1.27.2
+        specifier: ^2.0.0
+        version: 2.0.0
       functype-os:
-        specifier: ^1.27.0
-        version: 1.27.2(functype@1.27.2)
+        specifier: ^2.0.0
+        version: 2.0.0(functype@2.0.0)
       globals:
         specifier: ^17.14.0
         version: 17.14.0
@@ -1069,8 +1069,8 @@ packages:
     resolution: {integrity: sha512-TtpcNJ3XAzx3Gq8sWRzJaVajRs0uVxA2YAkdb1jm2YkPz4G6egUFAyA3n5vtEIZefPk5Wa4UXbKuS5fKkJWdgA==}
     engines: {node: '>=10'}
 
-  eslint-config-functype@2.127.2:
-    resolution: {integrity: sha512-VFxfGhe3wWWpOkCCzV6YcsJXgLQW5YDYL/zezPcyIWYNlgKIjhXuVnBbssJdvKPuMZV9H+/CtBBnkgKdwDOanw==}
+  eslint-config-functype@2.200.0:
+    resolution: {integrity: sha512-/r2mnCMJgXedBd29UTVGBHVb2nTUQA9u4vYJgaUScM//s0e0C23AP676p/t5TCDR+S9/IyYN8aD4blSs0IbAVQ==}
     engines: {node: '>=20.20.0'}
     hasBin: true
     peerDependencies:
@@ -1139,8 +1139,8 @@ packages:
     peerDependencies:
       eslint: '>=6.0.0'
 
-  eslint-plugin-functype@2.127.2:
-    resolution: {integrity: sha512-CPAhTq42Ns8Z/y+4ILINVv3O0TfvJpH+DtmeboDD+qnecSDbHl7Ee9zr2QL15DDOq4ZzDjJ23T78gvf60DFdvw==}
+  eslint-plugin-functype@2.200.0:
+    resolution: {integrity: sha512-YsWq0VRbxGrh88unqCRUXEvbLX0wDt8b9C2CguDRXrYzXqtQtc+Jgb2h6vTF8MoDgrkKrREISsyw3AGcEQk9vg==}
     engines: {node: '>=20.20.0'}
     hasBin: true
     peerDependencies:
@@ -1259,14 +1259,14 @@ packages:
   function-bind@1.1.2:
     resolution: {integrity: sha512-7XHNxH7qX9xG5mIwxkhumTox/MIRNcOgDrxWsMt2pAr23WHp6MrRlN7FBSFpCpr+oVO0F744iUgR82nJMfG2SA==}
 
-  functype-os@1.27.2:
-    resolution: {integrity: sha512-u9kTnXnx00YZ6JjSmeNljyr6Z7aUpM4oL8ux72bHw+J63/Ap1/S1KjgDdWbnYCcK7SBNyppp0ZGE9ElHDATGbw==}
+  functype-os@2.0.0:
+    resolution: {integrity: sha512-QZL2OgYylWBIt74VqK04Zyj5DcvOs40pgyl4jiJkg2sY8x+a+HMwcGeLE//pQUyl8iQRQ1CgTisVLu6BPGrOlg==}
     engines: {node: '>=18.17.0'}
     peerDependencies:
-      functype: '>=0.60.0'
+      functype: '>=2.0.0'
 
-  functype@1.27.2:
-    resolution: {integrity: sha512-cWrqqiO/SBPnsH59LMYmS1sr4Uit1z+9HRMtKUX4BAFhsgEHYXUCCBDVmE3R2JdKksY9yq39m9V6uyv6+Pg5+w==}
+  functype@2.0.0:
+    resolution: {integrity: sha512-3A7/gam2Q1Ll4e5p8sDKMZQ3DA4jT4+ouDzVut4pweW579S4i/jqkrvMrlA1SNCh7Y7Da+OpMzMUpfkcly0YeA==}
     hasBin: true
 
   get-tsconfig@4.14.3:
@@ -2619,7 +2619,7 @@ snapshots:
 
   escape-string-regexp@4.0.0: {}
 
-  eslint-config-functype@2.127.2(@typescript-eslint/eslint-plugin@8.73.0(@typescript-eslint/parser@8.73.0(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(@typescript-eslint/parser@8.73.0(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint-plugin-prettier@5.5.7(eslint-config-prettier@10.1.8(eslint@10.15.0(supports-color@7.2.0)))(eslint@10.15.0(supports-color@7.2.0))(prettier@3.10.1))(eslint-plugin-simple-import-sort@14.0.0(eslint@10.15.0(supports-color@7.2.0)))(eslint@10.15.0(supports-color@7.2.0))(prettier@3.10.1):
+  eslint-config-functype@2.200.0(@typescript-eslint/eslint-plugin@8.73.0(@typescript-eslint/parser@8.73.0(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(@typescript-eslint/parser@8.73.0(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint-plugin-prettier@5.5.7(eslint-config-prettier@10.1.8(eslint@10.15.0(supports-color@7.2.0)))(eslint@10.15.0(supports-color@7.2.0))(prettier@3.10.1))(eslint-plugin-simple-import-sort@14.0.0(eslint@10.15.0(supports-color@7.2.0)))(eslint@10.15.0(supports-color@7.2.0))(prettier@3.10.1):
     dependencies:
       '@eslint/js': 10.0.1(eslint@10.15.0(supports-color@7.2.0))
       '@typescript-eslint/eslint-plugin': 8.73.0(@typescript-eslint/parser@8.73.0(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3))(eslint@10.15.0(supports-color@7.2.0))(supports-color@7.2.0)(typescript@6.0.3)
@@ -2687,7 +2687,7 @@ snapshots:
       - eslint-import-resolver-webpack
       - supports-color
 
-  eslint-plugin-functype@2.127.2(eslint@10.15.0(supports-color@7.2.0)):
+  eslint-plugin-functype@2.200.0(eslint@10.15.0(supports-color@7.2.0)):
     dependencies:
       eslint: 10.15.0(supports-color@7.2.0)
 
@@ -2810,11 +2810,11 @@ snapshots:
 
   function-bind@1.1.2: {}
 
-  functype-os@1.27.2(functype@1.27.2):
+  functype-os@2.0.0(functype@2.0.0):
     dependencies:
-      functype: 1.27.2
+      functype: 2.0.0
 
-  functype@1.27.2: {}
+  functype@2.0.0: {}
 
   get-tsconfig@4.14.3:
     dependencies:
